@@ -1141,10 +1141,10 @@ class PackedIceEnemy(Enemy):
         if hovered: self._hover_label(surf)
 
 class SnowMinion(Enemy):
-    DISPLAY_NAME="Snow Minion"; BASE_HP=300; BASE_SPEED=38; KILL_REWARD=800
+    DISPLAY_NAME="Snow Minion"; BASE_HP=200; BASE_SPEED=38; KILL_REWARD=800
     def __init__(self, wave=1):
         super().__init__(wave)
-        self.hp=300; self.maxhp=300; self.speed=self.BASE_SPEED+(wave-1)*2; self.radius=30
+        self.hp=200; self.maxhp=200; self.speed=self.BASE_SPEED+(wave-1)*2; self.radius=30
         self._rot=0.0
     def update(self, dt):
         self._rot+=dt*80; return super().update(dt)

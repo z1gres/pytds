@@ -2840,7 +2840,7 @@ class Game:
             self.player_hp=150; self.player_maxhp=150
         elif mode=="frosty":
             self.wave_mgr=WaveManager(wave_data=FROSTY_WAVE_DATA, max_waves=FROSTY_MAX_WAVES)
-            self.player_hp=150; self.player_maxhp=150
+            self.player_hp=250; self.player_maxhp=250
             self._frosty_lane=0   # cycles 0-3: which of 4 entry paths next enemy gets
         else:
             self.wave_mgr=WaveManager()
