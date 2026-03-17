@@ -1722,7 +1722,7 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
     cost_map = {"Assassin": 300, "Accelerator": 5000, "Frostcelerator": 3500, "Freezer": 400,
                 "Lifestealer": 400, "Archer": 400, "Red Ball": 1000, "Farm": 250,
                 "Frost Blaster": 800, "Sledger": 950, "Gladiator": 500,
-                "Toxic Gunner": 525, "Slasher": 2500}
+                "Toxic Gunner": 525, "Slasher": 1700}
     cost = cost_map.get(unit_name)
     if cost:
         ico_m = load_icon("money_ico", 18)

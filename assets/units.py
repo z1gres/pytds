@@ -2402,7 +2402,7 @@ _SLASHER_BLEED_HP_FACTOR = 0.005  # per stack: 0.5% of enemy maxhp
 
 
 class Slasher(Unit):
-    PLACE_COST       = 2500
+    PLACE_COST       = 1700
     COLOR            = C_SLASHER
     NAME             = "Slasher"
     hidden_detection = False
