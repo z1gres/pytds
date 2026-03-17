@@ -13,7 +13,7 @@ from game_core import (
     font_sm, font_md, font_lg,
     get_map_path, dist, txt, draw_rect_alpha, load_icon,
     UNIT_LIMITS,
-    SwordEffect, WhirlwindEffect, FloatingText,
+    SwordEffect, WhirlwindEffect, FloatingText, BloodSlashEffect,
 )
 from enemies import (
     Enemy, HiddenEnemy, BreakerEnemy, ArmoredEnemy, ScoutEnemy, TankEnemy,
@@ -1251,8 +1251,8 @@ class Freezer(Unit):
     def draw_range(self, surf):
         r = int(self.range_tiles * TILE)
         s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
-        pygame.draw.circle(s, (80, 200, 255, 22), (r, r), r)
-        pygame.draw.circle(s, (80, 200, 255, 70), (r, r), r, 2)
+        pygame.draw.circle(s, (255,255,255,22), (r, r), r)
+        pygame.draw.circle(s, (255,255,255,60), (r, r), r, 2)
         surf.blit(s, (int(self.px) - r, int(self.py) - r))
 
     def get_info(self):
@@ -1497,8 +1497,8 @@ class FrostBlaster(Unit):
     def draw_range(self, surf):
         r = int(self.range_tiles * TILE)
         s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
-        pygame.draw.circle(s, (80, 200, 255, 22), (r, r), r)
-        pygame.draw.circle(s, (80, 200, 255, 70), (r, r), r, 2)
+        pygame.draw.circle(s, (255,255,255,22), (r, r), r)
+        pygame.draw.circle(s, (255,255,255,60), (r, r), r, 2)
         surf.blit(s, (int(self.px) - r, int(self.py) - r))
 
     def get_info(self):
@@ -1809,8 +1809,8 @@ class Sledger(Unit):
     def draw_range(self, surf):
         r = int(self.range_tiles * TILE)
         s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
-        pygame.draw.circle(s, (80, 180, 255, 22), (r, r), r)
-        pygame.draw.circle(s, (80, 180, 255, 70), (r, r), r, 2)
+        pygame.draw.circle(s, (255,255,255,22), (r, r), r)
+        pygame.draw.circle(s, (255,255,255,60), (r, r), r, 2)
         surf.blit(s, (int(self.px) - r, int(self.py) - r))
 
     def get_info(self):
@@ -2076,8 +2076,8 @@ class Gladiator(Unit):
     def draw_range(self, surf):
         r = int(self.range_tiles * TILE)
         s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
-        pygame.draw.circle(s, (220, 180, 60, 22), (r, r), r)
-        pygame.draw.circle(s, (220, 180, 60, 70), (r, r), r, 2)
+        pygame.draw.circle(s, (255,255,255,22), (r, r), r)
+        pygame.draw.circle(s, (255,255,255,60), (r, r), r, 2)
         surf.blit(s, (int(self.px) - r, int(self.py) - r))
 
     def get_info(self):
@@ -2090,3 +2090,490 @@ class Gladiator(Unit):
             "StunBlock": block_str,
             "HidDet":    "YES" if self.hidden_detection else "no",
         }
+
+
+# ── Toxic Gunner ───────────────────────────────────────────────────────────────
+C_TOXICGUN      = (80, 200, 60)
+C_TOXICGUN_DARK = (20, 60, 10)
+
+# Tuple layout:
+#  (damage, firerate, burst, cooldown, range_tiles, upgrade_cost,
+#   slow_pct,      # slowdown fraction per shot (stacks, non-permanent — refreshes timer)
+#   slow_dur,      # seconds slow lasts after last hit
+#   poison_dmg,    # damage per tick (0 = no poison)
+#   poison_tick,   # seconds between ticks
+#   poison_time,   # total poison duration in seconds
+#   def_drop_pct,  # ARMOR drop per poison tick (0 = none), max 50%
+#   hidden_detection)
+#
+# Burst mechanic: fires `burst` shots with `firerate` gap between shots,
+# then waits `cooldown` seconds before next burst.
+# Each shot applies one stack of slow (stacks up to 30% total at lv4).
+# Poison is re-applied on each hit; timer refreshes, does not stack dmg.
+
+TOXICGUN_LEVELS = [
+    # lv0 – place $525
+    (1, 0.108, 4,  1.2, 10.0, None,  0.10, 6.0, 1, 1.0,  6.0, 0.00, False),
+    # lv1 – +$200  (faster cooldown, more burst)
+    (1, 0.108, 8,  0.6, 10.0,  200,  0.10, 6.0, 1, 1.0,  6.0, 0.00, False),
+    # lv2 – +$750  (poison damage, +range, more slow)
+    (3, 0.108, 8,  0.6, 12.0,  750,  0.20, 6.0, 2, 1.0,  6.0, 0.00, False),
+    # lv3 – +$3000 (defense drop, 10 burst, flying det)
+    (3, 0.108, 10, 0.6, 12.0, 3000,  0.20, 6.0, 2, 1.0,  6.0, 0.03, True),
+    # lv4 – +$14000 (max level: big burst, no cooldown, long poison, more slow)
+    (7, 0.108, 20, 0.0, 12.0,14000,  0.30,10.0, 8, 1.0, 10.0, 0.03, True),
+]
+
+_TOXICGUN_MAX_SLOW    = 0.30   # max accumulated slow fraction
+_TOXICGUN_MAX_DEFDROP = 0.50   # max armor reduction
+
+
+class ToxicGunnerBullet:
+    """Single pellet that homes toward target, applies slow + poison on hit."""
+    def __init__(self, ox, oy, target, damage, slow_pct, slow_dur,
+                 poison_dmg, poison_tick, poison_time, def_drop):
+        self.x = float(ox); self.y = float(oy)
+        self._target = target
+        dx = target.x - ox; dy = target.y - oy
+        d  = math.hypot(dx, dy) or 1
+        self.vx = dx / d; self.vy = dy / d
+        self.speed = 520.0
+        self.damage     = damage
+        self.slow_pct   = slow_pct
+        self.slow_dur   = slow_dur
+        self.poison_dmg = poison_dmg
+        self.poison_tick= poison_tick
+        self.poison_time= poison_time
+        self.def_drop   = def_drop
+        self.alive = True
+        self._dist_left = 800.0
+
+    def update(self, dt, enemies):
+        if not self.alive: return
+        # Home toward target while alive
+        if self._target and self._target.alive:
+            dx = self._target.x - self.x; dy = self._target.y - self.y
+            d  = math.hypot(dx, dy) or 1
+            self.vx = dx / d; self.vy = dy / d
+        step = self.speed * dt
+        self.x += self.vx * step; self.y += self.vy * step
+        self._dist_left -= step
+        if self._dist_left <= 0:
+            self.alive = False; return
+        for e in enemies:
+            if not e.alive: continue
+            if math.hypot(e.x - self.x, e.y - self.y) < e.radius + 5:
+                self._hit(e)
+                self.alive = False; return
+
+    def _hit(self, e):
+        e.take_damage(self.damage)
+        # Slow stack (non-permanent: refreshes timer, stacks up to max)
+        if self.slow_pct > 0:
+            orig = getattr(e, '_tg_orig_speed', None)
+            if orig is None:
+                e._tg_orig_speed = e.speed
+            cur = getattr(e, '_tg_slow', 0.0)
+            new = min(cur + self.slow_pct, _TOXICGUN_MAX_SLOW)
+            e._tg_slow = new
+            e._tg_timer = self.slow_dur
+            resistance = getattr(e, 'SLOW_RESISTANCE', 1.0)
+            e.speed = e._tg_orig_speed * (1.0 - new * resistance)
+        # Poison (refresh, don't stack damage)
+        if self.poison_dmg > 0:
+            e._tg_poison_dmg   = self.poison_dmg
+            e._tg_poison_tick  = self.poison_tick
+            e._tg_poison_time  = self.poison_time
+            e._tg_poison_timer = self.poison_time   # restart full duration
+            e._tg_tick_timer   = self.poison_tick   # first tick after one interval
+        # Defense drop per hit (applied on poison tick instead; tracked here)
+        e._tg_def_drop_per_tick = self.def_drop
+
+    def draw(self, surf):
+        if not self.alive: return
+        cx, cy = int(self.x), int(self.y)
+        s = pygame.Surface((14, 14), pygame.SRCALPHA)
+        pygame.draw.circle(s, (60, 180, 40, 80),  (7, 7), 6)
+        pygame.draw.circle(s, (120, 240, 80, 220), (7, 7), 4)
+        pygame.draw.circle(s, (200, 255, 150, 255),(7, 7), 2)
+        surf.blit(s, (cx - 7, cy - 7))
+
+
+class ToxicGunner(Unit):
+    PLACE_COST       = 525
+    COLOR            = C_TOXICGUN
+    NAME             = "Toxic Gunner"
+    hidden_detection = False
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._bullets      = []
+        self._burst_left   = 0       # shots remaining in current burst
+        self._burst_cd     = 0.0     # cooldown between bursts
+        self._shot_cd      = 0.0     # firerate between shots within burst
+        self._anim_t       = 0.0
+        self._apply_level()
+
+    def _apply_level(self):
+        row = TOXICGUN_LEVELS[self.level]
+        (self.damage, self.firerate, self._burst_count, self._cooldown,
+         self.range_tiles, _, self._slow_pct, self._slow_dur,
+         self._poison_dmg, self._poison_tick, self._poison_time,
+         self._def_drop, self.hidden_detection) = row
+        self._burst_left = 0
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(TOXICGUN_LEVELS): return None
+        return TOXICGUN_LEVELS[nxt][5]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(TOXICGUN_LEVELS):
+            self.level = nxt; self._apply_level()
+
+    def _tick_poison(self, enemies, dt):
+        for e in enemies:
+            if not e.alive: continue
+            pt = getattr(e, '_tg_poison_time', 0.0)
+            if pt <= 0: continue
+            e._tg_poison_time = pt - dt
+            if e._tg_poison_time <= 0:
+                e._tg_poison_time = 0.0
+                continue
+            # tick
+            e._tg_tick_timer = getattr(e, '_tg_tick_timer', 0.0) - dt
+            if e._tg_tick_timer <= 0:
+                e._tg_tick_timer += getattr(e, '_tg_poison_tick', 1.0)
+                pdmg = getattr(e, '_tg_poison_dmg', 0)
+                if pdmg > 0:
+                    e.take_damage(pdmg)
+                    self.total_damage += pdmg
+                # defense drop per tick
+                dd = getattr(e, '_tg_def_drop_per_tick', 0.0)
+                if dd > 0:
+                    dropped = getattr(e, '_tg_total_def_drop', 0.0)
+                    if dropped < _TOXICGUN_MAX_DEFDROP:
+                        apply = min(dd, _TOXICGUN_MAX_DEFDROP - dropped)
+                        e.ARMOR = max(0.0, e.ARMOR - apply)
+                        e._tg_total_def_drop = dropped + apply
+            # tick slow timer
+            st = getattr(e, '_tg_timer', 0.0)
+            if st > 0:
+                e._tg_timer = st - dt
+                if e._tg_timer <= 0:
+                    orig = getattr(e, '_tg_orig_speed', None)
+                    if orig is not None: e.speed = orig
+                    e._tg_orig_speed = None
+                    e._tg_slow = 0.0
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t += dt
+        self._tick_poison(enemies, dt)
+
+        # Between bursts: count down cooldown
+        if self._burst_left <= 0:
+            if self._burst_cd > 0:
+                self._burst_cd -= dt
+            if self._burst_cd <= 0:
+                targets = self._get_targets(enemies, 1)
+                if targets:
+                    self._burst_left = self._burst_count
+                    self._shot_cd    = 0.0
+                    # Aim at the locked target for this burst
+                    self._last_aim = math.atan2(targets[0].y - self.py, targets[0].x - self.px)
+        else:
+            if self._shot_cd > 0:
+                self._shot_cd -= dt
+            if self._shot_cd <= 0:
+                targets = self._get_targets(enemies, 1)
+                if targets:
+                    t2 = targets[0]
+                    self._last_aim = math.atan2(t2.y - self.py, t2.x - self.px)
+                    self._shot_cd = self.firerate
+                    self._burst_left -= 1
+                    self._bullets.append(ToxicGunnerBullet(
+                        self.px, self.py, t2,
+                        self.damage, self._slow_pct, self._slow_dur,
+                        self._poison_dmg, self._poison_tick, self._poison_time,
+                        self._def_drop
+                    ))
+                    self.total_damage += self.damage
+                    if self._burst_left <= 0:
+                        self._burst_cd = self._cooldown
+                else:
+                    self._burst_left = 0
+                    self._burst_cd   = self._cooldown
+
+        for b in self._bullets: b.update(dt, enemies)
+        self._bullets = [b for b in self._bullets if b.alive]
+
+    def draw(self, surf):
+        t  = self._anim_t
+        cx, cy = int(self.px), int(self.py)
+
+        # Outer glow
+        glow = pygame.Surface((70, 70), pygame.SRCALPHA)
+        ga = int(abs(math.sin(t * 4)) * 50 + 30)
+        pygame.draw.circle(glow, (60, 200, 40, ga), (35, 35), 33)
+        surf.blit(glow, (cx - 35, cy - 35))
+
+        pygame.draw.circle(surf, C_TOXICGUN_DARK, (cx, cy), 27)
+        pygame.draw.circle(surf, C_TOXICGUN,      (cx, cy), 21)
+        pygame.draw.circle(surf, (140, 255, 100),  (cx, cy), 21, 2)
+
+        # Barrel pointing toward last target
+        a  = getattr(self, '_last_aim', 0.0)
+        ca, sa = math.cos(a), math.sin(a)
+        bx1 = cx + int(ca * 10); by1 = cy + int(sa * 10)
+        bx2 = cx + int(ca * 30); by2 = cy + int(sa * 30)
+        pygame.draw.line(surf, (100, 220, 70), (bx1, by1), (bx2, by2), 5)
+        pygame.draw.circle(surf, (160, 255, 120), (bx2, by2), 4)
+
+        # Toxic barrel rings
+        for i in range(3):
+            ring_x = cx + int(ca * (14 + i * 6))
+            ring_y = cy + int(sa * (14 + i * 6))
+            pygame.draw.circle(surf, (60, 160, 40), (ring_x, ring_y), 3)
+
+        # Hidden/flying detection
+        if self.hidden_detection:
+            pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
+
+        # Level pips
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_TOXICGUN, (cx - 8 + i * 6, cy + 36), 3)
+
+        # Bullets
+        for b in self._bullets: b.draw(surf)
+
+    def _try_attack(self, enemies, effects):
+        pass  # attack logic handled entirely in update()
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (255,255,255,22), (r, r), r)
+        pygame.draw.circle(s, (255,255,255,60), (r, r), r, 2)
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+
+    def get_info(self):
+        return {
+            "Damage":   self.damage,
+            "Firerate": f"{self.firerate:.3f}",
+            "Burst":    f"{self._burst_count} / cd {self._cooldown:.1f}s",
+            "Range":    self.range_tiles,
+            "Slow":     f"+{int(self._slow_pct*100)}% max {int(_TOXICGUN_MAX_SLOW*100)}%",
+            "Poison":   f"{self._poison_dmg}/tick {self._poison_time:.0f}s" if self._poison_dmg else "none",
+        }
+
+
+# ── Slasher ────────────────────────────────────────────────────────────────────
+C_SLASHER      = (160, 30, 30)
+C_SLASHER_DARK = (50,  10, 10)
+
+# Tuple layout:
+#  (damage, swingrate, range_tiles, upgrade_cost,
+#   crit_every,        # deal crit hit every N-th swing
+#   crit_mult,         # crit damage multiplier
+#   hidden_detection,
+#   bleed_stacks_per_hit, # bleed stacks added per swing (lv2+)
+#   bleed_max_stacks,  # total max stacks before bleed explosion
+#   bleed_base_dmg)    # flat bleed tick damage per stack (scales with HP at ~0.5% maxhp per stack)
+#
+# Bleed: each stack deals damage once (1s delay between ticks).
+# At max stacks → burst damage = stacks × bleed_base_dmg × enemy_hp_factor, then stacks reset.
+# Single target — does NOT pierce.
+
+SLASHER_LEVELS = [
+    # lv0 – place $1500
+    (6,  0.508, 6.0, None,  3, 1.75, False, 0, 30, 0),
+    # lv1 – +$1250
+    (6,  0.408, 6.0, 1250,  3, 2.50, True,  0, 30, 0),
+    # lv2 – +$3500  (bleed unlocked)
+    (20, 0.708, 6.5, 3500,  3, 3.00, True,  1, 30, 1),
+    # lv3 – +$6500
+    (45, 0.608, 7.0, 6500,  3, 3.50, True,  2, 30, 1),
+    # lv4 – +$20000
+    (60, 0.508, 7.5,20000,  3, 4.00, True,  3, 30, 2),
+]
+
+_SLASHER_BLEED_HP_FACTOR = 0.005  # per stack: 0.5% of enemy maxhp
+
+
+class Slasher(Unit):
+    PLACE_COST       = 2500
+    COLOR            = C_SLASHER
+    NAME             = "Slasher"
+    hidden_detection = False
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._swing_t      = 0.0
+        self._aim_angle    = 0.0
+        self._last_swing_t = -999.0
+        self._hit_count    = 0    # counts hits for crit rhythm
+        self._apply_level()
+
+    def _apply_level(self):
+        row = SLASHER_LEVELS[self.level]
+        (self.damage, self.firerate, self.range_tiles, _,
+         self._crit_every, self._crit_mult,
+         self.hidden_detection,
+         self._bleed_per_hit, self._bleed_max, self._bleed_base_dmg) = row
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(SLASHER_LEVELS): return None
+        return SLASHER_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(SLASHER_LEVELS):
+            self.level = nxt; self._apply_level()
+
+    def _do_swing(self, enemies, effects):
+        targets = self._get_targets(enemies, 1)
+        if not targets: return
+        e = targets[0]
+        self._aim_angle = math.atan2(e.y - self.py, e.x - self.px)
+        self._last_swing_t = self._swing_t
+        self._hit_count += 1
+
+        # Critical hit every N swings
+        is_crit = (self._hit_count % self._crit_every == 0)
+        dmg = self.damage * self._crit_mult if is_crit else self.damage
+        e.take_damage(dmg)
+        self.total_damage += dmg
+
+        # Bleed (lv2+)
+        if self._bleed_per_hit > 0:
+            cur = getattr(e, '_slash_bleed', 0)
+            new = min(cur + self._bleed_per_hit, self._bleed_max)
+            e._slash_bleed = new
+            e._slash_bleed_owner = id(self)
+            # Bleed burst at max stacks
+            if new >= self._bleed_max:
+                burst = self._bleed_max * self._bleed_base_dmg * max(1, int(e.maxhp * _SLASHER_BLEED_HP_FACTOR * self._bleed_max))
+                e.take_damage(burst)
+                self.total_damage += burst
+                e._slash_bleed = 0
+            else:
+                # Each stack deals 1 tick damage with 1s delay
+                e._slash_bleed_tick = getattr(e, '_slash_bleed_tick', 0.0)
+                e._slash_bleed_timer = getattr(e, '_slash_bleed_timer', 0.0)
+                if e._slash_bleed_timer <= 0:
+                    e._slash_bleed_timer = 1.0  # tick every 1s
+
+        # Visual effect — blood slash, crit version if applicable
+        effects.append(BloodSlashEffect(self.px, self.py,
+                                        math.degrees(self._aim_angle),
+                                        is_crit=is_crit))
+
+    def _tick_bleed(self, enemies, dt):
+        for e in enemies:
+            if not e.alive: continue
+            stacks = getattr(e, '_slash_bleed', 0)
+            if stacks <= 0: continue
+            timer = getattr(e, '_slash_bleed_timer', 0.0) - dt
+            e._slash_bleed_timer = timer
+            if timer <= 0:
+                e._slash_bleed_timer = 1.0
+                tick_dmg = stacks * self._bleed_base_dmg
+                if tick_dmg > 0:
+                    e.take_damage(tick_dmg)
+                    self.total_damage += tick_dmg
+
+    def update(self, dt, enemies, effects, money):
+        self._swing_t += dt
+        if self.cd_left > 0: self.cd_left -= dt
+        self._tick_bleed(enemies, dt)
+
+        if self.cd_left <= 0:
+            r = self.range_tiles * TILE
+            has = any(
+                e.alive and not getattr(e,'_reversed',False)
+                and not (e.IS_HIDDEN and not self.hidden_detection)
+                and dist((e.x,e.y),(self.px,self.py)) <= r
+                for e in enemies
+            )
+            if has:
+                self.cd_left = self.firerate
+                self._do_swing(enemies, effects)
+
+    def draw(self, surf):
+        t  = self._swing_t
+        cx, cy = int(self.px), int(self.py)
+
+        pygame.draw.circle(surf, C_SLASHER_DARK, (cx, cy), 27)
+        pygame.draw.circle(surf, C_SLASHER,      (cx, cy), 21)
+        pygame.draw.circle(surf, (220, 80, 80),   (cx, cy), 21, 2)
+
+        # Knife pointing at aim angle, animates on hit
+        time_since = t - self._last_swing_t
+        if 0 < time_since < self.firerate * 0.6:
+            swing_p = time_since / (self.firerate * 0.6)
+            knife_a = self._aim_angle + math.radians(60 - swing_p * 120)
+        else:
+            knife_a = self._aim_angle
+
+        ca, sa = math.cos(knife_a), math.sin(knife_a)
+        pa, pb = -sa, ca   # perpendicular
+
+        # Blade
+        kx1 = cx + int(ca * 8);  ky1 = cy + int(sa * 8)
+        kx2 = cx + int(ca * 32); ky2 = cy + int(sa * 32)
+        pygame.draw.line(surf, (220, 200, 200), (kx1, ky1), (kx2, ky2), 2)
+        # Tip
+        pygame.draw.circle(surf, (255, 230, 230), (kx2, ky2), 3)
+        # Guard
+        gx1 = int(cx + ca * 14 + pa * 7); gy1 = int(cy + sa * 14 + pb * 7)
+        gx2 = int(cx + ca * 14 - pa * 7); gy2 = int(cy + sa * 14 - pb * 7)
+        pygame.draw.line(surf, (180, 60, 60), (gx1, gy1), (gx2, gy2), 3)
+
+        # Crit flash (every _crit_every hits)
+        next_crit = self._crit_every - (self._hit_count % self._crit_every)
+        if next_crit == 1 and 0 < time_since < 0.15:
+            fl = pygame.Surface((60, 60), pygame.SRCALPHA)
+            fa = int(220 * (1 - time_since / 0.15))
+            pygame.draw.circle(fl, (255, 80, 80, fa), (30, 30), 28)
+            surf.blit(fl, (cx - 30, cy - 30))
+
+        # Swing trail
+        if 0 < time_since < 0.14:
+            arc_s = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            alpha = int(160 * (1 - time_since / 0.14))
+            arc_r = int(self.range_tiles * TILE)
+            for i in range(10):
+                a = self._aim_angle + math.radians(40 - 80 * i / 9)
+                pygame.draw.line(arc_s, (220, 60, 60, alpha),
+                    (cx + int(math.cos(a)*8), cy + int(math.sin(a)*8)),
+                    (cx + int(math.cos(a)*arc_r), cy + int(math.sin(a)*arc_r)), 2)
+            surf.blit(arc_s, (0, 0))
+
+        if self.hidden_detection:
+            pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
+
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_SLASHER, (cx - 8 + i * 6, cy + 36), 3)
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (255,255,255,22), (r, r), r)
+        pygame.draw.circle(s, (255,255,255,60), (r, r), r, 2)
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+
+    def get_info(self):
+        next_crit = self._crit_every - (self._hit_count % self._crit_every)
+        info = {
+            "Damage":    self.damage,
+            "Firerate":  f"{self.firerate:.3f}",
+            "Range":     self.range_tiles,
+            "Crit":      f"x{self._crit_mult} every {self._crit_every} hits (in {next_crit})",
+            "HidDet":    "YES" if self.hidden_detection else "no",
+        }
+        if self._bleed_per_hit > 0:
+            stacks = 0  # can't easily show per-enemy here
+            info["Bleed"] = f"+{self._bleed_per_hit}/hit, burst @{self._bleed_max}"
+        return info

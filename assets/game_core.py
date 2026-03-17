@@ -176,7 +176,9 @@ UNIT_LIMITS = {
     "Freezer":        6,
     "Frost Blaster":  14,
     "Sledger":        6,
-    "Gladiator":      10,
+    "Gladiator":      2,
+    "Toxic Gunner":   3,
+    "Slasher":        3,
 }
 
 def load_save():
@@ -261,5 +263,58 @@ class FloatingText:
         s=font_md.render(self.text,True,self.color)
         s.set_alpha(max(0,alpha))
         surf.blit(s,s.get_rect(center=(int(self.x),int(self.y))))
+
+class BloodSlashEffect:
+    """Red slashing arc with blood splatter particles for Slasher."""
+    def __init__(self, ox, oy, angle, is_crit=False):
+        self.ox=ox; self.oy=oy; self.angle=angle
+        self.is_crit=is_crit
+        self.life=0.32 if not is_crit else 0.52
+        self.t=0.0
+        self.length=48 if not is_crit else 70
+        # spawn blood particles
+        self.particles=[]
+        n = 8 if not is_crit else 18
+        for _ in range(n):
+            a=math.radians(angle)+random.uniform(-0.9,0.9)
+            spd=random.uniform(60,180)
+            self.particles.append([float(ox),float(oy),
+                                    math.cos(a)*spd, math.sin(a)*spd,
+                                    random.uniform(0.25,self.life)])
+    def update(self, dt):
+        self.t+=dt
+        for p in self.particles:
+            p[0]+=p[2]*dt; p[1]+=p[3]*dt
+            p[3]+=120*dt   # gravity
+        return self.t<self.life
+    def draw(self, surf):
+        progress=self.t/self.life
+        alpha=int(255*(1-progress))
+        s=pygame.Surface((SCREEN_W,SCREEN_H),pygame.SRCALPHA)
+        # slash arcs
+        sweep=70*progress; n_lines=10 if self.is_crit else 6
+        base_col=(255,30,30) if self.is_crit else (200,30,30)
+        for i in range(n_lines):
+            a=math.radians(self.angle - sweep/2 + sweep*(i/(n_lines-1)))
+            ex=self.ox+math.cos(a)*self.length*(0.6+0.4*(i/(n_lines-1)))
+            ey=self.oy+math.sin(a)*self.length*(0.6+0.4*(i/(n_lines-1)))
+            fade=max(0,alpha-i*22)
+            w=4 if self.is_crit else 3
+            pygame.draw.line(s,(*base_col,fade),(int(self.ox),int(self.oy)),(int(ex),int(ey)),w)
+        # crit flash ring
+        if self.is_crit and progress<0.4:
+            ring_alpha=int(200*(1-progress/0.4))
+            ring_r=int(self.length*(0.3+progress*0.7))
+            pygame.draw.circle(s,(255,60,60,ring_alpha),(int(self.ox),int(self.oy)),ring_r,3)
+        surf.blit(s,(0,0))
+        # blood particles
+        for p in self.particles:
+            life_left=p[4]-self.t
+            if life_left<=0: continue
+            pa=max(0,int(200*(life_left/p[4])))
+            ps=pygame.Surface((8,8),pygame.SRCALPHA)
+            r=max(1,int(3*(life_left/p[4])))
+            pygame.draw.circle(ps,(200,20,20,pa),(4,4),r)
+            surf.blit(ps,(int(p[0])-4,int(p[1])-4))
 
 # ── Enemy base ─────────────────────────────────────────────────────────────────

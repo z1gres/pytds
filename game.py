@@ -26,7 +26,7 @@ from game_core import (
     font_sm, font_md, font_lg, font_xl, font_ru, font_ru_lg,
     SAVE_FILE, load_icon, RARITY_DATA, UNIT_LIMITS,
     load_save, write_save, dist, txt, draw_rect_alpha,
-    SwordEffect, WhirlwindEffect, FloatingText,
+    SwordEffect, WhirlwindEffect, FloatingText, BloodSlashEffect,
     ACHIEVEMENTS_FILE, ACHIEVEMENT_DEFS, load_achievements, grant_achievement,
 )
 
@@ -109,6 +109,10 @@ from units import (
     C_SLEDGER, C_SLEDGER_DARK,
     Gladiator, GLADIATOR_LEVELS,
     C_GLADIATOR, C_GLADIATOR_DARK,
+    ToxicGunner, ToxicGunnerBullet, TOXICGUN_LEVELS,
+    C_TOXICGUN, C_TOXICGUN_DARK,
+    Slasher, SLASHER_LEVELS,
+    C_SLASHER, C_SLASHER_DARK,
     C_FREEZER, C_FREEZER_DARK,
     SPAWN_MAP, CONSOLE_HELP,
     C_LIFESTEALER, C_LIFESTEALER_DARK,
@@ -460,6 +464,8 @@ class AdminPanel:
                 ("FrostBlast",FrostBlaster,C_FROSTBLASTER),
                 ("Sledger",Sledger,C_SLEDGER),
                 ("Gladiator",Gladiator,C_GLADIATOR),
+                ("ToxicGun",ToxicGunner,C_TOXICGUN),
+                ("Slasher",Slasher,C_SLASHER),
             ]
             active_cls=set(s for s in (ui_ref.SLOT_TYPES if ui_ref else []) if s)
             for i,(name,cls,col) in enumerate(unit_list):
@@ -551,7 +557,7 @@ class AdminPanel:
         # Scrollbar for scrollable tabs
         if self.tab in ("enemy","units"):
             _sb_cols=5
-            n_items=len(ADMIN_ENEMY_LIST) if self.tab=="enemy" else 11
+            n_items=len(ADMIN_ENEMY_LIST) if self.tab=="enemy" else 13
             rows=((n_items+_sb_cols-1)//_sb_cols)
             total_h=rows*(ch+gap)
             if total_h>content_h:
@@ -767,6 +773,31 @@ class UI:
             pygame.draw.line(surf,(200,160,50),(cx+int(ca2*10+sa2*6),cy+int(sa2*10-ca2*6)),(cx+int(ca2*10-sa2*6),cy+int(sa2*10+ca2*6)),2)
             if u.hidden_detection:
                 pygame.draw.circle(surf,(100,255,100),(cx+18,cy-18),5)
+        elif isinstance(u,ToxicGunner):
+            t2=pygame.time.get_ticks()*0.001
+            pygame.draw.circle(surf,C_TOXICGUN_DARK,(cx,cy),28)
+            pygame.draw.circle(surf,C_TOXICGUN,(cx,cy),22)
+            pygame.draw.circle(surf,(140,255,100),(cx,cy),22,2)
+            a2=0.1+math.sin(t2*4)*0.15
+            ca2,sa2=math.cos(a2),math.sin(a2)
+            pygame.draw.line(surf,(100,220,70),(cx+int(ca2*5),cy+int(sa2*5)),(cx+int(ca2*20),cy+int(sa2*20)),5)
+            for i in range(3):
+                rx=cx+int(ca2*(9+i*5)); ry=cy+int(sa2*(9+i*5))
+                pygame.draw.circle(surf,(60,160,40),(rx,ry),3)
+            if u.hidden_detection:
+                pygame.draw.circle(surf,(100,255,100),(cx+18,cy-18),5)
+        elif isinstance(u,Slasher):
+            t2=pygame.time.get_ticks()*0.001
+            pygame.draw.circle(surf,C_SLASHER_DARK,(cx,cy),28)
+            pygame.draw.circle(surf,C_SLASHER,(cx,cy),22)
+            pygame.draw.circle(surf,(220,80,80),(cx,cy),22,2)
+            a2=math.radians(-40)+math.sin(t2*5)*0.15
+            ca2,sa2=math.cos(a2),math.sin(a2)
+            pygame.draw.line(surf,(220,200,200),(cx+int(ca2*5),cy+int(sa2*5)),(cx+int(ca2*20),cy+int(sa2*20)),2)
+            pygame.draw.circle(surf,(255,230,230),(cx+int(ca2*20),cy+int(sa2*20)),3)
+            pygame.draw.line(surf,(180,60,60),(cx+int(ca2*12-sa2*6),cy+int(sa2*12+ca2*6)),(cx+int(ca2*12+sa2*6),cy+int(sa2*12-ca2*6)),2)
+            if u.hidden_detection:
+                pygame.draw.circle(surf,(100,255,100),(cx+18,cy-18),5)
         elif isinstance(u,Farm):
             pygame.draw.circle(surf,C_FARM_DARK,(cx,cy),28)
             pygame.draw.circle(surf,C_FARM,(cx,cy),22)
@@ -797,6 +828,8 @@ class UI:
         elif cls==FrostBlaster: levels=FROSTBLASTER_LEVELS; cost_idx=3
         elif cls==Sledger: levels=SLEDGER_LEVELS; cost_idx=3
         elif cls==Gladiator: levels=GLADIATOR_LEVELS; cost_idx=3
+        elif cls==ToxicGunner: levels=TOXICGUN_LEVELS; cost_idx=5
+        elif cls==Slasher: levels=SLASHER_LEVELS; cost_idx=3
         else: levels=[]; cost_idx=3
         for i in range(1,unit.level+1):
             if i<len(levels) and levels[i][cost_idx]: total+=levels[i][cost_idx]
@@ -868,6 +901,22 @@ class UI:
             d,fr,r,_,mh,hd=GLADIATOR_LEVELS[nxt]
             result={"Damage":d,"Firerate":fr,"Range":r,"Arc Hits":f"{mh} (180°)"}
             if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
+            return result
+        elif cls==ToxicGunner:
+            if nxt>=len(TOXICGUN_LEVELS): return None
+            d,fr,burst,cd,r,_,sl,sldur,pdmg,ptick,ptime,dd,hd=TOXICGUN_LEVELS[nxt]
+            result={"Damage":d,"Firerate":fr,"Burst":f"{burst}/cd{cd:.1f}s","Range":r,
+                    "Slow":f"+{int(sl*100)}%"}
+            if pdmg>0: result["Poison"]=f"{pdmg}/tick {ptime:.0f}s"
+            if dd>0:   result["DefDrop"]=f"-{int(dd*100)}%/tick"
+            if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
+            return result
+        elif cls==Slasher:
+            if nxt>=len(SLASHER_LEVELS): return None
+            d,fr,r,_,ce,cm,hd,bph,bmax,bdmg=SLASHER_LEVELS[nxt]
+            result={"Damage":d,"Firerate":fr,"Range":r,"Crit":f"x{cm} every {ce}"}
+            if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
+            if bph>0: result["Bleed"]=f"+{bph}/hit burst@{bmax}"
             return result
         return None
 
@@ -1047,7 +1096,7 @@ class UI:
 
             cls=type(u)
             nxt=self._get_next_stats(u)
-            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS}
+            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS}
             lvl_list=levels_map.get(cls,[])
             total_lvls=len(lvl_list)
 
@@ -1217,6 +1266,48 @@ class UI:
                 block_str="READY" if u._stun_block_cd<=0 else f"{u._stun_block_cd:.1f}s"
                 stats.append(("StunBlock", f"Block: {block_str}", None))
                 if hd_next: stats.append(("HidDet_unlock", None, "Hidden Detection"))
+            elif cls==ToxicGunner:
+                hd_now=u.hidden_detection
+                hd_next=bool(nxt and nxt.get("HidDet") and not hd_now)
+                stats=[
+                    ("Damage",   u.damage,             nxt.get("Damage")   if nxt else None),
+                    ("Firerate", f"{u.firerate:.3f}",   f"{nxt['Firerate']:.3f}" if nxt else None),
+                    ("Burst",    f"{u._burst_count}/cd{u._cooldown:.1f}s",
+                                  nxt.get("Burst") if nxt else None),
+                    ("Range",    u.range_tiles,          nxt.get("Range")   if nxt else None),
+                    ("Slow",     f"+{int(u._slow_pct*100)}% max 30%",
+                                  nxt.get("Slow") if nxt else None),
+                ]
+                if u._poison_dmg>0:
+                    stats.append(("Poison",f"{u._poison_dmg}/tick {u._poison_time:.0f}s",
+                                   nxt.get("Poison") if nxt else None))
+                elif nxt and nxt.get("Poison"):
+                    stats.append(("Poison",None,nxt["Poison"]))
+                if u._def_drop>0:
+                    stats.append(("DefDrop",f"-{int(u._def_drop*100)}%/tick",None))
+                elif nxt and nxt.get("DefDrop"):
+                    stats.append(("DefDrop",None,nxt["DefDrop"]))
+                if hd_now: stats.insert(0,("HidDet","Hidden Detection",None))
+                if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
+            elif cls==Slasher:
+                hd_now=u.hidden_detection
+                hd_next=bool(nxt and nxt.get("HidDet") and not hd_now)
+                next_crit=u._crit_every-(u._hit_count%u._crit_every)
+                stats=[]
+                if hd_now: stats.append(("HidDet","Hidden Detection",None))
+                stats+=[
+                    ("Damage",   u.damage,             nxt.get("Damage")   if nxt else None),
+                    ("Firerate", f"{u.firerate:.3f}",   f"{nxt['Firerate']:.3f}" if nxt else None),
+                    ("Range",    u.range_tiles,          nxt.get("Range")   if nxt else None),
+                    ("Crit",     f"x{u._crit_mult} every {u._crit_every} (in {next_crit})",
+                                  nxt.get("Crit") if nxt else None),
+                ]
+                if u._bleed_per_hit>0:
+                    stats.append(("Bleed",f"+{u._bleed_per_hit}/hit burst@{u._bleed_max}",
+                                   nxt.get("Bleed") if nxt else None))
+                elif nxt and nxt.get("Bleed"):
+                    stats.append(("Bleed",None,nxt["Bleed"]))
+                if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
             else:
                 stats=[(k,v,None) for k,v in u.get_info().items()]
 
@@ -1229,7 +1320,8 @@ class UI:
                          "Income":(100,220,80),"Ability":(200,150,255),"Ability_unlock":(200,150,255),
                          "Freeze":(160,230,255),"ArmorShred":(255,160,60),"DefDrop":(255,100,80),
                          "Hits":(200,200,100),"IceBreaker":(100,220,255),"Aftershock":(140,200,255),
-                         "StunBlock":(255,220,80)}
+                         "StunBlock":(255,220,80),
+                         "Poison":(100,220,80),"Crit":(255,160,40),"Bleed":(200,40,40)}
 
             # === TOP HALF: portrait left + STATS right ===
             # For Frostcelerator: stun bar at very top of card
@@ -1614,6 +1706,8 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
             "Frost Blaster": C_FROSTBLASTER,
             "Sledger": C_SLEDGER,
             "Gladiator": C_GLADIATOR,
+            "Toxic Gunner": C_TOXICGUN,
+            "Slasher": C_SLASHER,
         }
         unit_col = _col_map.get(unit_name, C_ASSASSIN)
         pygame.draw.circle(surf, (30, 20, 50), (icon_cx, icon_cy), 36)
@@ -1627,7 +1721,8 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
 
     cost_map = {"Assassin": 300, "Accelerator": 5000, "Frostcelerator": 3500, "Freezer": 400,
                 "Lifestealer": 400, "Archer": 400, "Red Ball": 1000, "Farm": 250,
-                "Frost Blaster": 800, "Sledger": 950, "Gladiator": 500}
+                "Frost Blaster": 800, "Sledger": 950, "Gladiator": 500,
+                "Toxic Gunner": 525, "Slasher": 2500}
     cost = cost_map.get(unit_name)
     if cost:
         ico_m = load_icon("money_ico", 18)
@@ -2307,6 +2402,8 @@ ALL_UNITS_POOL = [
     {"name": "Frost Blaster",  "rarity": "rare"},
     {"name": "Sledger",        "rarity": "epic"},
     {"name": "Gladiator",      "rarity": "epic"},
+    {"name": "Toxic Gunner",   "rarity": "rare"},
+    {"name": "Slasher",        "rarity": "epic"},
 ]
 
 # Coin cost to unlock units (None = not purchasable / exclusive)
@@ -2322,6 +2419,8 @@ UNIT_SHOP_PRICES = {
     "Frost Blaster":  750,
     "Sledger":        2000,
     "Gladiator":      2500,
+    "Toxic Gunner":   800,
+    "Slasher":        3000,
 }
 
 class LoadoutScreen:
@@ -2836,7 +2935,8 @@ class Game:
                         "Lifestealer": Lifestealer,
                         "Archer": Archer, "Red Ball": RedBall, "Farm": Farm,
                         "Freezer": Freezer, "Frost Blaster": FrostBlaster,
-                        "Sledger": Sledger, "Gladiator": Gladiator}
+                        "Sledger": Sledger, "Gladiator": Gladiator,
+                        "Toxic Gunner": ToxicGunner, "Slasher": Slasher}
         _loadout = self.save_data.get("loadout", ["Assassin", "Accelerator", None, None, None])
         while len(_loadout) < 5: _loadout.append(None)
         self.ui.SLOT_TYPES = [_name_to_cls.get(n) if n else None for n in _loadout]
@@ -4108,6 +4208,45 @@ class Game:
                     px3 = cx2 + int(math.cos(a) * (e.radius + 5))
                     py3 = cy2 + int(math.sin(a) * (e.radius + 5))
                     pygame.draw.circle(self.screen, (140, 210, 255), (px3, py3), 2)
+
+        # Draw Toxic Gunner poison overlay
+        _tg_t = pygame.time.get_ticks() * 0.001
+        for e in self.enemies:
+            if not e.alive: continue
+            pt = getattr(e, '_tg_poison_time', 0.0)
+            sl = getattr(e, '_tg_slow', 0.0)
+            if pt <= 0 and sl <= 0: continue
+            cx2, cy2 = int(e.x), int(e.y)
+            if pt > 0:
+                # Green toxic aura
+                ps = pygame.Surface((60, 60), pygame.SRCALPHA)
+                ga2 = int(min(1.0, pt / 3.0) * 100) + 30
+                pygame.draw.circle(ps, (60, 200, 40, ga2), (30, 30), e.radius + 5)
+                self.screen.blit(ps, (cx2 - 30, cy2 - 30))
+                # Spinning toxic dots
+                for i in range(3):
+                    a2 = math.radians(_tg_t * 140 + i * 120)
+                    px4 = cx2 + int(math.cos(a2) * (e.radius + 7))
+                    py4 = cy2 + int(math.sin(a2) * (e.radius + 7))
+                    pygame.draw.circle(self.screen, (100, 240, 60), (px4, py4), 3)
+
+        # Draw Slasher bleed overlay
+        for e in self.enemies:
+            if not e.alive: continue
+            stacks = getattr(e, '_slash_bleed', 0)
+            if stacks <= 0: continue
+            cx2, cy2 = int(e.x), int(e.y)
+            frac_b = min(1.0, stacks / 30)
+            bs = pygame.Surface((60, 60), pygame.SRCALPHA)
+            ba2 = int(frac_b * 120) + 20
+            pygame.draw.circle(bs, (180, 20, 20, ba2), (30, 30), e.radius + 4)
+            self.screen.blit(bs, (cx2 - 30, cy2 - 30))
+            # Drip dots
+            for i in range(min(stacks, 5)):
+                a2 = math.radians(_tg_t * -90 + i * 72)
+                px4 = cx2 + int(math.cos(a2) * (e.radius + 6))
+                py4 = cy2 + int(math.sin(a2) * (e.radius + 6))
+                pygame.draw.circle(self.screen, (220, 40, 40), (px4, py4), 2)
 
         # Draw glitch effects on pokaxw5yt-stunned enemies
         _gt=pygame.time.get_ticks()*0.001
