@@ -3897,21 +3897,17 @@ class Game:
                 baby.x=e.x; baby.y=e.y; baby._wp_index=getattr(e,'_wp_index',1)
                 if hasattr(e,'_frosty_path'): baby._frosty_path=e._frosty_path
                 baby.free_kill=True; new_enemies.append(baby)
-            # FrostMystery: spawns 3 SnowyEnemy + 1 FrozenEnemy
-            # MegaFrostMystery: spawns 2x that amount
+            # FrostMystery: spawns 1 random enemy (SnowyEnemy or FrozenEnemy)
+            # MegaFrostMystery: spawns 2 random enemies
             if (not e.alive and isinstance(e,(FrostMystery, MegaFrostMystery)) and not getattr(e,'_spawned',False)):
                 e._spawned=True
                 mult = 2 if isinstance(e, MegaFrostMystery) else 1
-                for _ in range(3*mult):
-                    baby=SnowyEnemy(self.wave_mgr.wave)
+                for _ in range(mult):
+                    cls = random.choice([SnowyEnemy, FrozenEnemy])
+                    baby = cls(self.wave_mgr.wave)
                     baby.x=e.x; baby.y=e.y; baby._wp_index=getattr(e,'_wp_index',1)
                     if hasattr(e,'_frosty_path'): baby._frosty_path=e._frosty_path
                     baby.free_kill=True; new_enemies.append(baby)
-                for _ in range(1*mult):
-                    baby2=FrozenEnemy(self.wave_mgr.wave)
-                    baby2.x=e.x; baby2.y=e.y; baby2._wp_index=getattr(e,'_wp_index',1)
-                    if hasattr(e,'_frosty_path'): baby2._frosty_path=e._frosty_path
-                    baby2.free_kill=True; new_enemies.append(baby2)
             # FallenBreaker spawns 1 fallen variant
             if not e.alive and isinstance(e,FallenBreaker) and not getattr(e,'_spawned',False):
                 e._spawned=True

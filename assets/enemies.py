@@ -1165,10 +1165,10 @@ class SnowMinion(Enemy):
         if hovered: self._hover_label(surf)
 
 class FrostMystery(Enemy):
-    DISPLAY_NAME="Frost Mystery"; BASE_HP=50; BASE_SPEED=140; KILL_REWARD=300
+    DISPLAY_NAME="Frost Mystery"; BASE_HP=50; BASE_SPEED=55; KILL_REWARD=300
     def __init__(self, wave=1):
         super().__init__(wave)
-        self.hp=50; self.maxhp=50; self.speed=self.BASE_SPEED+(wave-1)*4; self.radius=14
+        self.hp=50; self.maxhp=50; self.speed=self.BASE_SPEED+(wave-1)*3; self.radius=14
         self._rot=0.0
     def update(self, dt):
         self._rot+=dt*200; return super().update(dt)
