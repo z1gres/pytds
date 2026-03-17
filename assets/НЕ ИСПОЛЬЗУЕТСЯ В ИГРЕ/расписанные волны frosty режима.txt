@@ -1,0 +1,313 @@
+wave 1:
+4 frozen
+
+lmoney 204
+bmoney 40
+
+wave 2:
+8 frozen
+
+lmoney 250
+bmoney 50
+
+wave 3:
+8 frozen
+3 snowy
+
+lmoney 298
+bmoney 59
+
+wave 4:
+8 snowy
+3 frozen
+
+lmoney 347
+bmoney 69
+
+wave 5:
+8 frozen
+1 packed ice
+lmoney 400
+bmoney 80
+
+wave 6:
+3 packed ice
+8 snowy
+lmoney 446
+bmoney 94
+ 
+wave 7:
+1 snow minion
+8 snowy
+lmoney 496
+bmoney 99
+
+wave 8:
+3 packed ice
+6 frozen
+6 snowy
+lmoney 546
+bmoney 109
+
+wave 9:
+5 packed ice
+3 frost mystery
+lmoney 596
+bmoney 119
+
+wave 10:
+6 packed ice
+5 frostmite
+1 snow minion
+lmoney 647
+bmoney 129
+
+wave 11:
+5 frostmite
+2 packed ice
+5 frozen
+6 snowy
+1 snow minion
+
+lmoney 698
+bmoney 139
+
+wave 12:
+6 cold mist
+1 snow minion
+lmoney 759
+bmoney 156
+
+wave 13:
+12 frost mystery
+lmoney 800
+bmoney 160
+
+wave 14:
+6 frostmite
+3 permafrost
+3 snow minion
+lmoney 851
+bmoney 170
+
+wave 15:
+6 cold mist
+3 packed ice
+6 frostmite
+1 frost hunter
+2 snow minion
+lmoney 874
+bmoney 180
+
+wave 16:
+2 unstable ice
+8 frost mystery
+5 packed ice
+lmoney 954
+bmoney 190
+
+wave 17:
+1 permafrost
+1 unstable ice
+6 snowy
+6 frostmite
+6 cold mist
+lmoney 978
+bmoney 200
+
+wave 18:
+3 permafrost
+6 frost mystery
+2 frost wraith
+5 frostmite
+lmoney 995
+bmoney 205
+
+wave 19:
+4 snow minion
+5 cold mist
+6 frostmite
+1 permafrost
+1 frost acolyte
+lmoney 1057
+bmoney 211
+
+wave 20:
+4 frost hunter
+1 frost acolyte
+lmoney 1109
+bmoney 221
+
+wave 21:
+1 permafrost
+1 unstable ice
+6 frostmite
+6 snow minion
+2 frost acolyte
+lmoney 1161
+bmoney 232
+
+wave 22:
+5 unstable ice
+5 snow minion
+1 frost hunter
+1 frost acolyte
+lmoney 1213
+bmoney 242
+
+wave 23:
+4 frostmite
+2 frost wraith
+2 frost undead
+5 frost mystery
+4 permafrost
+
+lmoney 1265
+bmoney 253
+
+wave 24:
+2 unstable ice
+5 cold mist
+4 snow minion
+1 frost invader
+lmoney 1317
+bmoney 273
+
+wave 25:
+3 frost acolyte
+7 mega frost mystery
+lmoney 1421
+bmoney 286
+
+wave 26:
+2 unstable ice
+1 frost undead
+2 frost hunter
+5 frost wraith
+6 frost mystery
+lmoney 1467
+bmoney 297
+
+wave 27:
+3 unstable ice
+1 frost invader
+3 mega frost mystery
+4 frost undead
+lmoney 1526
+bmoney 305
+
+wave 28:
+1 frost invader
+2 unstable ice
+5 permafrost
+3 mega frost mystery
+1 frost ravager
+lmoney 1579
+bmoney 315
+
+wave 29:
+5 frost wraith
+6 cold mist
+3 frost acolyte
+2 trickster elf
+lmoney 1634
+bmoney 334
+
+wave 30:
+2 frost invader
+4 frost mystery
+3 frost undead
+1 yeti
+lmoney 1684
+bmoney 336
+
+wave 31:
+1 frost undead
+14 mega frost mystery
+3 unstable ice
+6 frost wraith
+lmoney 1734
+bmoney 341
+
+wave 32:
+3 frost invader
+10 frost wraith
+5 mega frost mystery
+1 frost mage
+lmoney 1795
+bmoney 349
+
+wave 33:
+2 yeti
+6 frost hunter
+lmoney 1813
+bmoney 359
+
+wave 34:
+3 unstable ice
+2 frost acolyte
+2 trickster elf
+4 frost hunter
+1 frost ravager
+lmoney 1875
+bmoney 364
+
+wave 35:
+1 frost ravager
+4 unstable ice
+1 frost hero
+3 frost hunter
+1 frost ravager
+lmoney 2000
+bmoney 380
+
+wave 36:
+3 deep freeze
+5 mega frost mystery
+2 frost mage
+1 yeti
+6 frost undead
+lmoney 2100 
+bmoney 400
+
+wave 37:
+1 yeti
+4 deep freeze
+8 mega frost mystery
+8 frost undead
+10 frost hunter
+lmoney 2200
+bmoney 450
+
+wave 38:
+2 frost ravager
+1 frost hero
+2 frost necromancer
+3 trickster elf
+4 frost wraith
+lmoney 2300
+bmoney 500
+
+wave 39:
+2 frost hero
+4 deep freeze
+8 frost hunter
+lmoney 5000
+bmoney -
+
+wave 40:
+4 frost invader
+2 frost ravager
+4 frost mage
+9 frost hunter
+10 unstable ice
+12 frost undead
+28 mega frost mystery
+1 yeti
+3 frost hero
+4 deep freeze
+1 frost necromancer
+1 frost spirit
+
+lmoney -
+bmoney -
