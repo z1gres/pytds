@@ -1188,10 +1188,10 @@ class FrostMystery(Enemy):
         if hovered: self._hover_label(surf)
 
 class Frostmite(Enemy):
-    DISPLAY_NAME="Frostmite"; BASE_HP=65; BASE_SPEED=140; KILL_REWARD=100
+    DISPLAY_NAME="Frostmite"; BASE_HP=32; BASE_SPEED=140; KILL_REWARD=100
     def __init__(self, wave=1):
         super().__init__(wave)
-        self.hp=65; self.maxhp=65; self.speed=self.BASE_SPEED+(wave-1)*4; self.radius=12
+        self.hp=32; self.maxhp=32; self.speed=self.BASE_SPEED+(wave-1)*4; self.radius=12
         self._rot=0.0
     def update(self, dt):
         self._rot+=dt*360; return super().update(dt)
@@ -1216,11 +1216,11 @@ class Frostmite(Enemy):
         if hovered: self._hover_label(surf)
 
 class ColdMist(Enemy):
-    DISPLAY_NAME="Cold Mist"; BASE_HP=300; BASE_SPEED=68; KILL_REWARD=300
+    DISPLAY_NAME="Cold Mist"; BASE_HP=80; BASE_SPEED=68; KILL_REWARD=300
     IS_HIDDEN=True
     def __init__(self, wave=1):
         super().__init__(wave)
-        self.hp=300; self.maxhp=300; self.speed=self.BASE_SPEED+(wave-1)*2; self.radius=19
+        self.hp=80; self.maxhp=80; self.speed=self.BASE_SPEED+(wave-1)*2; self.radius=19
     def draw(self, surf, hovered=False, detected=False):
         bob=math.sin(self._bob)*2; cx,cy=int(self.x),int(self.y+bob)
         alpha=180 if detected else (220 if hovered else 60)
@@ -1284,10 +1284,10 @@ class FrostHunter(Enemy):
         if hovered: self._hover_label(surf)
 
 class UnstableIce(Enemy):
-    DISPLAY_NAME="Unstable Ice"; BASE_HP=800; BASE_SPEED=140; KILL_REWARD=1000
+    DISPLAY_NAME="Unstable Ice"; BASE_HP=400; BASE_SPEED=140; KILL_REWARD=1000
     def __init__(self, wave=1):
         super().__init__(wave)
-        self.hp=800; self.maxhp=800; self.speed=self.BASE_SPEED+(wave-1)*4; self.radius=16
+        self.hp=400; self.maxhp=400; self.speed=self.BASE_SPEED+(wave-1)*4; self.radius=16
         self._rot=0.0
     def update(self, dt):
         self._rot+=dt*300; return super().update(dt)
@@ -1777,8 +1777,8 @@ FROSTY_WAVE_DATA = [
     ([(Frostmite,5),(PackedIceEnemy,2),(FrozenEnemy,5),(SnowyEnemy,6),(SnowMinion,1)],           698, 139),                  # 11
     ([(ColdMist,6),(SnowMinion,1)],                                                              759, 156),                  # 12
     ([(FrostMystery,12)],                                                                        800, 160),                  # 13
-    ([(Frostmite,6),(Permafrost,3),(SnowMinion,3)],                                              851, 170),                  # 14
-    ([(ColdMist,6),(PackedIceEnemy,3),(Frostmite,6),(FrostHunter,1),(SnowMinion,2)],             874, 180),                  # 15
+    ([(Frostmite,3),(Permafrost,2),(SnowMinion,2)],                                              851, 170),                  # 14
+    ([(ColdMist,3),(PackedIceEnemy,3),(FrostHunter,1),(SnowMinion,2)],             874, 180),                  # 15
     ([(UnstableIce,2),(FrostMystery,8),(PackedIceEnemy,5)],                                      954, 190),                  # 16
     ([(Permafrost,1),(UnstableIce,1),(SnowyEnemy,6),(Frostmite,6),(ColdMist,6)],                 978, 200),                  # 17
     ([(Permafrost,3),(FrostMystery,6),(FrostWraith,2),(Frostmite,5)],                            995, 205),                  # 18

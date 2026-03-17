@@ -1,3 +1,5 @@
+lmoney, bmoney больше на 150 на каждой волне, мне лень переписывать извинитесь
+
 wave 1:
 4 frozen
 
@@ -84,16 +86,15 @@ lmoney 800
 bmoney 160
 
 wave 14:
-6 frostmite
-3 permafrost
-3 snow minion
+3 frostmite
+2 permafrost
+2 snow minion
 lmoney 851
 bmoney 170
 
 wave 15:
-6 cold mist
+3 cold mist
 3 packed ice
-6 frostmite
 1 frost hunter
 2 snow minion
 lmoney 874

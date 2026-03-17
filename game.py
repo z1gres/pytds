@@ -1856,6 +1856,97 @@ class MapSelectMenu:
         txt(self.screen, "← BACK", self.btn_back.center, C_WHITE, font_xl, center=True)
 
 
+class FrostyWarningScreen:
+    """Full-screen warning shown before entering Frosty mode."""
+    def __init__(self, screen):
+        self.screen = screen
+        self.t = 0.0
+        self.action = None  # "continue" or "back"
+        cx = SCREEN_W // 2
+        self.btn_continue = pygame.Rect(cx - 200, 620, 180, 52)
+        self.btn_back     = pygame.Rect(cx + 20,  620, 180, 52)
+
+    def run(self):
+        clock = pygame.time.Clock()
+        while self.action is None:
+            dt = clock.tick(60) / 1000.0
+            self.t += dt
+            for ev in pygame.event.get():
+                if ev.type == pygame.QUIT:
+                    pygame.quit(); sys.exit()
+                if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+                    self.action = "back"
+                if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                    if self.btn_continue.collidepoint(ev.pos): self.action = "continue"
+                    if self.btn_back.collidepoint(ev.pos):     self.action = "back"
+            self._draw()
+            pygame.display.flip()
+        return self.action
+
+    def _draw(self):
+        surf = self.screen
+        # Dark icy background
+        surf.fill((8, 12, 22))
+
+        # Animated snowflakes
+        import random as _rnd
+        _rnd.seed(42)
+        for i in range(60):
+            sx = _rnd.randint(0, SCREEN_W)
+            sy = _rnd.randint(0, SCREEN_H)
+            br = int(abs(math.sin(self.t * 0.8 + i * 0.3)) * 140 + 60)
+            pygame.draw.circle(surf, (br, br, min(255, br + 60)), (sx, sy), 1)
+        _rnd.seed()
+
+        # Pulsing red warning glow
+        glow_a = int(abs(math.sin(self.t * 2.5)) * 60 + 40)
+        glow_s = pygame.Surface((700, 200), pygame.SRCALPHA)
+        pygame.draw.ellipse(glow_s, (180, 20, 20, glow_a), (0, 0, 700, 200))
+        surf.blit(glow_s, (SCREEN_W // 2 - 350, 180))
+
+        # ⚠ icon
+        warn_f = pygame.font.SysFont("segoeui", 80, bold=True)
+        ws = warn_f.render("⚠", True, (255, 180, 0))
+        surf.blit(ws, ws.get_rect(center=(SCREEN_W // 2, 230)))
+
+        # Title
+        title_f = pygame.font.SysFont("consolas", 46, bold=True)
+        pulse_r = min(255, int(200 + abs(math.sin(self.t * 3)) * 55))
+        ts = title_f.render("ВНИМАНИЕ", True, (pulse_r, 40, 40))
+        surf.blit(ts, ts.get_rect(center=(SCREEN_W // 2, 320)))
+
+        # Warning lines
+        lines = [
+            ("Frosty — невероятно сложный режим.", (220, 200, 200)),
+            ("Он может быть практически невозможным", (200, 180, 180)),
+            ("без правильных юнитов и стратегии.", (200, 180, 180)),
+            ("", None),
+            ("Продолжить?", (160, 200, 255)),
+        ]
+        lf = pygame.font.SysFont("segoeui", 28)
+        ly = 390
+        for text, col in lines:
+            if not text:
+                ly += 18; continue
+            ls = lf.render(text, True, col)
+            surf.blit(ls, ls.get_rect(center=(SCREEN_W // 2, ly)))
+            ly += 38
+
+        # Buttons
+        mx, my = pygame.mouse.get_pos()
+        for btn, label, accent in [
+            (self.btn_continue, "Продолжить", (40, 160, 255)),
+            (self.btn_back,     "Назад",      (180, 50,  50)),
+        ]:
+            hov = btn.collidepoint(mx, my)
+            bg  = tuple(min(255, c + 30) for c in accent) if hov else tuple(c // 2 for c in accent)
+            pygame.draw.rect(surf, bg,    btn, border_radius=10)
+            pygame.draw.rect(surf, accent, btn, 2, border_radius=10)
+            bf = pygame.font.SysFont("segoeui", 24, bold=True)
+            bs = bf.render(label, True, C_WHITE)
+            surf.blit(bs, bs.get_rect(center=btn.center))
+
+
 class DifficultyMenu:
     def __init__(self, screen, save_data=None):
         self.screen = screen
@@ -2327,8 +2418,9 @@ class MainMenu:
                         diff = DifficultyMenu(self.screen, self.save_data).run()
                         if diff != "back":
                             if diff == "play_frosty":
-                                game_core.CURRENT_MAP = "frosty"
-                                self.action = diff
+                                if FrostyWarningScreen(self.screen).run() == "continue":
+                                    game_core.CURRENT_MAP = "frosty"
+                                    self.action = diff
                             else:
                                 map_choice = MapSelectMenu(self.screen).run()
                                 if map_choice != "back":
@@ -3972,6 +4064,9 @@ class Game:
         if (self.wave_mgr.state=="waiting"
                 and not any(e.alive for e in self.enemies) and not self.wave_mgr._lmoney_paid):
             lm=self.wave_mgr.wave_lmoney(); bm=self.wave_mgr.wave_bmoney()
+            if self.mode == "frosty":
+                if lm: lm += 150
+                if bm: bm += 150
             # Farm income — only count OWN farms (not peer farms)
             own_farms = [u for u in self.units if isinstance(u, Farm)]
             farm_income = sum(u.income for u in own_farms)
@@ -4568,8 +4663,9 @@ class MainMenu(_OrigMainMenu):
                         diff = DifficultyMenu(self.screen, self.save_data).run()
                         if diff != "back":
                             if diff == "play_frosty":
-                                game_core.CURRENT_MAP = "frosty"
-                                self.action = diff
+                                if FrostyWarningScreen(self.screen).run() == "continue":
+                                    game_core.CURRENT_MAP = "frosty"
+                                    self.action = diff
                             else:
                                 map_choice = MapSelectMenu(self.screen).run()
                                 if map_choice != "back":
