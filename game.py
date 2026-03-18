@@ -113,6 +113,10 @@ from units import (
     C_TOXICGUN, C_TOXICGUN_DARK,
     Slasher, SLASHER_LEVELS,
     C_SLASHER, C_SLASHER_DARK,
+    GoldenCowboy, GCOWBOY_LEVELS,
+    C_GCOWBOY, C_GCOWBOY_DARK,
+    HallowPunk, HallowPunkRocket, HALLOWPUNK_LEVELS,
+    C_HALLOWPUNK, C_HALLOWPUNK_DARK,
     C_FREEZER, C_FREEZER_DARK,
     SPAWN_MAP, CONSOLE_HELP,
     C_LIFESTEALER, C_LIFESTEALER_DARK,
@@ -466,6 +470,8 @@ class AdminPanel:
                 ("Gladiator",Gladiator,C_GLADIATOR),
                 ("ToxicGun",ToxicGunner,C_TOXICGUN),
                 ("Slasher",Slasher,C_SLASHER),
+                ("GoldCowboy",GoldenCowboy,C_GCOWBOY),
+                ("HallowPunk",HallowPunk,C_HALLOWPUNK),
             ]
             active_cls=set(s for s in (ui_ref.SLOT_TYPES if ui_ref else []) if s)
             for i,(name,cls,col) in enumerate(unit_list):
@@ -557,7 +563,7 @@ class AdminPanel:
         # Scrollbar for scrollable tabs
         if self.tab in ("enemy","units"):
             _sb_cols=5
-            n_items=len(ADMIN_ENEMY_LIST) if self.tab=="enemy" else 13
+            n_items=len(ADMIN_ENEMY_LIST) if self.tab=="enemy" else 15
             rows=((n_items+_sb_cols-1)//_sb_cols)
             total_h=rows*(ch+gap)
             if total_h>content_h:
@@ -798,6 +804,29 @@ class UI:
             pygame.draw.line(surf,(180,60,60),(cx+int(ca2*12-sa2*6),cy+int(sa2*12+ca2*6)),(cx+int(ca2*12+sa2*6),cy+int(sa2*12-ca2*6)),2)
             if u.hidden_detection:
                 pygame.draw.circle(surf,(100,255,100),(cx+18,cy-18),5)
+        elif isinstance(u,GoldenCowboy):
+            t2=pygame.time.get_ticks()*0.001
+            pygame.draw.circle(surf,C_GCOWBOY_DARK,(cx,cy),28)
+            pygame.draw.circle(surf,C_GCOWBOY,(cx,cy),22)
+            pygame.draw.circle(surf,(255,230,100),(cx,cy),22,2)
+            pygame.draw.ellipse(surf,(160,110,20),(cx-16,cy-32,32,8))
+            pygame.draw.ellipse(surf,(200,150,40),(cx-10,cy-36,20,10))
+            a2=0.2+math.sin(t2*2)*0.2
+            ca2,sa2=math.cos(a2),math.sin(a2)
+            pygame.draw.line(surf,(200,160,40),(cx+int(ca2*6),cy+int(sa2*6)),(cx+int(ca2*20),cy+int(sa2*20)),5)
+            pygame.draw.circle(surf,(255,220,80),(cx+int(ca2*20),cy+int(sa2*20)),4)
+            if u.hidden_detection:
+                pygame.draw.circle(surf,(100,255,100),(cx+18,cy-18),5)
+        elif isinstance(u,HallowPunk):
+            t2=pygame.time.get_ticks()*0.001
+            pygame.draw.circle(surf,C_HALLOWPUNK_DARK,(cx,cy),28)
+            pygame.draw.circle(surf,C_HALLOWPUNK,(cx,cy),22)
+            pygame.draw.circle(surf,(240,140,240),(cx,cy),22,2)
+            a2=0.3+math.sin(t2*2)*0.2
+            ca2,sa2=math.cos(a2),math.sin(a2)
+            pygame.draw.line(surf,(160,60,160),(cx+int(ca2*5),cy+int(sa2*5)),(cx+int(ca2*20),cy+int(sa2*20)),7)
+            pygame.draw.line(surf,(220,120,220),(cx+int(ca2*5),cy+int(sa2*5)),(cx+int(ca2*20),cy+int(sa2*20)),4)
+            pygame.draw.circle(surf,(240,160,240),(cx+int(ca2*20),cy+int(sa2*20)),5)
         elif isinstance(u,Farm):
             pygame.draw.circle(surf,C_FARM_DARK,(cx,cy),28)
             pygame.draw.circle(surf,C_FARM,(cx,cy),22)
@@ -830,6 +859,8 @@ class UI:
         elif cls==Gladiator: levels=GLADIATOR_LEVELS; cost_idx=3
         elif cls==ToxicGunner: levels=TOXICGUN_LEVELS; cost_idx=5
         elif cls==Slasher: levels=SLASHER_LEVELS; cost_idx=3
+        elif cls==GoldenCowboy: levels=GCOWBOY_LEVELS; cost_idx=3
+        elif cls==HallowPunk: levels=HALLOWPUNK_LEVELS; cost_idx=3
         else: levels=[]; cost_idx=3
         for i in range(1,unit.level+1):
             if i<len(levels) and levels[i][cost_idx]: total+=levels[i][cost_idx]
@@ -917,6 +948,20 @@ class UI:
             result={"Damage":d,"Firerate":fr,"Range":r,"Crit":f"x{cm} every {ce}"}
             if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
             if bph>0: result["Bleed"]=f"+{bph}/hit burst@{bmax}"
+            return result
+        elif cls==GoldenCowboy:
+            if nxt>=len(GCOWBOY_LEVELS): return None
+            d,fr,r,_,cs,inc,st,hd=GCOWBOY_LEVELS[nxt]
+            result={"Damage":d,"Firerate":fr,"Range":r,
+                    "CashShot":f"${inc} / {cs} shots","SpinTime":f"{st:.1f}s"}
+            if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
+            return result
+        elif cls==HallowPunk:
+            if nxt>=len(HALLOWPUNK_LEVELS): return None
+            d,fr,r,_,sr,kb,bdmg,bt,btk,hd=HALLOWPUNK_LEVELS[nxt]
+            result={"Damage":d,"Firerate":fr,"Range":r,
+                    "Splash":f"{sr} tiles","Knockback":f"{kb}px"}
+            if bdmg>0: result["Burn"]=f"{bdmg}/tick {bt:.0f}s"
             return result
         return None
 
@@ -1096,7 +1141,7 @@ class UI:
 
             cls=type(u)
             nxt=self._get_next_stats(u)
-            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS}
+            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS}
             lvl_list=levels_map.get(cls,[])
             total_lvls=len(lvl_list)
 
@@ -1130,12 +1175,16 @@ class UI:
                     # lv1 -> lv2 unlocks ability
                     stats.append(("Ability_unlock",None,"+Whirlwind Slash"))
             elif cls==Accelerator:
-                stats=[
-                    ("HidDet","Hidden Detection", None),
+                hd_now=u.hidden_detection
+                hd_next=bool(nxt and not hd_now)
+                stats=[]
+                if hd_now: stats.append(("HidDet","Hidden Detection",None))
+                stats+=[
                     ("Damage",  u.damage,        nxt.get("Damage")   if nxt else None),
                     ("Firerate",f"{u.firerate:.4f}", f"{nxt['Firerate']:.4f}" if nxt else None),
                     ("Range",   u.range_tiles,   nxt.get("Range")    if nxt else None),
                 ]
+                if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
                 if nxt and nxt.get("Dual") and not u.dual:
                     stats.append(("Dual_unlock",None,"+Dual target"))
             elif cls==Xw5ytUnit:
@@ -1308,6 +1357,34 @@ class UI:
                 elif nxt and nxt.get("Bleed"):
                     stats.append(("Bleed",None,nxt["Bleed"]))
                 if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
+            elif cls==GoldenCowboy:
+                hd_now=u.hidden_detection
+                hd_next=bool(nxt and nxt.get("HidDet") and not hd_now)
+                shots_left=u._cash_shot-u._shot_count
+                stats=[]
+                if hd_now: stats.append(("HidDet","Hidden Detection",None))
+                stats+=[
+                    ("Damage",   u.damage,            nxt.get("Damage")    if nxt else None),
+                    ("Firerate", f"{u.firerate:.3f}",  f"{nxt['Firerate']:.3f}" if nxt else None),
+                    ("Range",    u.range_tiles,         nxt.get("Range")    if nxt else None),
+                    ("CashShot", f"${u._income}/{u._cash_shot} shots (in {shots_left})",
+                                  nxt.get("CashShot") if nxt else None),
+                    ("SpinTime", f"{u._spin_time:.1f}s", nxt.get("SpinTime") if nxt else None),
+                ]
+                if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
+            elif cls==HallowPunk:
+                stats=[
+                    ("Damage",   u.damage,            nxt.get("Damage")    if nxt else None),
+                    ("Firerate", f"{u.firerate:.3f}",  f"{nxt['Firerate']:.3f}" if nxt else None),
+                    ("Range",    u.range_tiles,         nxt.get("Range")    if nxt else None),
+                    ("Splash",   f"{u._splash_r} tiles", nxt.get("Splash") if nxt else None),
+                    ("Knockback",f"{u._knockback}px",   nxt.get("Knockback") if nxt else None),
+                ]
+                if u._burn_dmg>0:
+                    stats.append(("Burn",f"{u._burn_dmg}/tick {u._burn_time:.0f}s",
+                                   nxt.get("Burn") if nxt else None))
+                elif nxt and nxt.get("Burn"):
+                    stats.append(("Burn",None,nxt["Burn"]))
             else:
                 stats=[(k,v,None) for k,v in u.get_info().items()]
 
@@ -1321,7 +1398,9 @@ class UI:
                          "Freeze":(160,230,255),"ArmorShred":(255,160,60),"DefDrop":(255,100,80),
                          "Hits":(200,200,100),"IceBreaker":(100,220,255),"Aftershock":(140,200,255),
                          "StunBlock":(255,220,80),
-                         "Poison":(100,220,80),"Crit":(255,160,40),"Bleed":(200,40,40)}
+                         "Poison":(100,220,80),"Crit":(255,160,40),"Bleed":(200,40,40),
+                         "CashShot":(255,220,60),"SpinTime":(200,180,100),
+                         "Burn":(255,130,30),"Knockback":(200,160,255),"Splash":(220,100,220)}
 
             # === TOP HALF: portrait left + STATS right ===
             # For Frostcelerator: stun bar at very top of card
@@ -1708,6 +1787,8 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
             "Gladiator": C_GLADIATOR,
             "Toxic Gunner": C_TOXICGUN,
             "Slasher": C_SLASHER,
+            "Golden Cowboy": C_GCOWBOY,
+            "Hallow Punk": C_HALLOWPUNK,
         }
         unit_col = _col_map.get(unit_name, C_ASSASSIN)
         pygame.draw.circle(surf, (30, 20, 50), (icon_cx, icon_cy), 36)
@@ -1722,7 +1803,8 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
     cost_map = {"Assassin": 300, "Accelerator": 5000, "Frostcelerator": 3500, "Freezer": 400,
                 "Lifestealer": 400, "Archer": 400, "Red Ball": 1000, "Farm": 250,
                 "Frost Blaster": 800, "Sledger": 950, "Gladiator": 500,
-                "Toxic Gunner": 525, "Slasher": 1700}
+                "Toxic Gunner": 525, "Slasher": 1700, "Golden Cowboy": 550,
+                "Hallow Punk": 300}
     cost = cost_map.get(unit_name)
     if cost:
         ico_m = load_icon("money_ico", 18)
@@ -2485,7 +2567,6 @@ ALL_UNITS_POOL = [
     {"name": "Assassin",       "rarity": "starter"},
     {"name": "Accelerator",    "rarity": "epic"},
     {"name": "Frostcelerator", "rarity": "exclusive"},
-    {"name": "xw5yt",          "rarity": "exclusive"},
     {"name": "Lifestealer",    "rarity": "starter"},
     {"name": "Archer",         "rarity": "epic"},
     {"name": "Red Ball",       "rarity": "rare"},
@@ -2496,6 +2577,8 @@ ALL_UNITS_POOL = [
     {"name": "Gladiator",      "rarity": "epic"},
     {"name": "Toxic Gunner",   "rarity": "rare"},
     {"name": "Slasher",        "rarity": "epic"},
+    {"name": "Golden Cowboy",  "rarity": "epic"},
+    {"name": "Hallow Punk",    "rarity": "rare"},
 ]
 
 # Coin cost to unlock units (None = not purchasable / exclusive)
@@ -2513,6 +2596,8 @@ UNIT_SHOP_PRICES = {
     "Gladiator":      2500,
     "Toxic Gunner":   800,
     "Slasher":        3000,
+    "Golden Cowboy":  3500,
+    "Hallow Punk":    600,
 }
 
 class LoadoutScreen:
@@ -2542,9 +2627,6 @@ class LoadoutScreen:
         if self.save_data.get("frostcelerator_unlocked"):
             if "Frostcelerator" not in owned:
                 owned = list(owned) + ["Frostcelerator"]
-        if self.save_data.get("xw5yt_unlocked"):
-            if "xw5yt" not in owned:
-                owned = list(owned) + ["xw5yt"]
         return owned
 
     def _filtered_units(self):
@@ -2655,9 +2737,11 @@ class LoadoutScreen:
                             self._show_msg("Not unlocked!")
                             self.selected_inventory = None
                             return
+                        # Remove unit from its current slot (if it's already in loadout)
                         for k in range(5):
-                            if self.loadout[k] == uname:
+                            if self.loadout[k] == uname and k != si:
                                 self.loadout[k] = None
+                                break
                         self.loadout[si] = uname
                         self.selected_inventory = None
                 elif self.loadout[si] is not None:
@@ -2924,7 +3008,7 @@ class Game:
         self.clock=pygame.time.Clock(); self.running=True
         self._elapsed=0.0  # total play time in seconds
         self._end_coin_reward=0  # coins earned this run
-        self.player_hp=100; self.player_maxhp=100; self.money=500
+        self.player_hp=100; self.player_maxhp=100; self.money=600
         self.enemies=[]; self.units=[]; self.effects=[]
         self.mode=mode
         if mode=="fallen":
@@ -3028,7 +3112,9 @@ class Game:
                         "Archer": Archer, "Red Ball": RedBall, "Farm": Farm,
                         "Freezer": Freezer, "Frost Blaster": FrostBlaster,
                         "Sledger": Sledger, "Gladiator": Gladiator,
-                        "Toxic Gunner": ToxicGunner, "Slasher": Slasher}
+                        "Toxic Gunner": ToxicGunner, "Slasher": Slasher,
+                        "Golden Cowboy": GoldenCowboy,
+                        "Hallow Punk": HallowPunk}
         _loadout = self.save_data.get("loadout", ["Assassin", "Accelerator", None, None, None])
         while len(_loadout) < 5: _loadout.append(None)
         self.ui.SLOT_TYPES = [_name_to_cls.get(n) if n else None for n in _loadout]
@@ -3971,6 +4057,14 @@ class Game:
             if isinstance(u,Lifestealer):
                 pm=getattr(u,'_pending_money',0)
                 if pm>0: self.money+=pm; u._pending_money=0
+
+        # Collect GoldenCowboy cash shot income
+        for u in self.units:
+            if isinstance(u,GoldenCowboy):
+                earned=u.collect_income()
+                if earned>0:
+                    self.money+=earned
+                    self.effects.append(FloatingText(u.px,u.py-30,f"+${earned}",(255,220,60)))
 
         # Kill rewards (second pass — catches kills from unit attacks this tick)
         for e in self.enemies:

@@ -174,11 +174,13 @@ UNIT_LIMITS = {
     "Red Ball":       4,
     "Farm":           8,
     "Freezer":        6,
-    "Frost Blaster":  14,
+    "Frost Blaster":  6,
     "Sledger":        6,
     "Gladiator":      2,
     "Toxic Gunner":   3,
     "Slasher":        3,
+    "Golden Cowboy":  6,
+    "Hallow Punk":    10,
 }
 
 def load_save():

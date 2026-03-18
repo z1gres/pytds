@@ -46,7 +46,7 @@ class WhirlwindAbility:
         effects.append(WhirlwindEffect(ox,oy,self.owner.range_tiles))
 
 # ── Unit base ──────────────────────────────────────────────────────────────────
-TARGET_MODES = ["First", "Last", "Lowest HP", "Highest HP", "Nearest", "Farthest"]
+TARGET_MODES = ["First", "Last", "Lowest HP", "Highest HP", "Nearest", "Farthest", "Random"]
 
 class Unit:
     hidden_detection=False
@@ -1630,6 +1630,7 @@ class Sledger(Unit):
         elif mode == "Highest HP":  pool.sort(key=lambda e: -e.hp)
         elif mode == "Nearest":     pool.sort(key=lambda e:  dist((e.x,e.y),(self.px,self.py)))
         elif mode == "Farthest":    pool.sort(key=lambda e: -dist((e.x,e.y),(self.px,self.py)))
+        elif mode == "Random":      random.shuffle(pool)
 
         targets = pool[:self._max_hits]
         if not targets: return
@@ -2576,4 +2577,447 @@ class Slasher(Unit):
         if self._bleed_per_hit > 0:
             stacks = 0  # can't easily show per-enemy here
             info["Bleed"] = f"+{self._bleed_per_hit}/hit, burst @{self._bleed_max}"
+        return info
+
+
+# ── Golden Cowboy ──────────────────────────────────────────────────────────────
+C_GCOWBOY      = (220, 180, 40)
+C_GCOWBOY_DARK = (80,  60,  10)
+
+# Tuple layout:
+#  (damage, firerate, range_tiles, upgrade_cost,
+#   cash_shot,     # fire this many shots then spin + generate income
+#   income,        # $ generated after cash_shot shots
+#   spin_time,     # seconds the cowboy spins (cannot fire during spin)
+#   hidden_detection)
+#
+# Mechanics:
+#  - Fires normally, counting shots per enemy hit
+#  - Every cash_shot hits → spin gun for spin_time, generate income $
+#  - During spin: cannot fire
+#  - Shots that miss (no enemy in range) still count toward cash_shot if
+#    the trigger fires anyway — but we only count actual hits for authenticity
+
+GCOWBOY_LEVELS = [
+    # lv0 – place $550
+    (2,  1.008,  9.0, None, 6,  35, 1.7, False),
+    # lv1 – +$300
+    (2,  0.808,  9.0,  300, 6,  35, 1.7, False),
+    # lv2 – +$400  (hidden detection, +dmg, +range)
+    (4,  0.808, 12.0,  400, 6,  65, 1.7, True),
+    # lv3 – +$1000
+    (12, 0.608, 12.5, 1000, 6,  65, 1.3, True),
+    # lv4 – +$3500
+    (15, 0.358, 13.0, 3500, 12, 90, 1.3, True),
+    # lv5 – +$12000
+    (18, 0.358, 13.5,12000, 12,160, 1.0, True),
+]
+
+
+class GoldenCowboy(Unit):
+    PLACE_COST       = 550
+    COLOR            = C_GCOWBOY
+    NAME             = "Golden Cowboy"
+    hidden_detection = False
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._shot_count   = 0      # shots fired toward cash_shot threshold
+        self._spin_timer   = 0.0   # time remaining in spin
+        self._spinning     = False
+        self._spin_t       = 0.0   # animation timer
+        self._aim_angle    = 0.0
+        self._pending_income = 0   # income to deliver to game
+        self._apply_level()
+
+    def _apply_level(self):
+        row = GCOWBOY_LEVELS[self.level]
+        (self.damage, self.firerate, self.range_tiles, _,
+         self._cash_shot, self._income, self._spin_time,
+         self.hidden_detection) = row
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(GCOWBOY_LEVELS): return None
+        return GCOWBOY_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(GCOWBOY_LEVELS):
+            self.level = nxt; self._apply_level()
+
+    def update(self, dt, enemies, effects, money):
+        self._spin_t += dt
+
+        # Spin phase — no firing
+        if self._spinning:
+            self._spin_timer -= dt
+            if self._spin_timer <= 0:
+                self._spinning = False
+                self._spin_timer = 0.0
+            return
+
+        # Normal fire
+        if self.cd_left > 0: self.cd_left -= dt
+        if self.cd_left <= 0:
+            targets = self._get_targets(enemies, 1)
+            if targets:
+                t = targets[0]
+                self._aim_angle = math.atan2(t.y - self.py, t.x - self.px)
+                self.cd_left = self.firerate
+                t.take_damage(self.damage)
+                self.total_damage += self.damage
+                self._shot_count += 1
+
+                # Cash shot threshold reached
+                if self._shot_count >= self._cash_shot:
+                    self._shot_count = 0
+                    self._spinning = True
+                    self._spin_timer = self._spin_time
+                    self._pending_income += self._income
+
+    def collect_income(self):
+        """Called by game loop to collect pending income."""
+        earned = self._pending_income
+        self._pending_income = 0
+        return earned
+
+    def draw(self, surf):
+        t  = self._spin_t
+        cx, cy = int(self.px), int(self.py)
+
+        # Outer glow (golden)
+        glow = pygame.Surface((66, 66), pygame.SRCALPHA)
+        ga = int(abs(math.sin(t * 3)) * 60 + 40)
+        pygame.draw.circle(glow, (220, 180, 40, ga), (33, 33), 31)
+        surf.blit(glow, (cx - 33, cy - 33))
+
+        pygame.draw.circle(surf, C_GCOWBOY_DARK, (cx, cy), 27)
+        pygame.draw.circle(surf, C_GCOWBOY,      (cx, cy), 21)
+        pygame.draw.circle(surf, (255, 230, 100), (cx, cy), 21, 2)
+
+        if self._spinning:
+            # Spinning gun animation — rotates fast
+            spin_a = t * 12.0  # fast spin radians
+            for i in range(2):
+                a = spin_a + i * math.pi
+                bx = cx + int(math.cos(a) * 18); by = cy + int(math.sin(a) * 18)
+                pygame.draw.line(surf, (255, 220, 80), (cx, cy), (bx, by), 4)
+                pygame.draw.circle(surf, (255, 240, 140), (bx, by), 4)
+            # Money flash
+            flash_s = pygame.Surface((50, 20), pygame.SRCALPHA)
+            frac = 1.0 - (self._spin_timer / self._spin_time)
+            fa2 = int(max(0, 200 * (1 - frac * 2)))
+            mf = pygame.font.SysFont("segoeui", 14, bold=True)
+            ms = mf.render(f"+${self._income}", True, (255, 230, 60))
+            ms.set_alpha(fa2)
+            surf.blit(ms, ms.get_rect(center=(cx, cy - 36)))
+        else:
+            # Gun barrel pointing at aim angle
+            a  = self._aim_angle
+            ca, sa = math.cos(a), math.sin(a)
+            bx1 = cx + int(ca * 8);  by1 = cy + int(sa * 8)
+            bx2 = cx + int(ca * 30); by2 = cy + int(sa * 30)
+            pygame.draw.line(surf, (200, 160, 40), (bx1, by1), (bx2, by2), 5)
+            pygame.draw.circle(surf, (255, 220, 80), (bx2, by2), 4)
+            # Barrel ring
+            pygame.draw.circle(surf, (255, 200, 60),
+                                (cx + int(ca * 20), cy + int(sa * 20)), 3)
+
+        # Hat brim decoration
+        pygame.draw.ellipse(surf, (160, 110, 20),
+                            (cx - 16, cy - 32, 32, 8))
+        pygame.draw.ellipse(surf, (200, 150, 40),
+                            (cx - 10, cy - 36, 20, 10))
+
+        # Cash shot counter above unit
+        shots_left = self._cash_shot - self._shot_count
+        sf2 = pygame.font.SysFont("consolas", 11, bold=True)
+        cs2 = sf2.render(str(shots_left), True, (255, 230, 80))
+        surf.blit(cs2, cs2.get_rect(center=(cx, cy - 42)))
+
+        # Hidden detection dot
+        if self.hidden_detection:
+            pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
+
+        # Level pips
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_GCOWBOY, (cx - 10 + i * 6, cy + 36), 3)
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (255, 255, 255, 22), (r, r), r)
+        pygame.draw.circle(s, (255, 255, 255, 60), (r, r), r, 2)
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+
+    def get_info(self):
+        shots_left = self._cash_shot - self._shot_count
+        return {
+            "Damage":   self.damage,
+            "Firerate": f"{self.firerate:.3f}",
+            "Range":    self.range_tiles,
+            "CashShot": f"${self._income} in {shots_left}/{self._cash_shot}",
+            "SpinTime": f"{self._spin_time:.1f}s",
+            "HidDet":   "YES" if self.hidden_detection else "no",
+        }
+
+
+# ── Hallow Punk ────────────────────────────────────────────────────────────────
+C_HALLOWPUNK      = (200, 80, 200)
+C_HALLOWPUNK_DARK = (60,  15,  60)
+
+# Tuple layout:
+#  (damage, firerate, range_tiles, upgrade_cost,
+#   splash_radius,   # explosion radius in tiles
+#   knockback,       # pixels pushed back on hit
+#   burn_dmg,        # burn damage per tick (0 = no burn)
+#   burn_time,       # burn duration seconds
+#   burn_tick,       # seconds between burn ticks
+#   hidden_detection)
+#
+# Mechanics:
+#  - Fires a homing rocket toward the first (farthest) enemy in range
+#  - On impact: AOE explosion hits all enemies within splash_radius tiles
+#  - All hit enemies are knocked back by knockback pixels
+#  - Lv1+: burn applied to all hit enemies
+#  - No hidden detection at any level
+
+HALLOWPUNK_LEVELS = [
+    # lv0 – place $300
+    (10, 5.008, 7.0, None,  5.0, 12.5, 0, 0.0, 0.5, False),
+    # lv1 – +$300
+    (10, 4.008, 7.0,  300,  5.0, 12.5, 1, 3.0, 0.5, False),
+    # lv2 – +$2000  (flying det, more dmg, faster rocket)
+    (30, 4.008, 8.0, 2000,  5.0, 17.5, 2, 3.0, 0.5, False),
+    # lv3 – +$8500  (big damage, bigger explosion)
+    (120,4.008, 8.0, 8500,  6.0, 17.5, 3, 5.0, 0.5, False),
+]
+
+_HALLOWPUNK_ROCKET_SPEED_BASE = 380.0
+_HALLOWPUNK_ROCKET_SPEED_LV2  = 480.0
+
+
+class HallowPunkRocket:
+    """Homing rocket that explodes on impact dealing AOE damage + knockback + burn."""
+    def __init__(self, ox, oy, target, damage, splash_r, knockback,
+                 burn_dmg, burn_time, burn_tick, speed, level):
+        self.x = float(ox); self.y = float(oy)
+        self._target = target
+        dx = target.x - ox; dy = target.y - oy
+        d  = math.hypot(dx, dy) or 1
+        self.vx = dx / d; self.vy = dy / d
+        self.speed   = speed
+        self.damage  = damage
+        self.splash_r= splash_r * TILE
+        self.knockback = knockback
+        self.burn_dmg  = burn_dmg
+        self.burn_time = burn_time
+        self.burn_tick = burn_tick
+        self.level     = level
+        self.alive = True
+        self._exploded = False
+        self._dist_left = 1400.0
+        self._trail = []   # list of (x, y, age) for smoke trail
+
+    def _explode(self, enemies):
+        for e in enemies:
+            if not e.alive: continue
+            d = math.hypot(e.x - self.x, e.y - self.y)
+            if d <= self.splash_r:
+                e.take_damage(self.damage)
+                # Knockback — push enemy backward along its path direction
+                if self.knockback > 0 and not getattr(e, 'frozen', False):
+                    push = self.knockback * max(0.2, 1.0 - d / self.splash_r)
+                    path = getattr(e, '_frosty_path', None)
+                    if path is None:
+                        from game_core import get_map_path as _gmp
+                        path = _gmp()
+                    wp = getattr(e, '_wp_index', 1)
+                    wp_idx = min(wp, len(path) - 1)
+                    wpx, wpy = path[wp_idx]
+                    dx2 = wpx - e.x; dy2 = wpy - e.y
+                    d2 = math.hypot(dx2, dy2) or 1
+                    # Push opposite to movement direction (backward)
+                    e.x -= (dx2 / d2) * push
+                    e.y -= (dy2 / d2) * push
+                # Burn (lv1+)
+                if self.burn_dmg > 0:
+                    e._fire_timer = max(getattr(e, '_fire_timer', 0.0), self.burn_time)
+                    e._fire_tick  = getattr(e, '_fire_tick', 0.0)
+                    e._fire_dmg   = self.burn_dmg
+                    e._fire_tick_interval = self.burn_tick
+
+    def update(self, dt, enemies):
+        if not self.alive: return
+        # Store trail point
+        self._trail.append((self.x, self.y, 0.0))
+        self._trail = [(x, y, a + dt) for x, y, a in self._trail if a < 0.3]
+
+        # Home on target
+        if self._target and self._target.alive:
+            dx = self._target.x - self.x; dy = self._target.y - self.y
+            d  = math.hypot(dx, dy) or 1
+            self.vx = dx / d; self.vy = dy / d
+            if d < 12:
+                self._explode(enemies)
+                self.alive = False; return
+        else:
+            # Target died — check any enemy nearby
+            for e in enemies:
+                if not e.alive: continue
+                if math.hypot(e.x - self.x, e.y - self.y) < 20:
+                    self._explode(enemies)
+                    self.alive = False; return
+
+        step = self.speed * dt
+        self.x += self.vx * step; self.y += self.vy * step
+        self._dist_left -= step
+        if self._dist_left <= 0:
+            self._explode(enemies)
+            self.alive = False
+
+    def draw(self, surf):
+        if not self.alive: return
+        # Smoke trail
+        for tx, ty, age in self._trail:
+            alpha = max(0, min(255, int(180 * (1 - age / 0.3))))
+            if alpha <= 0: continue
+            ts = pygame.Surface((10, 10), pygame.SRCALPHA)
+            pygame.draw.circle(ts, (180, 100, 200, alpha), (5, 5), 4)
+            surf.blit(ts, (int(tx) - 5, int(ty) - 5))
+        # Rocket body
+        cx, cy = int(self.x), int(self.y)
+        angle = math.degrees(math.atan2(self.vy, self.vx))
+        rs = pygame.Surface((22, 8), pygame.SRCALPHA)
+        pygame.draw.ellipse(rs, (220, 100, 220), (0, 1, 18, 6))
+        pygame.draw.polygon(rs, (255, 150, 255), [(18, 4), (22, 1), (22, 7)])
+        import pygame.transform as _pt
+        rot = _pt.rotate(rs, -angle)
+        surf.blit(rot, rot.get_rect(center=(cx, cy)))
+
+
+class HallowPunk(Unit):
+    PLACE_COST       = 300
+    COLOR            = C_HALLOWPUNK
+    NAME             = "Hallow Punk"
+    hidden_detection = False
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._rockets  = []
+        self._anim_t   = 0.0
+        self._aim_angle= 0.0
+        self._apply_level()
+
+    def _apply_level(self):
+        row = HALLOWPUNK_LEVELS[self.level]
+        (self.damage, self.firerate, self.range_tiles, _,
+         self._splash_r, self._knockback,
+         self._burn_dmg, self._burn_time, self._burn_tick,
+         self.hidden_detection) = row
+        self._rocket_speed = (_HALLOWPUNK_ROCKET_SPEED_LV2
+                               if self.level >= 2 else _HALLOWPUNK_ROCKET_SPEED_BASE)
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(HALLOWPUNK_LEVELS): return None
+        return HALLOWPUNK_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(HALLOWPUNK_LEVELS):
+            self.level = nxt; self._apply_level()
+
+    def _tick_burn(self, enemies, dt):
+        for e in enemies:
+            if not e.alive: continue
+            ft = getattr(e, '_fire_timer', 0.0)
+            if ft <= 0: continue
+            e._fire_timer = max(0.0, ft - dt)
+            e._fire_tick  = getattr(e, '_fire_tick', 0.0) + dt
+            tick_interval = getattr(e, '_fire_tick_interval', 0.5)
+            if e._fire_tick >= tick_interval:
+                e._fire_tick -= tick_interval
+                bdmg = getattr(e, '_fire_dmg', 1)
+                e.take_damage(bdmg)
+                self.total_damage += bdmg
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t += dt
+        if self.cd_left > 0: self.cd_left -= dt
+        self._tick_burn(enemies, dt)
+
+        if self.cd_left <= 0:
+            targets = self._get_targets(enemies, 1)
+            if targets:
+                t = targets[0]
+                self._aim_angle = math.atan2(t.y - self.py, t.x - self.px)
+                self.cd_left = self.firerate
+                self._rockets.append(HallowPunkRocket(
+                    self.px, self.py, t,
+                    self.damage, self._splash_r, self._knockback,
+                    self._burn_dmg, self._burn_time, self._burn_tick,
+                    self._rocket_speed, self.level
+                ))
+                self.total_damage += self.damage
+
+        for r in self._rockets: r.update(dt, enemies)
+        self._rockets = [r for r in self._rockets if r.alive]
+
+    def draw(self, surf):
+        t  = self._anim_t
+        cx, cy = int(self.px), int(self.py)
+
+        # Outer glow
+        glow = pygame.Surface((66, 66), pygame.SRCALPHA)
+        ga = int(abs(math.sin(t * 2.5)) * 50 + 30)
+        pygame.draw.circle(glow, (180, 60, 180, ga), (33, 33), 31)
+        surf.blit(glow, (cx - 33, cy - 33))
+
+        pygame.draw.circle(surf, C_HALLOWPUNK_DARK, (cx, cy), 27)
+        pygame.draw.circle(surf, C_HALLOWPUNK,      (cx, cy), 21)
+        pygame.draw.circle(surf, (240, 140, 240),    (cx, cy), 21, 2)
+
+        # Launcher tube pointing at aim angle
+        a  = self._aim_angle
+        ca, sa = math.cos(a), math.sin(a)
+        bx1 = cx + int(ca * 6);  by1 = cy + int(sa * 6)
+        bx2 = cx + int(ca * 28); by2 = cy + int(sa * 28)
+        pygame.draw.line(surf, (160, 60, 160), (bx1, by1), (bx2, by2), 7)
+        pygame.draw.line(surf, (220, 120, 220), (bx1, by1), (bx2, by2), 4)
+        pygame.draw.circle(surf, (240, 160, 240), (bx2, by2), 5)
+
+        # Explosion radius indicator when hovering (draw_range handles this)
+
+        # Level pips
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_HALLOWPUNK, (cx - 6 + i * 6, cy + 36), 3)
+
+        # Rockets
+        for r in self._rockets: r.draw(surf)
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (255, 255, 255, 22), (r, r), r)
+        pygame.draw.circle(s, (255, 255, 255, 60), (r, r), r, 2)
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+        # Also show explosion radius
+        er = int(self._splash_r * TILE)
+        es = pygame.Surface((er * 2, er * 2), pygame.SRCALPHA)
+        pygame.draw.circle(es, (220, 80, 220, 18), (er, er), er)
+        pygame.draw.circle(es, (220, 80, 220, 50), (er, er), er, 1)
+        surf.blit(es, (int(self.px) - er, int(self.py) - er))
+
+    def get_info(self):
+        info = {
+            "Damage":   self.damage,
+            "Firerate": f"{self.firerate:.3f}",
+            "Range":    self.range_tiles,
+            "Splash":   f"{self._splash_r} tiles",
+            "Knockback":f"{self._knockback}px",
+        }
+        if self._burn_dmg > 0:
+            info["Burn"] = f"{self._burn_dmg}/tick {self._burn_time:.0f}s"
         return info

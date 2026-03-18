@@ -1257,10 +1257,10 @@ class Permafrost(Enemy):
         if hovered: self._hover_label(surf)
 
 class FrostHunter(Enemy):
-    DISPLAY_NAME="Frost Hunter"; BASE_HP=2800; BASE_SPEED=28; KILL_REWARD=2800
+    DISPLAY_NAME="Frost Hunter"; BASE_HP=2000; BASE_SPEED=28; KILL_REWARD=2800
     def __init__(self, wave=1):
         super().__init__(wave)
-        self.hp=2800; self.maxhp=2800; self.speed=self.BASE_SPEED+(wave-1); self.radius=32
+        self.hp=2000; self.maxhp=2000; self.speed=self.BASE_SPEED+(wave-1); self.radius=32
         self._rot=0.0
     def update(self, dt):
         self._rot+=dt*60; return super().update(dt)
@@ -1310,10 +1310,10 @@ class UnstableIce(Enemy):
         if hovered: self._hover_label(surf)
 
 class FrostWraith(Enemy):
-    DISPLAY_NAME="Frost Wraith"; BASE_HP=1500; BASE_SPEED=68; KILL_REWARD=1750
+    DISPLAY_NAME="Frost Wraith"; BASE_HP=600; BASE_SPEED=68; KILL_REWARD=1750
     def __init__(self, wave=1):
         super().__init__(wave)
-        self.hp=1500; self.maxhp=1500; self.speed=self.BASE_SPEED+(wave-1)*2; self.radius=22
+        self.hp=600; self.maxhp=600; self.speed=self.BASE_SPEED+(wave-1)*2; self.radius=22
         self._rot=0.0
     def update(self, dt):
         self._rot+=dt*120; return super().update(dt)
@@ -1338,11 +1338,11 @@ class FrostWraith(Enemy):
         if hovered: self._hover_label(surf)
 
 class FrostAcolyte(Enemy):
-    DISPLAY_NAME="Frost Acolyte"; BASE_HP=4750; BASE_SPEED=28; KILL_REWARD=5000
+    DISPLAY_NAME="Frost Acolyte"; BASE_HP=3050; BASE_SPEED=28; KILL_REWARD=5000
     SLOW_RESISTANCE=1.0
     def __init__(self, wave=1):
         super().__init__(wave)
-        self.hp=4750; self.maxhp=4750; self.speed=self.BASE_SPEED+(wave-1); self.radius=28
+        self.hp=3050; self.maxhp=3050; self.speed=self.BASE_SPEED+(wave-1); self.radius=28
         self._rot=0.0; self._stun_immune=True
     def update(self, dt):
         # Fully immune to freeze/slow — reset all slow/freeze state every frame
@@ -1375,10 +1375,10 @@ class FrostAcolyte(Enemy):
 
 # ── New Frosty enemies ─────────────────────────────────────────────────────────
 class FrostUndead(Enemy):
-    DISPLAY_NAME="Frost Undead"; BASE_HP=3250; BASE_SPEED=140; KILL_REWARD=3000
+    DISPLAY_NAME="Frost Undead"; BASE_HP=800; BASE_SPEED=140; KILL_REWARD=3000
     def __init__(self, wave=1):
         super().__init__(wave)
-        self.hp=3250; self.maxhp=3250
+        self.hp=800; self.maxhp=800
         self.speed=self.BASE_SPEED+(wave-1)*5
         self.radius=20
         self._rot=0.0
@@ -1777,18 +1777,18 @@ FROSTY_WAVE_DATA = [
     ([(Frostmite,5),(PackedIceEnemy,2),(FrozenEnemy,5),(SnowyEnemy,6),(SnowMinion,1)],           698, 139),                  # 11
     ([(ColdMist,6),(SnowMinion,1)],                                                              759, 156),                  # 12
     ([(FrostMystery,12)],                                                                        800, 160),                  # 13
-    ([(Frostmite,3),(Permafrost,2),(SnowMinion,2)],                                              851, 170),                  # 14
+    ([(Frostmite,2),(Permafrost,1),(SnowMinion,2)],                                              851, 170),                  # 14
     ([(ColdMist,3),(PackedIceEnemy,3),(FrostHunter,1),(SnowMinion,2)],             874, 180),                  # 15
     ([(UnstableIce,2),(FrostMystery,8),(PackedIceEnemy,5)],                                      954, 190),                  # 16
     ([(Permafrost,1),(UnstableIce,1),(SnowyEnemy,6),(Frostmite,6),(ColdMist,6)],                 978, 200),                  # 17
-    ([(Permafrost,3),(FrostMystery,6),(FrostWraith,2),(Frostmite,5)],                            995, 205),                  # 18
-    ([(SnowMinion,4),(ColdMist,5),(Frostmite,6),(Permafrost,1),(FrostAcolyte,1)],               1057, 211),                  # 19
-    ([(FrostHunter,4),(FrostAcolyte,1)],                                                        1109, 221),                  # 20
-    ([(Permafrost,1),(UnstableIce,1),(Frostmite,6),(SnowMinion,6),(FrostAcolyte,2)],            1161, 232),                  # 21
-    ([(UnstableIce,5),(SnowMinion,5),(FrostHunter,1),(FrostAcolyte,1)],                          1213, 242),                  # 22
-    ([(Frostmite,4),(FrostWraith,2),(FrostUndead,2),(FrostMystery,5),(Permafrost,4)],            1265, 253),                  # 23
-    ([(UnstableIce,2),(ColdMist,5),(SnowMinion,4),(FrostInvader,1)],                             1317, 273),                  # 24
-    ([(FrostAcolyte,3),(MegaFrostMystery,7)],                                                    1421, 286),                  # 25
+    ([(FrostMystery,2),(FrostWraith,1),(Frostmite,2)],                                          995, 205),                  # 18
+    ([(SnowMinion,2),(ColdMist,3),(Frostmite,3),(Permafrost,1),(FrostAcolyte,1)],              1057, 211),                  # 19
+    ([(FrostHunter,1),(FrostAcolyte,1)],                                                       1109, 221),                  # 20
+    ([(Permafrost,1),(UnstableIce,1),(Frostmite,1),(SnowMinion,2),(FrostAcolyte,1)],            1161, 232),                  # 21
+    ([(UnstableIce,2),(SnowMinion,2),(FrostHunter,1),(FrostAcolyte,1)],                          1213, 242),                  # 22
+    ([(Frostmite,2),(FrostWraith,1),(FrostUndead,2),(FrostMystery,2),(Permafrost,2)],            1265, 253),                  # 23
+    ([(UnstableIce,2),(ColdMist,3),(SnowMinion,2),(FrostInvader,1)],                             1317, 273),                  # 24
+    ([(FrostAcolyte,3),(MegaFrostMystery,5)],                                                    1421, 286),                  # 25
     ([(UnstableIce,2),(FrostUndead,1),(FrostHunter,2),(FrostWraith,5),(FrostMystery,6)],         1467, 297),                  # 26
     ([(UnstableIce,3),(FrostInvader,1),(MegaFrostMystery,3),(FrostUndead,4)],                    1526, 305),                  # 27
     ([(FrostInvader,1),(UnstableIce,2),(Permafrost,5),(MegaFrostMystery,3),(FrostRavager,1)],    1579, 315),                  # 28

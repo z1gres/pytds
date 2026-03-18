@@ -1,4 +1,5 @@
 lmoney, bmoney больше на 150 на каждой волне, мне лень переписывать извинитесь
+страта внизу
 
 wave 1:
 4 frozen
@@ -117,24 +118,23 @@ lmoney 978
 bmoney 200
 
 wave 18:
-3 permafrost
-6 frost mystery
-2 frost wraith
-5 frostmite
+2 frost mystery
+1 frost wraith
+2 frostmite
 lmoney 995
 bmoney 205
 
 wave 19:
-4 snow minion
-5 cold mist
-6 frostmite
+2 snow minion
+3 cold mist
+3 frostmite
 1 permafrost
 1 frost acolyte
 lmoney 1057
 bmoney 211
 
 wave 20:
-4 frost hunter
+1 frost hunter
 1 frost acolyte
 lmoney 1109
 bmoney 221
@@ -142,41 +142,41 @@ bmoney 221
 wave 21:
 1 permafrost
 1 unstable ice
-6 frostmite
-6 snow minion
-2 frost acolyte
+1 frostmite
+2 snow minion
+1 frost acolyte
 lmoney 1161
 bmoney 232
 
 wave 22:
-5 unstable ice
-5 snow minion
+2 unstable ice
+2 snow minion
 1 frost hunter
 1 frost acolyte
 lmoney 1213
 bmoney 242
 
 wave 23:
-4 frostmite
-2 frost wraith
-2 frost undead
-5 frost mystery
-4 permafrost
+2 frostmite
+1 frost wraith
+1 frost undead
+2 frost mystery
+1 permafrost
 
 lmoney 1265
 bmoney 253
 
 wave 24:
 2 unstable ice
-5 cold mist
-4 snow minion
+3 cold mist
+2 snow minion
 1 frost invader
 lmoney 1317
 bmoney 273
 
 wave 25:
 3 frost acolyte
-7 mega frost mystery
+5 mega frost mystery
 lmoney 1421
 bmoney 286
 
@@ -312,3 +312,26 @@ wave 40:
 
 lmoney -
 bmoney -
+
+
+Toxic Gunner, Gladiator, Slasher, Accelerator, Frost Blaster
+EVERY Unit nearest target
+Do NOT skip
+
+wave 1: gladiator lv0
+wave 2:  2 gladiator lv0
+wave 3: 2 gladiator lv1
+wave 4-6: 2 frost blaster lv0
+wave 7:  2 slasher lv0
+wave 8: 2 frost blaster lv1
+wave 9:  2 slasher lv1, 1 toxic gunner lv1
+wave 10: 5 frost blaster lv1
+wave 11: 6 frost blaster lv1, 2 toxic gunner lv1
+wave 12: 2 toxic gunner lv2
+wave 13: 3 slasher lv1, 3 toxic gunner lv2
+wave 14-15: 6 frost blaster lv2, 2 gladiator lv2
+wave 16-18: 2 accelerator lv2
+wave 19: 2 gladiator lv3
+wave 20: 3 accelerator lv2
+wave 21: 4 frost blaster lv3
+wave 22-23: 5 accelerator lv2
