@@ -2831,18 +2831,6 @@ class LoadoutScreen:
         left_bg.fill((12, 15, 24, 180))
         surf.blit(left_bg, (0, TOP))
 
-        # "Your loadout" label above slots
-        slot_rects = self._slot_rects(left_w)
-        lbl_y = slot_rects[0].top - 28
-        lbl_f = pygame.font.SysFont("segoeui", 16, bold=True)
-        lbl_s = lbl_f.render("ТВОЙ ЛОДАУТ  (кликни чтобы убрать)", True, C_GOLD)
-        surf.blit(lbl_s, lbl_s.get_rect(centerx=left_w // 2, y=lbl_y))
-
-        # Hint text above label
-        hint_f = pygame.font.SysFont("segoeui", 15)
-        hs = hint_f.render("Выбери юнит справа → кликни на слот", True, (55, 68, 95))
-        surf.blit(hs, hs.get_rect(centerx=left_w // 2, y=lbl_y - 24))
-
         _col_map_slot = {
             "Assassin": C_ASSASSIN,        "Lifestealer": C_LIFESTEALER,
             "Archer":   C_ARCHER,          "Red Ball":    C_REDBALL,
