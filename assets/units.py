@@ -3669,9 +3669,6 @@ class SnowballerBall:
         self._dist_left -= step
         if self._dist_left <= 0:
             self._explode(); self.alive = False
-        # Store explosion flash for drawing
-        if not self.alive and self.explosive and self.splash_r > 0:
-            self._flash = {"r": self.splash_r, "x": self.x, "y": self.y, "t": 0.18}
 
     def draw(self, surf):
         if not self.alive: return
@@ -4082,9 +4079,6 @@ class CommandoGrenade:
         self._dist_left -= step
         if self._dist_left <= 0:
             self._explode(); self.alive = False
-        # Store explosion flash for drawing
-        if not self.alive and self.explosive and self.splash_r > 0:
-            self._flash = {"r": self.splash_r, "x": self.x, "y": self.y, "t": 0.18}
 
     def draw(self, surf):
         if not self.alive: return

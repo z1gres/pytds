@@ -183,7 +183,7 @@ UNIT_LIMITS = {
     "Hallow Punk":    10,
     "Spotlight Tech": 1,
     "Commander":      3,
-    "Snowballer":     3,
+    "Snowballer":     4,
     "Commando":       4,
 }
 

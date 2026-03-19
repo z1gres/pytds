@@ -3400,17 +3400,34 @@ class Game:
             game_core.CURRENT_MAP = "frosty"
 
 
+        # ── Frosty BGM: start on game init ───────────────────────────────────
+        if self.mode == "frosty":
+            _bgm1 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "sound", "frostymode1.mp3")
+            try:
+                pygame.mixer.music.load(_bgm1)
+                pygame.mixer.music.set_volume(0.0 if SETTINGS.get("music_muted") else SETTINGS.get("music_volume", 0.7))
+                pygame.mixer.music.set_endevent(pygame.USEREVENT + 1)
+                pygame.mixer.music.play(0)
+                self._frosty_bgm_active = True
+                self._frosty_bgm_track = 1
+            except Exception:
+                pass
+
     def _give_wave_coins(self, wave_num):
-        if self.mode not in ("easy","fallen","frosty"): return
+        if self.mode not in ("easy", "fallen", "frosty"): return
         if wave_num <= self._last_coin_wave: return
         waves_done = wave_num - self._last_coin_wave
         self._last_coin_wave = wave_num
-        self._wave_coin_accum += waves_done * 0.5
+        # Easy: 200 total / 20 waves = 10 per wave
+        # Fallen: 750 total / 40 waves = 18.75 per wave
+        # Frosty: 1500 total / 40 waves = 37.5 per wave
+        rate = {"easy": 10.0, "fallen": 18.75, "frosty": 37.5}.get(self.mode, 10.0)
+        self._wave_coin_accum += waves_done * rate
         whole = int(self._wave_coin_accum)
         if whole > 0:
             self._wave_coin_accum -= whole
             self._end_coin_reward += whole
-            self.save_data["coins"] = self.save_data.get("coins",0) + whole
+            self.save_data["coins"] = self.save_data.get("coins", 0) + whole
             write_save(self.save_data)
 
     def _apply_stun(self, unit, duration):
@@ -3563,8 +3580,21 @@ class Game:
                     self.running = False; return
                 if ev.type == pygame.USEREVENT + 1:
                     if not self.game_over and not self.win:
-                        try: pygame.mixer.music.play(0, start=8.7)
-                        except: pass
+                        if self.mode == "frosty" and self._frosty_bgm_active and not self._frosty_bgm_stopped:
+                            # Alternate between frostymode1 and frostymode2
+                            self._frosty_bgm_track = 2 if self._frosty_bgm_track == 1 else 1
+                            _bgm = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                "assets", "sound", f"frostymode{self._frosty_bgm_track}.mp3")
+                            try:
+                                pygame.mixer.music.load(_bgm)
+                                pygame.mixer.music.set_volume(0.0 if SETTINGS.get("music_muted") else SETTINGS.get("music_volume", 0.7))
+                                pygame.mixer.music.set_endevent(pygame.USEREVENT + 1)
+                                pygame.mixer.music.play(0)
+                            except Exception:
+                                pass
+                        else:
+                            try: pygame.mixer.music.play(0, start=8.7)
+                            except: pass
                 if ev.type == pygame.MOUSEWHEEL and self.mode == "sandbox":
                     if self.ui.admin_panel.visible:
                         self.ui.admin_panel.handle_scroll(ev.y); continue
@@ -3597,6 +3627,23 @@ class Game:
                     if ev.key == pygame.K_x and self.ui.open_unit:
                         u = self.ui.open_unit
                         self.money += self.ui._sell_value(u)
+                    if ev.key == pygame.K_f:
+                        # Activate ability of open_unit, or first ready ability
+                        activated = False
+                        target = self.ui.open_unit
+                        if target is None:
+                            # Find first unit with ready ability
+                            for _u in self.units:
+                                if _u.ability and _u.ability.ready():
+                                    target = _u; break
+                        if target:
+                            if target.ability and target.ability.ready():
+                                target.ability.activate(self.enemies, self.effects)
+                                activated = True
+                            elif not activated:
+                                ab2 = getattr(target, 'ability2', None)
+                                if ab2 and ab2.ready():
+                                    ab2.activate(self.enemies, self.effects)
                         self.units.remove(u); self.ui.open_unit = None
                     slot_keys = {pygame.K_1:0,pygame.K_2:1,pygame.K_3:2,pygame.K_4:3,pygame.K_5:4}
                     if ev.key in slot_keys and not self.console.visible:
@@ -3835,6 +3882,11 @@ class Game:
     
                 # Wave 40 in frosty mode: play frostspirit.mp3 → spawn Frost Spirit after 28s
                 if self.mode=="frosty" and self.wave_mgr.wave==40 and not self._frost_spirit_spawned:
+                    if self._frosty_bgm_active and not self._frosty_bgm_stopped:
+                        self._frosty_bgm_stopped = True
+                        self._frosty_bgm_active = False
+                        try: pygame.mixer.music.stop()
+                        except: pass
                     if self._frost_spirit_music_timer is None:
                         _music_path=os.path.join(os.path.dirname(os.path.abspath(__file__)),"assets","sound","frostspirit.mp3")
                         try:
