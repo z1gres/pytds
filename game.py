@@ -120,6 +120,12 @@ from units import (
     SpotlightTech, SPOTLIGHTTECH_LEVELS,
     C_SPOTLIGHT, C_SPOTLIGHT_DARK,
     C_FREEZER, C_FREEZER_DARK,
+    Commander, COMMANDER_LEVELS,
+    C_COMMANDER, C_COMMANDER_DARK,
+    Snowballer, SNOWBALLER_LEVELS,
+    C_SNOWBALLER, C_SNOWBALLER_DARK,
+    Commando, COMMANDO_LEVELS,
+    C_COMMANDO, C_COMMANDO_DARK,
     SPAWN_MAP, CONSOLE_HELP,
     C_LIFESTEALER, C_LIFESTEALER_DARK,
     C_FROST, C_FROST_DARK, C_FROST_ICE,
@@ -1810,6 +1816,9 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
             "Golden Cowboy": C_GCOWBOY,
             "Hallow Punk": C_HALLOWPUNK,
             "Spotlight Tech": C_SPOTLIGHT,
+            "Snowballer": C_SNOWBALLER,
+            "Commander": C_COMMANDER,
+            "Commando": C_COMMANDO,
         }
         unit_col = _col_map.get(unit_name, C_ASSASSIN)
         pygame.draw.circle(surf, (30, 20, 50), (icon_cx, icon_cy), 36)
@@ -1825,7 +1834,8 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
                 "Lifestealer": 400, "Archer": 400, "Red Ball": 1000, "Farm": 250,
                 "Frost Blaster": 800, "Sledger": 950, "Gladiator": 500,
                 "Toxic Gunner": 525, "Slasher": 1700, "Golden Cowboy": 550,
-                "Hallow Punk": 300, "Spotlight Tech": 3250}
+                "Hallow Punk": 300, "Spotlight Tech": 3250,
+                "Snowballer": 400, "Commander": 2500, "Commando": 900}
     cost = cost_map.get(unit_name)
     if cost:
         ico_m = load_icon("money_ico", 18)
@@ -2601,6 +2611,9 @@ ALL_UNITS_POOL = [
     {"name": "Golden Cowboy",  "rarity": "epic"},
     {"name": "Hallow Punk",    "rarity": "rare"},
     {"name": "Spotlight Tech", "rarity": "epic"},
+    {"name": "Snowballer",     "rarity": "rare"},
+    {"name": "Commander",      "rarity": "epic"},
+    {"name": "Commando",       "rarity": "rare"},
 ]
 
 # Coin cost to unlock units (None = not purchasable / exclusive)
@@ -2621,6 +2634,9 @@ UNIT_SHOP_PRICES = {
     "Golden Cowboy":  3500,
     "Hallow Punk":    600,
     "Spotlight Tech": 5000,
+    "Snowballer":     700,
+    "Commander":      2000,
+    "Commando":       800,
 }
 
 class LoadoutScreen:
@@ -3115,7 +3131,10 @@ class Game:
                         "Toxic Gunner": ToxicGunner, "Slasher": Slasher,
                         "Golden Cowboy": GoldenCowboy,
                         "Hallow Punk": HallowPunk,
-                        "Spotlight Tech": SpotlightTech}
+                        "Spotlight Tech": SpotlightTech,
+                        "Snowballer": Snowballer,
+                        "Commander": Commander,
+                        "Commando": Commando}
         _loadout = self.save_data.get("loadout", ["Assassin", "Accelerator", None, None, None])
         while len(_loadout) < 5: _loadout.append(None)
         self.ui.SLOT_TYPES = [_name_to_cls.get(n) if n else None for n in _loadout]
@@ -3640,6 +3659,11 @@ class Game:
             if isinstance(u,Lifestealer):
                 pm=getattr(u,'_pending_money',0)
                 if pm>0: self.money+=pm; u._pending_money=0
+
+        # Commander: apply firerate buff to nearby units
+        for u in self.units:
+            if isinstance(u, Commander):
+                u.update_buff(self.units)
 
         # Collect GoldenCowboy cash shot income
         for u in self.units:

@@ -3368,7 +3368,18 @@ class TripleUpgradeAbility:
     def ready(self):
         return self.cd_left <= 0 and self._active_timer <= 0
 
-    def activate(self, units):
+    def activate(self, enemies_or_units=None, effects=None):
+        """
+        Compatible with both the generic ability call activate(enemies, effects)
+        and the direct call activate(units).
+        We locate the game's unit list via the owner's internal state — or fall
+        back to the first argument if it looks like a unit list.
+        """
+        # The generic UI calls activate(enemies, effects); enemies_or_units is
+        # the enemy list in that case, which we don't need.
+        # We reach into the game via the owner to get the unit list.
+        # The owner's update_buff was called with self.units, so we go up:
+        units = getattr(self.owner, '_game_units_ref', enemies_or_units) or []
         if not self.ready():
             return False
         self.cd_left = self.cooldown
@@ -3482,6 +3493,7 @@ class Commander(Unit):
 
     def update_buff(self, units):
         """Called from game loop AFTER all unit updates to apply buff."""
+        self._game_units_ref = units
         self._apply_buff(units)
 
     def draw(self, surf):
