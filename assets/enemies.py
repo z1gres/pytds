@@ -1440,11 +1440,11 @@ class FrostInvader(Enemy):
         if hovered: self._hover_label(surf)
 
 class MegaFrostMystery(Enemy):
-    DISPLAY_NAME="Mega Frost Mystery"; BASE_HP=600; BASE_SPEED=140; KILL_REWARD=1500
+    DISPLAY_NAME="Mega Frost Mystery"; BASE_HP=600; BASE_SPEED=55; KILL_REWARD=1500
     def __init__(self, wave=1):
         super().__init__(wave)
         self.hp=600; self.maxhp=600
-        self.speed=self.BASE_SPEED+(wave-1)*5
+        self.speed=self.BASE_SPEED+(wave-1)*3
         self.radius=16
         self._rot=0.0
     def update(self, dt):
@@ -1560,7 +1560,7 @@ class TricksterElf(Enemy):
         if hovered: self._hover_label(surf)
 
 class Yeti(Enemy):
-    DISPLAY_NAME="Yeti"; BASE_HP=12000; BASE_SPEED=66; KILL_REWARD=10000
+    DISPLAY_NAME="Yeti"; BASE_HP=12000; BASE_SPEED=28; KILL_REWARD=10000
     def __init__(self, wave=1):
         super().__init__(wave)
         self.hp=12000; self.maxhp=12000

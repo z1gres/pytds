@@ -78,7 +78,7 @@ from enemies import (
     FallenDreg, FallenSquire, FallenSoul, FallenEnemy, FallenGiant, FallenHazmat,
     PossessedArmorInner, PossessedArmor, FallenNecromancer, CorruptedFallen,
     FallenJester, NecroticSkeleton, FallenBreaker, FallenRusher, FallenHonorGuard,
-    FallenShield, FallenHero, FallenKing, TrueFallenKing,
+    FallenShield, FallenHero, FallenKing,
     WAVE_DATA, FALLEN_WAVE_DATA, FALLEN_MAX_WAVES,
     BREAKER_POOL, FALLEN_BREAKER_POOL,
     WaveManager,
@@ -218,34 +218,6 @@ class DevConsole:
             game.wave_mgr.wave = 40
             game.wave_mgr.state = "waiting"
             self.output_lines.append("  fk_test: wave 40 queued — music starts now")
-        elif c=="tf_test":
-            fk=FallenKing(1)
-            fk.hp=10000; fk.maxhp=10000; fk.x=-30.0
-            game.enemies.append(fk)
-            game._tf_king=fk
-            game._tf_phase=None
-            game._tf_timer=0.0
-            game._tf_black_alpha=0
-            game._tf_text1_alpha=0
-            game._tf_text2_alpha=0
-            game._tf_text3_alpha=0
-            game._tf_music_started=False
-            game._tf_spawn_timer=None
-            game._tf_wave41_active=False
-            game._tf_miniboss=None
-            game._tf_miniboss_timer=None
-            game._tf_miniboss_music_timer=None
-            game._tf_miniboss_spawned=False
-            game._tf_ceremony_phase=None
-            game._tf_ceremony_timer=0.0
-            game._tf_ceremony_flash_alpha=0
-            game._tf_ceremony_flash_color=(255,255,255)
-            game._tf_music_switch_done=False
-            game._tf_retreat_timer=None
-            game._tf_tfk=None
-            game._tf_music_first_play=True
-            game.wave_mgr._tf_wave41_override=False
-            self.output_lines.append("  tf_test: Fallen King spawned (10000 HP)")
         elif c=="5":
             game._x5000_dmg = not getattr(game,"_x5000_dmg",False)
             state = "ON" if game._x5000_dmg else "OFF"
@@ -475,6 +447,7 @@ class AdminPanel:
                 ("GoldCowboy",GoldenCowboy,C_GCOWBOY),
                 ("HallowPunk",HallowPunk,C_HALLOWPUNK),
                 ("Spotlight",SpotlightTech,C_SPOTLIGHT),
+                ("ST Old",SpotlightTech,C_SPOTLIGHT),
             ]
             active_cls=set(s for s in (ui_ref.SLOT_TYPES if ui_ref else []) if s)
             for i,(name,cls,col) in enumerate(unit_list):
@@ -566,7 +539,7 @@ class AdminPanel:
         # Scrollbar for scrollable tabs
         if self.tab in ("enemy","units"):
             _sb_cols=5
-            n_items=len(ADMIN_ENEMY_LIST) if self.tab=="enemy" else 16
+            n_items=len(ADMIN_ENEMY_LIST) if self.tab=="enemy" else 17
             rows=((n_items+_sb_cols-1)//_sb_cols)
             total_h=rows*(ch+gap)
             if total_h>content_h:
@@ -990,9 +963,9 @@ class UI:
             return result
         elif cls==SpotlightTech:
             if nxt>=len(SPOTLIGHTTECH_LEVELS): return None
-            d,fr,r,_,br,bdmg,bt,btk,exp,conf=SPOTLIGHTTECH_LEVELS[nxt]
-            result={"Damage":d,"Firerate":fr,"Range":r,"BeamR":f"{br} tiles"}
-            if bdmg>0: result["Burn"]=f"{bdmg}/tick"
+            d,fr,r,_,br,bdmg,bt,btk,exp,conf,hd=SPOTLIGHTTECH_LEVELS[nxt]
+            result={"Damage":d,"Firerate":fr,"Range":r,"BeamCircle":f"{br} tiles"}
+            if bdmg>0: result["Burn"]=f"{bdmg}/tick {bt:.0f}s"
             if exp and not unit._expose_hidden: result["Expose"]="Hidden Expose"
             if conf>0: result["Confuse"]=f"@{conf} dmg"
             return result
@@ -1017,8 +990,6 @@ class UI:
             self._admin_btn_rect=ap_r
         else:
             wave_str="good luck" if gl else f"WAVE  {wave}/{wave_mgr.max_waves}"
-            if getattr(wave_mgr,'_tf_wave41_override',False):
-                wave_str="WAVE  41/40"
             txt(surf,wave_str,(18,14),C_RED if gl else C_CYAN,font_lg)
             tl=wave_mgr.time_left()
             if tl is not None and not gl: txt(surf,f"Next: {tl:.1f}s",(210,18),C_GOLD,font_sm)
@@ -1423,7 +1394,7 @@ class UI:
                     ("Damage",   u.damage,             nxt.get("Damage")   if nxt else None),
                     ("Firerate", f"{u.firerate:.3f}",   f"{nxt['Firerate']:.3f}" if nxt else None),
                     ("Range",    u.range_tiles,          nxt.get("Range")   if nxt else None),
-                    ("BeamR",    f"{u._beam_r} tiles",   nxt.get("BeamR")   if nxt else None),
+                    ("BeamCircle", f"{u._beam_r} tiles", nxt.get("BeamCircle") if nxt else None),
                     ("Burn",     f"{u._burn_dmg}/tick" if u._burn_dmg else "—",
                                   nxt.get("Burn") if nxt else None),
                     ("Expose",   "YES" if u._expose_hidden else "lv2+", None),
@@ -1449,7 +1420,7 @@ class UI:
                          "Poison":(100,220,80),"Crit":(255,160,40),"Bleed":(200,40,40),
                          "CashShot":(255,220,60),"SpinTime":(200,180,100),
                          "Burn":(255,130,30),"Knockback":(200,160,255),"Splash":(220,100,220),
-                         "BeamR":(255,240,80),"Expose":(100,255,200),"Confuse":(200,100,255)}
+                         "BeamCircle":(255,240,80),"Expose":(100,255,200),"Confuse":(200,100,255)}
 
             # === TOP HALF: portrait left + STATS right ===
             # For Frostcelerator: stun bar at very top of card
@@ -1854,7 +1825,7 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
                 "Lifestealer": 400, "Archer": 400, "Red Ball": 1000, "Farm": 250,
                 "Frost Blaster": 800, "Sledger": 950, "Gladiator": 500,
                 "Toxic Gunner": 525, "Slasher": 1700, "Golden Cowboy": 550,
-                "Hallow Punk": 300, "Spotlight Tech": 4000}
+                "Hallow Punk": 300, "Spotlight Tech": 3250}
     cost = cost_map.get(unit_name)
     if cost:
         ico_m = load_icon("money_ico", 18)
@@ -2051,7 +2022,7 @@ class FrostyWarningScreen:
         lines = [
             ("Frosty — невероятно сложный режим.", (220, 200, 200)),
             ("Он может быть практически невозможным", (200, 180, 180)),
-            ("без правильных юнитов и стратегии.", (200, 180, 180)),
+            ("без правильных юнитов и афаыаф543цне435упкыцк.", (200, 180, 180)),
             ("", None),
             ("Продолжить?", (160, 200, 255)),
         ]
@@ -2653,27 +2624,61 @@ UNIT_SHOP_PRICES = {
 }
 
 class LoadoutScreen:
+    """
+    Layout (1920x1080):
+      - Top bar (0..70): title, back, coins
+      - Vertical divider at x = SCREEN_W * 0.40 = 768
+      - LEFT zone  (x 0..768):  empty space + loadout slots at the bottom
+      - RIGHT zone (x 768..1920): scrollable rarity sections with unit cards
+      - No bottom strip outside the left zone — slots live inside the left area
+    """
+
+    _RARITY_ORDER = ["starter", "common", "rare", "epic", "exclusive"]
+    _RARITY_HDR_COL = {
+        "starter":   (180, 180, 190),
+        "common":    ( 80, 210,  80),
+        "rare":      ( 80, 150, 255),
+        "epic":      (200, 100, 255),
+        "exclusive": (255,  60,  60),
+    }
+    _RARITY_HDR_LINE = {
+        "starter":   (100, 100, 110),
+        "common":    ( 40, 120,  40),
+        "rare":      ( 40,  80, 180),
+        "epic":      (120,  40, 180),
+        "exclusive": (160,  20,  20),
+    }
+
+    # Layout split: left zone = 40%, right zone = 60%
+    _SPLIT    = 0.40
+    # Card geometry inside right zone
+    _CW       = 155
+    _CH       = 195
+    _COLS     = 5
+    _HGAP     = 14
+    _VGAP     = 16
+    _SEC_PAD_T = 32
+    _SEC_PAD_B = 18
+
     def __init__(self, screen, save_data):
-        self.screen = screen
+        self.screen    = screen
         self.save_data = save_data
-        self.t = 0.0
-        self.running = True
-        self.loadout = list(save_data.get("loadout", ["Assassin", None, None, None, None]))
+        self.t         = 0.0
+        self.running   = True
+        self.loadout   = list(save_data.get("loadout", ["Assassin", None, None, None, None]))
         while len(self.loadout) < 5:
             self.loadout.append(None)
-        # ensure owned_units list exists
         if "owned_units" not in self.save_data:
             self.save_data["owned_units"] = ["Assassin"]
-        self.selected_inventory = None
-        self.selected_slot = None
-        self.scroll_y = 0
-        self.btn_back = pygame.Rect(20, 20, 120, 40)
-        self.categories = ["All", "starter", "common", "rare", "epic", "exclusive"]
-        self.cat_filter = "All"
-        self.cat_rects = []
-        self.msg = ""
+        self.selected  = None   # (rarity, idx) or None
+        self.scroll_y  = 0
+        self.btn_back  = pygame.Rect(20, 20, 120, 40)
+        self.msg       = ""
         self.msg_timer = 0.0
+        self._card_hits = []
+        self._buy_hits  = []
 
+    # ── helpers ──────────────────────────────────────────────────────────────
     def _owned_units(self):
         owned = self.save_data.get("owned_units", ["Assassin"])
         if self.save_data.get("frostcelerator_unlocked"):
@@ -2681,34 +2686,37 @@ class LoadoutScreen:
                 owned = list(owned) + ["Frostcelerator"]
         return owned
 
-    def _filtered_units(self):
-        """Returns list of unit dicts for display. Exclusive tab shows all exclusives (locked if not owned)."""
-        owned = self._owned_units()
-        if self.cat_filter == "exclusive":
-            # Show all exclusives, locked or not
-            pool = [u for u in ALL_UNITS_POOL if u["rarity"] == "exclusive"]
-            return pool
-        # For other tabs: show owned units (including owned exclusives)
-        pool = [u for u in ALL_UNITS_POOL if u["name"] in owned]
-        if self.cat_filter == "All":
-            return pool
-        return [u for u in pool if u["rarity"] == self.cat_filter]
-
-    def _shop_units(self):
-        """Purchasable non-exclusive units not yet owned."""
-        owned = self._owned_units()
-        result = []
-        for u in ALL_UNITS_POOL:
-            if u["rarity"] == "exclusive": continue
-            if u["name"] in owned: continue
-            price = UNIT_SHOP_PRICES.get(u["name"])
-            if price is not None:
-                result.append(u)
-        return result
-
     def _show_msg(self, text, dur=2.5):
         self.msg = text; self.msg_timer = dur
 
+    def _units_for_rarity(self, rarity):
+        return [u for u in ALL_UNITS_POOL if u["rarity"] == rarity]
+
+    def _section_height(self, rarity):
+        n      = len(self._units_for_rarity(rarity))
+        n_rows = max(1, math.ceil(n / self._COLS))
+        return 30 + self._SEC_PAD_T + n_rows * (self._CH + self._VGAP) + self._SEC_PAD_B
+
+    def _total_content_h(self):
+        return sum(self._section_height(r) for r in self._RARITY_ORDER)
+
+    def _card_cx(self, col, panel_x):
+        panel_w       = SCREEN_W - panel_x
+        cards_total_w = self._COLS * self._CW + (self._COLS - 1) * self._HGAP
+        x0            = panel_x + (panel_w - cards_total_w) // 2 + self._CW // 2
+        return x0 + col * (self._CW + self._HGAP)
+
+    # ── slot rects — inside left zone, anchored to bottom ────────────────────
+    def _slot_rects(self, left_w):
+        SLOT_W, SLOT_H = 110, 100
+        SLOT_BOTTOM    = SCREEN_H - 14   # 14px from screen bottom
+        n     = 5
+        total = n * SLOT_W + (n - 1) * 12
+        x0    = (left_w - total) // 2
+        y0    = SLOT_BOTTOM - SLOT_H
+        return [pygame.Rect(x0 + i * (SLOT_W + 12), y0, SLOT_W, SLOT_H) for i in range(n)]
+
+    # ── run ──────────────────────────────────────────────────────────────────
     def run(self):
         clock = pygame.time.Clock()
         while self.running:
@@ -2721,7 +2729,9 @@ class LoadoutScreen:
                 if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
                     self.running = False
                 if ev.type == pygame.MOUSEWHEEL:
-                    self.scroll_y = max(0, self.scroll_y - ev.y * 30)
+                    mx2, _ = pygame.mouse.get_pos()
+                    if mx2 >= int(SCREEN_W * self._SPLIT):
+                        self.scroll_y = max(0, self.scroll_y - ev.y * 36)
                 if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                     self._handle_click(ev.pos)
             self._draw()
@@ -2730,297 +2740,271 @@ class LoadoutScreen:
         write_save(self.save_data)
 
     def _handle_click(self, pos):
+        left_w = int(SCREEN_W * self._SPLIT)
+
         if self.btn_back.collidepoint(pos):
-            self.running = False
-            return
-        # Category tabs
-        for i, cr in enumerate(self.cat_rects):
-            if cr.collidepoint(pos):
-                self.cat_filter = self.categories[i]
-                self.selected_inventory = None
-                self.scroll_y = 0
-                return
+            self.running = False; return
+
         owned = self._owned_units()
-        # Shop unit buy buttons
-        shop = self._shop_units()
-        if self.cat_filter != "All":
-            shop = [u for u in shop if u["rarity"] == self.cat_filter or self.cat_filter == "exclusive"]
-        inv_units_now = self._filtered_units() if self.cat_filter != "exclusive" else []
-        n_inv_rows = max(1, (len(inv_units_now) + 3) // 4) if inv_units_now else 0
-        for i, u in enumerate(shop):
-            col2 = i % 4
-            row2 = i // 4
-            base_y = (260 - self.scroll_y) + (n_inv_rows * 240 + 50 if inv_units_now else 0)
-            cx2 = 100 + col2 * 210
-            cy2 = base_y + row2 * 240 + 80
-            btn = pygame.Rect(cx2 - 55, cy2 + 60, 110, 28)
-            if btn.collidepoint(pos):
+
+        for btn_r, u in self._buy_hits:
+            if btn_r.collidepoint(pos):
                 price = UNIT_SHOP_PRICES.get(u["name"], 0)
                 coins = self.save_data.get("coins", 0)
                 if coins >= price:
                     self.save_data["coins"] -= price
-                    owned_list = list(self.save_data.get("owned_units", ["Assassin"]))
-                    owned_list.append(u["name"])
-                    self.save_data["owned_units"] = owned_list
+                    ol = list(self.save_data.get("owned_units", ["Assassin"]))
+                    ol.append(u["name"])
+                    self.save_data["owned_units"] = ol
                     write_save(self.save_data)
                     self._show_msg(f"{u['name']} unlocked!")
                 else:
                     self._show_msg(f"Need {price} coins!")
                 return
-        # Inventory cards
-        units = self._filtered_units()
-        for i, u in enumerate(units):
-            cx, cy = self._inv_card_pos(i)
-            if math.hypot(pos[0]-cx, pos[1]-cy) < 80:
-                if self.selected_inventory == i:
-                    self.selected_inventory = None
-                else:
-                    self.selected_inventory = i
+
+        for card_r, rarity, idx in self._card_hits:
+            if card_r.collidepoint(pos):
+                key = (rarity, idx)
+                self.selected = None if self.selected == key else key
                 return
-        # Slot clicks
-        for si, sr in enumerate(self._slot_rects()):
+
+        for si, sr in enumerate(self._slot_rects(left_w)):
             if sr.collidepoint(pos):
-                if self.selected_inventory is not None:
-                    units = self._filtered_units()
-                    if self.selected_inventory < len(units):
-                        uname = units[self.selected_inventory]["name"]
-                        # Don't equip locked exclusives
+                if self.selected is not None:
+                    sel_r, sel_i = self.selected
+                    units_r = self._units_for_rarity(sel_r)
+                    if sel_i < len(units_r):
+                        uname = units_r[sel_i]["name"]
                         if uname not in owned:
                             self._show_msg("Not unlocked!")
-                            self.selected_inventory = None
-                            return
-                        # Remove unit from its current slot (if it's already in loadout)
+                            self.selected = None; return
                         for k in range(5):
                             if self.loadout[k] == uname and k != si:
-                                self.loadout[k] = None
-                                break
+                                self.loadout[k] = None; break
                         self.loadout[si] = uname
-                        self.selected_inventory = None
+                        self.selected = None
                 elif self.loadout[si] is not None:
                     self.loadout[si] = None
                 return
 
-    def _inv_card_pos(self, i):
-        cols = 4
-        col = i % cols
-        row = i // cols
-        start_x = 100
-        start_y = 260
-        return start_x + col * 210, start_y + row * 240 - self.scroll_y
-
-    def _slot_rects(self):
-        rects = []
-        gap = (SCREEN_W - 5 * 120) // 6
-        for i in range(5):
-            rx = gap + i * (120 + gap)
-            ry = SCREEN_H - 140
-            rects.append(pygame.Rect(rx, ry, 120, 110))
-        return rects
-
+    # ── draw ─────────────────────────────────────────────────────────────────
     def _draw(self):
-        CONTENT_TOP = 110
-        CONTENT_BOT = SCREEN_H - 155
-        CONTENT_H = CONTENT_BOT - CONTENT_TOP
+        TOP     = 70        # below top bar
+        BOTTOM  = SCREEN_H  # full height (slots near bottom)
+        left_w  = int(SCREEN_W * self._SPLIT)   # e.g. 768
+        panel_x = left_w                         # right zone starts here
 
-        self.screen.fill(C_BG)
-        pygame.draw.rect(self.screen, C_PANEL, (0, 0, SCREEN_W, 70))
-        pygame.draw.line(self.screen, C_BORDER, (0, 70), (SCREEN_W, 70), 2)
-        txt(self.screen, "LOADOUT", (SCREEN_W//2, 35), C_CYAN, font_xl, center=True)
+        surf = self.screen
+        surf.fill(C_BG)
+
+        # ── Top bar ──────────────────────────────────────────────────────────
+        pygame.draw.rect(surf, C_PANEL,  (0, 0, SCREEN_W, 70))
+        pygame.draw.line(surf, C_BORDER, (0, 70), (SCREEN_W, 70), 2)
+        txt(surf, "LOADOUT", (SCREEN_W // 2, 35), C_CYAN, font_xl, center=True)
 
         mx, my = pygame.mouse.get_pos()
 
-        # Coins display
-        coins = self.save_data.get("coins", 0)
-        ico_c = load_icon("coin_ico", 22)
+        # Coins
+        coins  = self.save_data.get("coins", 0)
+        ico_c  = load_icon("coin_ico", 22)
         coin_s = font_lg.render(f" {coins}", True, C_GOLD)
-        tcw = (ico_c.get_width() if ico_c else 0) + coin_s.get_width()
-        ccx = SCREEN_W - 14 - tcw; ccy = 18
+        tcw    = (ico_c.get_width() if ico_c else 0) + coin_s.get_width()
+        ccx    = SCREEN_W - 14 - tcw
         if ico_c:
-            self.screen.blit(ico_c, (ccx, ccy + (coin_s.get_height() - ico_c.get_height())//2))
-            self.screen.blit(coin_s, (ccx + ico_c.get_width(), ccy))
+            surf.blit(ico_c,  (ccx, 18 + (coin_s.get_height() - ico_c.get_height()) // 2))
+            surf.blit(coin_s, (ccx + ico_c.get_width(), 18))
         else:
-            txt(self.screen, f"Coins: {coins}", (SCREEN_W-14, 18), C_GOLD, font_lg, right=True)
+            txt(surf, f"Coins: {coins}", (SCREEN_W - 14, 18), C_GOLD, font_lg, right=True)
 
         # Back button
-        hov = self.btn_back.collidepoint(mx, my)
-        bc = (110, 50, 50) if hov else (80, 40, 40)
-        pygame.draw.rect(self.screen, bc, self.btn_back, border_radius=8)
-        pygame.draw.rect(self.screen, C_BORDER, self.btn_back, 2, border_radius=8)
-        txt(self.screen, "← BACK", self.btn_back.center, C_WHITE, font_md, center=True)
+        hov_b = self.btn_back.collidepoint(mx, my)
+        pygame.draw.rect(surf, (110,50,50) if hov_b else (80,40,40), self.btn_back, border_radius=8)
+        pygame.draw.rect(surf, C_BORDER, self.btn_back, 2, border_radius=8)
+        txt(surf, "← BACK", self.btn_back.center, C_WHITE, font_md, center=True)
 
-        # Category tabs
-        self.cat_rects = []
-        tab_x = 20
-        for cat in self.categories:
-            ts = font_sm.render(cat.upper(), True, C_WHITE)
-            tw = ts.get_width() + 20
-            tr = pygame.Rect(tab_x, 80, tw, 26)
-            self.cat_rects.append(tr)
-            is_sel = (cat == self.cat_filter)
-            rd = RARITY_DATA.get(cat)
-            if rd:
-                bg = rd["color"]; bd = rd["border"]
+        # ── Vertical divider ─────────────────────────────────────────────────
+        pygame.draw.line(surf, C_BORDER, (panel_x, TOP), (panel_x, SCREEN_H), 2)
+
+        # ── LEFT zone — background + loadout ────────────────────────────────
+        # Subtle background tint
+        left_bg = pygame.Surface((left_w, SCREEN_H - TOP), pygame.SRCALPHA)
+        left_bg.fill((12, 15, 24, 180))
+        surf.blit(left_bg, (0, TOP))
+
+        # "Your loadout" label above slots
+        slot_rects = self._slot_rects(left_w)
+        lbl_y = slot_rects[0].top - 28
+        lbl_f = pygame.font.SysFont("segoeui", 16, bold=True)
+        lbl_s = lbl_f.render("ТВОЙ ЛОДАУТ  (кликни чтобы убрать)", True, C_GOLD)
+        surf.blit(lbl_s, lbl_s.get_rect(centerx=left_w // 2, y=lbl_y))
+
+        # Hint text above label
+        hint_f = pygame.font.SysFont("segoeui", 15)
+        hs = hint_f.render("Выбери юнит справа → кликни на слот", True, (55, 68, 95))
+        surf.blit(hs, hs.get_rect(centerx=left_w // 2, y=lbl_y - 24))
+
+        _col_map_slot = {
+            "Assassin": C_ASSASSIN,        "Lifestealer": C_LIFESTEALER,
+            "Archer":   C_ARCHER,          "Red Ball":    C_REDBALL,
+            "Farm":     C_FARM,            "Freezer":     C_FREEZER,
+            "Frost Blaster": C_FROSTBLASTER, "Sledger":   C_SLEDGER,
+            "Gladiator": C_GLADIATOR,      "Toxic Gunner": C_TOXICGUN,
+            "Slasher":  C_SLASHER,         "Golden Cowboy": C_GCOWBOY,
+            "Hallow Punk": C_HALLOWPUNK,   "Spotlight Tech": C_SPOTLIGHT,
+        }
+
+        for si, sr in enumerate(slot_rects):
+            uname = self.loadout[si]
+            hov3  = sr.collidepoint(mx, my)
+            sel_slot = (self.selected is not None)   # highlight when selecting
+            if sel_slot and not uname:
+                bg_col = (35, 55, 80)
+            elif hov3:
+                bg_col = (50, 60, 90)
             else:
-                bg = (40, 50, 70); bd = C_BORDER
-            if is_sel:
-                bg = tuple(min(255, c+40) for c in bg)
-            pygame.draw.rect(self.screen, bg, tr, border_radius=6)
-            pygame.draw.rect(self.screen, bd if is_sel else C_BORDER, tr, 2, border_radius=6)
-            self.screen.blit(ts, ts.get_rect(center=tr.center))
-            tab_x += tw + 6
+                bg_col = C_SLOT_BG
+            pygame.draw.rect(surf, bg_col, sr, border_radius=8)
+            bd_col = (80, 130, 200) if (sel_slot and not uname) else C_BORDER
+            pygame.draw.rect(surf, bd_col, sr, 2, border_radius=8)
 
-        owned = self._owned_units()
+            if uname:
+                rarity = next((u["rarity"] for u in ALL_UNITS_POOL if u["name"] == uname), "starter")
+                rd     = RARITY_DATA[rarity]
+                icx, icy = sr.centerx, sr.centery - 10
+                if uname == "Accelerator":
+                    draw_accel_icon(surf, icx, icy, self.t, size=20)
+                elif uname == "Frostcelerator":
+                    draw_frost_icon(surf, icx, icy, self.t, size=20)
+                elif uname == "xw5yt":
+                    draw_xw5yt_icon(surf, icx, icy, self.t, size=20)
+                else:
+                    uc = _col_map_slot.get(uname, C_ASSASSIN)
+                    pygame.draw.circle(surf, (30,20,50), (icx, icy), 22)
+                    pygame.draw.circle(surf, uc,         (icx, icy), 18)
+                    pygame.draw.circle(surf, rd["border"],(icx, icy), 18, 2)
+                txt(surf, uname, (sr.centerx, sr.bottom - 20), C_WHITE, font_sm, center=True)
+                rs2 = font_sm.render(rd["label"], True, rd["text_col"])
+                surf.blit(rs2, rs2.get_rect(center=(sr.centerx, sr.bottom - 7)))
+            else:
+                txt(surf, f"SLOT {si+1}", (sr.centerx, sr.centery), (60,70,100), font_sm, center=True)
 
-        # ── Scrollable content area ──────────────────────────────────────────
-        # Compute total content height to cap scroll
-        inv_units = self._filtered_units() if self.cat_filter != "exclusive" else []
-        shop_units = []
-        if self.cat_filter not in ("exclusive",):
-            shop_units = self._shop_units()
-            if self.cat_filter != "All":
-                shop_units = [u for u in shop_units if u["rarity"] == self.cat_filter]
+        # ── RIGHT zone — scrollable rarity sections ──────────────────────────
+        CONTENT_TOP = TOP
+        CONTENT_BOT = SCREEN_H
+        CONTENT_H   = CONTENT_BOT - CONTENT_TOP
+        RIGHT_W     = SCREEN_W - panel_x
 
-        if self.cat_filter == "exclusive":
-            excl_units = [u for u in ALL_UNITS_POOL if u["rarity"] == "exclusive"]
-            n_rows_excl = max(1, (len(excl_units) + 3) // 4)
-            total_content_h = 20 + n_rows_excl * 240
-        else:
-            n_rows_inv = max(1, (len(inv_units) + 3) // 4) if inv_units else 0
-            inv_section_h = (20 + n_rows_inv * 240) if inv_units else 20
-            shop_section_h = 0
-            if shop_units:
-                n_rows_shop = max(1, (len(shop_units) + 3) // 4)
-                shop_section_h = 50 + n_rows_shop * 240
-            total_content_h = inv_section_h + shop_section_h
-
-        # Cards start at y=260 (absolute), content area starts at CONTENT_TOP=110
-        # So effective content height includes the 260-CONTENT_TOP offset
-        max_scroll = max(0, (260 - CONTENT_TOP) + total_content_h - CONTENT_H + 40)
+        total_h    = self._total_content_h()
+        max_scroll = max(0, total_h - CONTENT_H + 20)
         self.scroll_y = min(self.scroll_y, max_scroll)
-
-        # Clip to scrollable zone
-        clip_rect = pygame.Rect(0, CONTENT_TOP, SCREEN_W - 14, CONTENT_H)
-        self.screen.set_clip(clip_rect)
-
-        if self.cat_filter == "exclusive":
-            excl_units = [u for u in ALL_UNITS_POOL if u["rarity"] == "exclusive"]
-            txt(self.screen, "EXCLUSIVE UNITS", (20, 115 - self.scroll_y), C_GOLD, font_md)
-            for i, u in enumerate(excl_units):
-                cx2, cy2 = self._inv_card_pos(i)
-                if cy2 < CONTENT_TOP - 220 or cy2 > CONTENT_BOT + 50: continue
-                is_owned = u["name"] in owned
-                sel = (self.selected_inventory == i) and is_owned
-                draw_unit_card(self.screen, u["name"], u["rarity"], cx2, cy2, 160, 200, 0.0, sel)
-                if not is_owned:
-                    s = pygame.Surface((160, 200), pygame.SRCALPHA)
-                    s.fill((0, 0, 0, 140))
-                    self.screen.blit(s, (cx2 - 80, cy2 - 100))
-                    lock_f = pygame.font.SysFont("segoeui", 28)
-                    ls = lock_f.render("🔒", True, (200, 200, 200))
-                    self.screen.blit(ls, ls.get_rect(center=(cx2, cy2 - 10)))
-                    sub_f = pygame.font.SysFont("segoeui", 13)
-                    ss = sub_f.render("EXCLUSIVE", True, (180, 80, 255))
-                    self.screen.blit(ss, ss.get_rect(center=(cx2, cy2 + 25)))
-
-        elif self.cat_filter in ("All", "starter", "common", "rare", "epic"):
-            txt(self.screen, "INVENTORY", (20, 115 - self.scroll_y), C_GOLD, font_md)
-            if not inv_units:
-                txt(self.screen, "No units owned in this category", (20, 145 - self.scroll_y), (100, 110, 140), font_sm)
-
-            for i, u in enumerate(inv_units):
-                cx2, cy2 = self._inv_card_pos(i)
-                if cy2 < CONTENT_TOP - 220 or cy2 > CONTENT_BOT + 50: continue
-                sel = (self.selected_inventory == i)
-                draw_unit_card(self.screen, u["name"], u["rarity"], cx2, cy2, 160, 200, 0.0, sel)
-
-            if shop_units:
-                n_inv_rows = max(1, (len(inv_units) + 3) // 4) if inv_units else 0
-                shop_label_y = (260 - self.scroll_y) + n_inv_rows * 240 + 10 if inv_units else (260 - self.scroll_y)
-                txt(self.screen, "— SHOP —", (20, shop_label_y - 20), (120, 180, 255), font_md)
-                for i, u in enumerate(shop_units):
-                    col2 = i % 4
-                    row2 = i // 4
-                    base_y = (260 - self.scroll_y) + (n_inv_rows * 240 + 50 if inv_units else 0)
-                    cx2 = 100 + col2 * 210
-                    cy2 = base_y + row2 * 240 + 80
-                    if cy2 < CONTENT_TOP - 220 or cy2 > CONTENT_BOT + 50: continue
-                    draw_unit_card(self.screen, u["name"], u["rarity"], cx2, cy2 - 30, 160, 160, 0.0, False)
-                    price = UNIT_SHOP_PRICES.get(u["name"], 0)
-                    coins_now = self.save_data.get("coins", 0)
-                    can_buy = coins_now >= price
-                    btn = pygame.Rect(cx2 - 55, cy2 + 60, 110, 28)
-                    btn_hov = btn.collidepoint(mx, my)
-                    btn_bg = (40, 100, 40) if (can_buy and btn_hov) else ((30, 70, 30) if can_buy else (60, 30, 30))
-                    pygame.draw.rect(self.screen, btn_bg, btn, border_radius=6)
-                    pygame.draw.rect(self.screen, (80, 200, 80) if can_buy else (150, 60, 60), btn, 2, border_radius=6)
-                    ico_c2 = load_icon("coin_ico", 14)
-                    price_s = font_sm.render(f" {price}", True, C_GOLD if can_buy else (140, 100, 100))
-                    pw = (ico_c2.get_width() if ico_c2 else 0) + price_s.get_width()
-                    px2 = btn.centerx - pw//2
-                    if ico_c2:
-                        self.screen.blit(ico_c2, (px2, btn.centery - 7))
-                        self.screen.blit(price_s, (px2 + ico_c2.get_width(), btn.centery - price_s.get_height()//2))
-                    else:
-                        self.screen.blit(price_s, price_s.get_rect(center=btn.center))
-
-        self.screen.set_clip(None)
 
         # Scrollbar
         if max_scroll > 0:
-            sb_x = SCREEN_W - 10
-            sb_top = CONTENT_TOP + 4
-            sb_h = CONTENT_H - 8
-            pygame.draw.rect(self.screen, (40, 45, 60), (sb_x - 4, sb_top, 6, sb_h), border_radius=3)
-            # Use viewport/total ratio so the thumb never exceeds the track.
-            total_scroll_h = CONTENT_H + max_scroll
-            thumb_h = int(sb_h * (CONTENT_H / total_scroll_h)) if total_scroll_h > 0 else sb_h
-            thumb_h = max(30, min(sb_h, thumb_h))
-            thumb_y = sb_top + int((sb_h - thumb_h) * self.scroll_y / max_scroll)
-            pygame.draw.rect(self.screen, (100, 120, 180), (sb_x - 4, thumb_y, 6, thumb_h), border_radius=3)
+            sbx = SCREEN_W - 8
+            pygame.draw.rect(surf, (40,45,60),   (sbx-4, CONTENT_TOP, 6, CONTENT_H), border_radius=3)
+            tsh = CONTENT_H + max_scroll
+            th  = max(30, int(CONTENT_H * CONTENT_H / tsh))
+            ty  = CONTENT_TOP + int((CONTENT_H - th) * self.scroll_y / max_scroll)
+            pygame.draw.rect(surf, (100,120,180), (sbx-4, ty, 6, th), border_radius=3)
 
-        # Message
+        surf.set_clip(pygame.Rect(panel_x, CONTENT_TOP, RIGHT_W - 12, CONTENT_H))
+
+        owned = self._owned_units()
+        self._card_hits = []
+        self._buy_hits  = []
+
+        sec_y   = CONTENT_TOP + 8 - self.scroll_y
+        label_f = pygame.font.SysFont("segoeui", 18, bold=True)
+        price_f = pygame.font.SysFont("consolas", 12, bold=True)
+        lock_f  = pygame.font.SysFont("segoeui", 20)
+        excl_f  = pygame.font.SysFont("segoeui", 11)
+
+        for rarity in self._RARITY_ORDER:
+            units_sec = self._units_for_rarity(rarity)
+            sec_h     = self._section_height(rarity)
+            hdr_col   = self._RARITY_HDR_COL[rarity]
+            hdr_line  = self._RARITY_HDR_LINE[rarity]
+
+            hdr_y = sec_y + 5
+            if CONTENT_TOP - 36 < hdr_y < CONTENT_BOT + 10:
+                ls2 = label_f.render(rarity.capitalize(), True, hdr_col)
+                surf.blit(ls2, (panel_x + 16, hdr_y))
+                ul_y = hdr_y + ls2.get_height() + 2
+                pygame.draw.line(surf, hdr_line,
+                                 (panel_x + 16, ul_y), (SCREEN_W - 16, ul_y), 1)
+
+            for i, u in enumerate(units_sec):
+                col_i = i % self._COLS
+                row_i = i // self._COLS
+                cx2   = self._card_cx(col_i, panel_x)
+                cy2   = sec_y + 28 + self._SEC_PAD_T + row_i * (self._CH + self._VGAP) + self._CH // 2
+
+                if cy2 + self._CH // 2 < CONTENT_TOP - 4 or cy2 - self._CH // 2 > CONTENT_BOT + 4:
+                    continue
+
+                is_owned = u["name"] in owned
+                is_sel   = (self.selected == (rarity, i)) and is_owned
+
+                draw_unit_card(surf, u["name"], rarity, cx2, cy2,
+                               self._CW, self._CH,
+                               self.t if is_owned else 0.0, is_sel)
+
+                card_r = pygame.Rect(cx2 - self._CW // 2, cy2 - self._CH // 2,
+                                     self._CW, self._CH)
+
+                if is_owned:
+                    self._card_hits.append((card_r, rarity, i))
+                else:
+                    dim = pygame.Surface((self._CW, self._CH), pygame.SRCALPHA)
+                    dim.fill((0, 0, 0, 160))
+                    mask = pygame.Surface((self._CW, self._CH), pygame.SRCALPHA)
+                    pygame.draw.rect(mask, (255,255,255,255),
+                                     (0,0,self._CW,self._CH), border_radius=16)
+                    dim.blit(mask, (0,0), special_flags=pygame.BLEND_RGBA_MIN)
+                    surf.blit(dim, card_r.topleft)
+
+                    if rarity == "exclusive":
+                        ls3 = lock_f.render("🔒", True, (200,130,130))
+                        surf.blit(ls3, ls3.get_rect(center=(cx2, cy2 + 8)))
+                        es  = excl_f.render("EXCLUSIVE", True, (220,65,65))
+                        surf.blit(es, es.get_rect(center=(cx2, cy2 + 30)))
+                    else:
+                        ls3 = lock_f.render("🔒", True, (130,200,130))
+                        surf.blit(ls3, ls3.get_rect(center=(cx2, cy2 - 18)))
+                        price = UNIT_SHOP_PRICES.get(u["name"], 0)
+                        if price is not None:
+                            can_buy = self.save_data.get("coins", 0) >= price
+                            btn_r   = pygame.Rect(cx2 - 48, cy2 + 22, 96, 24)
+                            btn_hov = btn_r.collidepoint(mx, my)
+                            btn_bg  = (40,110,40) if (can_buy and btn_hov) else \
+                                      (26,68,26) if can_buy else (70,26,26)
+                            btn_bd  = (80,200,80) if can_buy else (160,55,55)
+                            pygame.draw.rect(surf, btn_bg, btn_r, border_radius=5)
+                            pygame.draw.rect(surf, btn_bd, btn_r, 2, border_radius=5)
+                            ico_m = load_icon("coin_ico", 12)
+                            ps    = price_f.render(f" {price}", True,
+                                                   C_GOLD if can_buy else (140,95,95))
+                            pw2   = (ico_m.get_width() if ico_m else 0) + ps.get_width()
+                            px3   = btn_r.centerx - pw2 // 2
+                            if ico_m:
+                                surf.blit(ico_m, (px3, btn_r.centery - 6))
+                                surf.blit(ps, (px3 + ico_m.get_width(),
+                                               btn_r.centery - ps.get_height()//2))
+                            else:
+                                surf.blit(ps, ps.get_rect(center=btn_r.center))
+                            self._buy_hits.append((btn_r, u))
+
+            sec_y += sec_h
+
+        surf.set_clip(None)
+
+        # ── Message ──────────────────────────────────────────────────────────
         if self.msg_timer > 0:
             ms = font_ru_lg.render(self.msg, True, C_GOLD)
-            draw_rect_alpha(self.screen, (0,0,0), (SCREEN_W//2 - ms.get_width()//2 - 10, SCREEN_H//2 - 20, ms.get_width()+20, 36), 180, 8)
-            self.screen.blit(ms, ms.get_rect(center=(SCREEN_W//2, SCREEN_H//2)))
-
-        # Loadout slots area
-        pygame.draw.rect(self.screen, C_PANEL, (0, SCREEN_H - 155, SCREEN_W, 155))
-        pygame.draw.line(self.screen, C_BORDER, (0, SCREEN_H - 155), (SCREEN_W, SCREEN_H - 155), 2)
-        txt(self.screen, "ACTIVE LOADOUT  (click to remove)", (20, SCREEN_H - 148), C_GOLD, font_sm)
-
-        slot_rects = self._slot_rects()
-        for si, sr in enumerate(slot_rects):
-            uname = self.loadout[si]
-            hov3 = sr.collidepoint(mx, my)
-            bg = (50, 60, 90) if hov3 else C_SLOT_BG
-            pygame.draw.rect(self.screen, bg, sr, border_radius=8)
-            pygame.draw.rect(self.screen, C_BORDER, sr, 2, border_radius=8)
-            if uname:
-                rarity = next((u["rarity"] for u in ALL_UNITS_POOL if u["name"] == uname), "starter")
-                rd = RARITY_DATA[rarity]
-                icon_cx, icon_cy = sr.centerx, sr.centery - 10
-                if uname == "Accelerator":
-                    draw_accel_icon(self.screen, icon_cx, icon_cy, self.t, size=20)
-                elif uname == "Frostcelerator":
-                    draw_frost_icon(self.screen, icon_cx, icon_cy, self.t, size=20)
-                elif uname == "xw5yt":
-                    draw_xw5yt_icon(self.screen, icon_cx, icon_cy, self.t, size=20)
-                else:
-                    _col_map2 = {
-                        "Assassin": C_ASSASSIN, "Lifestealer": C_LIFESTEALER,
-                        "Archer": C_ARCHER, "Red Ball": C_REDBALL, "Farm": C_FARM,
-                        "Freezer": C_FREEZER,
-                    }
-                    unit_col = _col_map2.get(uname, C_ASSASSIN)
-                    pygame.draw.circle(self.screen, (30, 20, 50), (icon_cx, icon_cy), 22)
-                    pygame.draw.circle(self.screen, unit_col, (icon_cx, icon_cy), 18)
-                    pygame.draw.circle(self.screen, rd["border"], (icon_cx, icon_cy), 18, 2)
-                txt(self.screen, uname, (sr.centerx, sr.bottom - 22), C_WHITE, font_sm, center=True)
-                rs = font_sm.render(rd["label"], True, rd["text_col"])
-                self.screen.blit(rs, rs.get_rect(center=(sr.centerx, sr.bottom - 8)))
-            else:
-                txt(self.screen, f"SLOT {si+1}", (sr.centerx, sr.centery), (60, 70, 100), font_sm, center=True)
+            draw_rect_alpha(surf, (0,0,0),
+                            (SCREEN_W//2 - ms.get_width()//2 - 10,
+                             SCREEN_H//2 - 20, ms.get_width()+20, 36), 180, 8)
+            surf.blit(ms, ms.get_rect(center=(SCREEN_W//2, SCREEN_H//2)))
 
 
 # ── Pause Menu ──────────────────────────────────────────────────────────────────
@@ -3103,40 +3087,12 @@ class Game:
         # pokaxw5yt ability state
         self._pokaxw5yt_frozen = False
         self._pokaxw5yt_owner = None
-        self._skip_wave_btn = pygame.Rect(SCREEN_W//2-180, 58, 360, 52)
-        # tf_test sequence state
-        self._tf_king = None          # the special 10k FK enemy ref
-        self._tf_phase = None         # None | 'fade_in' | 'text1' | 'text2' | 'text3' | 'fade_out'
-        self._tf_timer = 0.0
-        self._tf_black_alpha = 0      # 0-255
-        self._tf_text1_alpha = 0
-        self._tf_text2_alpha = 0
-        self._tf_text3_alpha = 0
-        self._tf_music_started = False
-        self._tf_spawn_timer = None
-        # tf wave-41 sequence
-        self._tf_wave41_active = False
-        self._tf_miniboss = None
-        self._tf_miniboss_timer = None
-        self._tf_miniboss_music_timer = None   # ceremony countdown like fallen mode
-        self._tf_miniboss_spawned = False
-        self._tf_ceremony_phase = None         # separate from original _ceremony_phase
-        self._tf_ceremony_timer = 0.0
-        self._tf_ceremony_flash_alpha = 0
-        self._tf_ceremony_flash_color = (255,255,255)
-        self._tf_music_switch_done = False
-        self._tf_retreat_timer = None
-        self._tf_tfk = None
-        self._tf_music_first_play = True
-        self._tf_music_path = None
         # Frosty wave-40: Frost Spirit music → delayed spawn
         self._frost_spirit_music_timer = None
         self._frost_spirit_spawned = False
         # generic scheduled spawns (for delayed summon abilities)
         self._scheduled_spawns = []  # [{"t":float,"cls":type,"x":float,"y":float,"wp":int,"fp":path|None,"from_wave":bool,"free_kill":bool}]
         # Stubs for attributes removed from singleplayer but still referenced by multiplayer.py
-        self._skip_wave_timer = 0.0
-        self._skip_wave_btn = pygame.Rect(SCREEN_W//2-180, 58, 360, 52)
         self._hayden_active = False
         self._hayden_eligible = False
         self._hayden_combo = []
@@ -3333,380 +3289,9 @@ class Game:
                         except Exception:
                             pass
 
-                # true_fallenking: sfx finished → start music loop
-                if ev.type==pygame.USEREVENT+2:
-                    _mus=getattr(self,'_tf_music_path',None)
-                    if _mus and os.path.exists(_mus):
-                        try:
-                            pygame.mixer.music.set_endevent(0)
-                            pygame.mixer.music.load(_mus)
-                            pygame.mixer.music.play(-1, start=0.0)
-                        except Exception:
-                            pass
 
-                # Frosty BGM: switch to next track when current one ends
-                if ev.type==pygame.USEREVENT+3:
-                    if getattr(self,'_frosty_bgm_active',False) and not getattr(self,'_frosty_bgm_stopped',False):
-                        self._frosty_bgm_track = 2 if self._frosty_bgm_track==1 else 1
-                        _sdir=os.path.join(os.path.dirname(os.path.abspath(__file__)),"assets","sound")
-                        _bgm=os.path.join(_sdir,f"frostymode{self._frosty_bgm_track}.mp3")
-                        if not os.path.exists(_bgm):
-                            _bgm=os.path.join(_sdir,"frostymode1.mp3") if os.path.exists(os.path.join(_sdir,"frostymode1.mp3")) else None
-                        if _bgm and os.path.exists(_bgm):
-                            try:
-                                pygame.mixer.music.load(_bgm)
-                                pygame.mixer.music.set_endevent(pygame.USEREVENT+3)
-                                pygame.mixer.music.play(0)
-                            except Exception:
-                                pass
-
-                # Admin panel scroll
-                if ev.type==pygame.MOUSEWHEEL and self.mode=="sandbox":
-                    if self.ui.admin_panel.visible:
-                        self.ui.admin_panel.handle_scroll(ev.y); continue
-
-                # Admin panel HP input
-                if (self.mode=="sandbox" and self.ui.admin_panel.visible and
-                        self.ui.admin_panel._hp_input_active):
-                    if ev.type==pygame.KEYDOWN:
-                        self.ui.admin_panel.handle_key(ev,self)
-                    continue
-
-                if self.console.visible:
-                    if ev.type==pygame.KEYDOWN:
-                        if ev.key==pygame.K_F1: self.console.toggle()
-                        else: self.console.handle_key(ev,self)
-                    continue
-
-                if self.paused:
-                    if ev.type==pygame.MOUSEBUTTONDOWN and ev.button==1:
-                        action = self.pause_menu.handle_click(ev.pos)
-                        if action == "resume":
-                            self.paused = False
-                        elif action == "menu":
-                            fk_active = any(isinstance(e,FallenKing) and e.alive for e in self.enemies)
-                            if fk_active:
-                                self.ui.show_msg("Fallen King не хочет чтобы ты убежал от него в меню паузы", 2.5)
-                            else:
-                                self.paused = False
-                                self.running = False
-                                self.return_to_menu = True
-                                try: pygame.mixer.music.stop()
-                                except: pass
-                    if ev.type==pygame.KEYDOWN and ev.key==pygame.K_ESCAPE:
-                        self.paused = False
-                    continue
-
-                if ev.type==pygame.KEYDOWN:
-                    if ev.key==pygame.K_ESCAPE:
-                        # Block pause during FallenKing spawn ceremony
-                        ceremony_active = (self._fallen_king_music_timer is not None and not self._fallen_king_spawned) or \
-                                          (self._tf_miniboss_music_timer is not None and not self._tf_miniboss_spawned)
-                        if not self.paused and not ceremony_active:
-                            self.paused = True
-                    if ev.key==pygame.K_F1: self.console.toggle()
-                    if ev.key==pygame.K_f:
-                        alist=[u for u in self.units if isinstance(u,Assassin) and u.ability and u.level>=2]
-                        for u in alist:
-                            if u.ability.ready():
-                                u.ability.activate(self.enemies,self.effects); break
-                    if ev.key==pygame.K_e and self.ui.open_unit:
-                        u=self.ui.open_unit
-                        cost=u.upgrade_cost()
-                        if cost and self.money>=cost:
-                            u.upgrade(); self.money-=cost
-                        elif cost:
-                            self.ui.show_msg("Not enough money!")
-                        else:
-                            self.ui.show_msg("Max level!")
-                    if ev.key==pygame.K_x and self.ui.open_unit:
-                        u=self.ui.open_unit
-                        sell_val=self.ui._sell_value(u)
-                        self.units.remove(u); self.ui.open_unit=None
-                        self.money+=sell_val
-                        self.ui.show_msg(f"Sold for {sell_val}")
-                    slot_keys={pygame.K_1:0,pygame.K_2:1,pygame.K_3:2,pygame.K_4:3,pygame.K_5:4}
-                    if ev.key in slot_keys and not self.console.visible:
-                        idx=slot_keys[ev.key]
-                        UType=self.ui.SLOT_TYPES[idx]
-                        if UType is not None:
-                            mx2,my2=pygame.mouse.get_pos()
-                            self.ui.selected_slot=idx
-                            self.ui.drag_unit=UType(mx2,my2)
-
-                if (self.game_over or self.win):
-                    if ev.type==pygame.MOUSEBUTTONDOWN and ev.button==1:
-                        if self._end_btn.collidepoint(ev.pos):
-                            self.running=False; self.return_to_menu=True
-                            try: pygame.mixer.music.stop()
-                            except: pass
-                elif not self.game_over:
-                    if ev.type==pygame.MOUSEBUTTONDOWN and ev.button==1:
-                        # hixw5yt freeze: click to select enemy
-                        if self._hixw5yt_frozen:
-                            mx2,my2=ev.pos
-                            picked=None
-                            for e in self.enemies:
-                                if e.alive and dist((e.x,e.y),(mx2,my2))<=e.radius+8:
-                                    picked=e; break
-                            if picked:
-                                self._hixw5yt_frozen=False
-                                if self._hixw5yt_owner:
-                                    self._hixw5yt_owner._hixw5yt_active=False
-                                    self._hixw5yt_owner=None
-                                picked._reversed=True
-                                picked._reverse_hp=picked.hp
-                                continue
-                            continue
-                        # pokaxw5yt freeze: click to select enemy to glitch-stun
-                        if self._pokaxw5yt_frozen:
-                            mx2,my2=ev.pos
-                            picked=None
-                            for e in self.enemies:
-                                if e.alive and dist((e.x,e.y),(mx2,my2))<=e.radius+8:
-                                    picked=e; break
-                            if picked:
-                                self._pokaxw5yt_frozen=False
-                                if self._pokaxw5yt_owner:
-                                    self._pokaxw5yt_owner._pokaxw5yt_active=False
-                                    self._pokaxw5yt_owner=None
-                                picked._glitched=True
-                                picked._glitch_t=0.0
-                                picked.frozen=True  # permanently frozen
-                                continue
-                            continue
-                        # Skip wave banner button
-                        if self._skip_wave_timer>=3.0 and self._skip_wave_btn.collidepoint(ev.pos):
-                            self._do_skip_wave()
-                            continue
-                        if self._pokaxw5yt_frozen: continue
-                        self.money+=self.ui.handle_click(ev.pos,self.units,self.money,
-                                                         self.effects,self.enemies,
-                                                         self.wave_mgr.wave,self.save_data,self.mode)
-                    if ev.type==pygame.MOUSEBUTTONUP and ev.button==1:
-                        delta=self.ui.handle_release(ev.pos,self.units,self.money)
-                        self.money+=delta
-
-            if not self.paused:
-                if not self.game_over: self.update(dt)
-            self.draw()
-
-            if self.paused:
-                self.pause_menu.draw()
-
-
-            pygame.display.flip()
-        pygame.quit() if not self.return_to_menu else None
-
-    def _hw_on_key(self, key):
-        pass  # hidden wave removed; stub for multiplayer.py compatibility
-
-    def _give_wave_coins(self, wave_num):
-        """Give per-wave profile coins for every wave up to wave_num that hasn't been paid yet.
-        Safe to call multiple times — tracked by _last_coin_wave."""
-        if self.mode not in ("easy", "fallen", "frosty"): return
-        if self.game_over: return
-        # Pay for every wave number between last paid+1 and wave_num (inclusive)
-        while self._last_coin_wave < wave_num:
-            self._last_coin_wave += 1
-            _coin_per_wave = 12.5 if self.mode == "fallen" else (25.0 if self.mode == "frosty" else 10.0)
-            self._wave_coin_accum += _coin_per_wave
-            _coins_to_add = int(self._wave_coin_accum)
-            if _coins_to_add > 0:
-                self._wave_coin_accum -= _coins_to_add
-                self._end_coin_reward += _coins_to_add
-                self.save_data["coins"] = self.save_data.get("coins", 0) + _coins_to_add
-        write_save(self.save_data)
-
-    def _do_skip_wave(self):
-        """Skip current wave: pay wave bonus, keep existing enemies, spawn next wave."""
-        wm = self.wave_mgr
-        lm = wm.wave_lmoney()
-        if lm and not wm._lmoney_paid:
-            self.money += lm
-            self.ui.show_msg(f"+{lm} Wave bonus (skip)", 2.5)
-            wm._lmoney_paid = True
-        self._skip_wave_timer = 0.0
-        if wm.wave < wm.max_waves:
-            wm._start_wave()
-        else:
-            wm.state = "waiting"
-
-    def _apply_stun(self, unit, duration):
-        """Apply stun to a unit — Gladiator stun-block passive intercepts first."""
-        if isinstance(unit, Gladiator):
-            if unit.try_block_stun():
-                return
-        unit._stun_timer = max(getattr(unit, '_stun_timer', 0), duration)
-
-    def update(self, dt):
-        if not self.game_over and not self.win:
-            self._elapsed+=dt
-        self.console.update(dt)
-
-        # ── Frosty background music: start on first wave, loop frostymode/frostymode2 ──
-        if self.mode=="frosty" and not getattr(self,'_frosty_bgm_stopped',False):
-            _sdir=os.path.join(os.path.dirname(os.path.abspath(__file__)),"assets","sound")
-            # Stop BGM when wave 40 starts
-            if self.wave_mgr.wave==40 and not getattr(self,'_frosty_bgm_active_stopped_for_40',False):
-                self._frosty_bgm_stopped=True
-                self._frosty_bgm_active=False
-                self._frosty_bgm_active_stopped_for_40=True
-                try: pygame.mixer.music.stop()
-                except: pass
-            # Start BGM on wave 1
-            elif not getattr(self,'_frosty_bgm_active',False) and self.wave_mgr.wave>=1:
-                self._frosty_bgm_track=1
-                _bgm=os.path.join(_sdir,"frostymode.mp3")
-                if os.path.exists(_bgm):
-                    try:
-                        pygame.mixer.music.load(_bgm)
-                        pygame.mixer.music.set_endevent(pygame.USEREVENT+3)
-                        pygame.mixer.music.play(0)
-                        self._frosty_bgm_active=True
-                    except Exception:
-                        pass
-
-        # tf_test sequence update
-        if self._tf_king is not None and self._tf_phase is None:
-            if not self._tf_king.alive:
-                self._tf_phase='fade_in'; self._tf_timer=0.0
-        if self._tf_phase=='fade_in':
-            self._tf_timer+=dt
-            self._tf_black_alpha=min(255,int(self._tf_timer/1.2*255))
-            if self._tf_timer>=1.2:
-                self._tf_phase='text1'; self._tf_timer=0.0
-        elif self._tf_phase=='text1':
-            self._tf_timer+=dt
-            self._tf_text1_alpha=min(255,int(self._tf_timer/0.8*255))
-            if self._tf_timer>=2.8:
-                self._tf_phase='text2'; self._tf_timer=0.0
-        elif self._tf_phase=='text2':
-            self._tf_timer+=dt
-            self._tf_text2_alpha=min(255,int(self._tf_timer/0.8*255))
-            if self._tf_timer>=1.8:
-                self._tf_phase='text3'; self._tf_timer=0.0
-        elif self._tf_phase=='text3':
-            self._tf_timer+=dt
-            self._tf_text3_alpha=min(255,int(self._tf_timer/0.8*255))
-            if self._tf_timer>=5.8:
-                self._tf_phase='fade_out'; self._tf_timer=0.0
-        elif self._tf_phase=='fade_out':
-            self._tf_timer+=dt
-            frac=min(1.0,self._tf_timer/0.4)
-            self._tf_black_alpha=max(0,int((1.0-frac)*255))
-            self._tf_text1_alpha=max(0,int((1.0-frac)*255))
-            self._tf_text2_alpha=max(0,int((1.0-frac)*255))
-            self._tf_text3_alpha=max(0,int((1.0-frac)*255))
-            if self._tf_timer>=0.4:
-                self._tf_phase=None; self._tf_king=None
-                self._tf_wave41_active=True
-                self._tf_miniboss=None
-                self._tf_miniboss_timer=None
-                self._tf_music_switch_done=False
-                self._tf_retreat_timer=None
-                self.wave_mgr._tf_wave41_override=True
-                _W=self.wave_mgr.wave
-                def _s(cls,n,ox=0):
-                    for i in range(n):
-                        e=cls(_W); e.x=-30.0-i*40-ox; self.enemies.append(e)
-                # Wave groups with spacing (ox = extra offset between groups)
-                _groups=[
-                    [(FallenShield,1),(NecroticSkeleton,3),(PossessedArmor,8),(FallenRusher,3),(FallenHero,5),(FallenBreaker,10)],
-                ]
-                total_ox=0
-                for group in _groups:
-                    group_size=sum(n for _,n in group)
-                    ox_in_group=0
-                    for cls,n in group:
-                        for i in range(n):
-                            e=cls(_W); e.x=-30.0-total_ox-ox_in_group-i*38
-                            e._tf_wave41_enemy=True  # tag for tracking
-                            self.enemies.append(e)
-                        ox_in_group+=n*38
-                    total_ox+=group_size*38+80
-                self.money+=1875
-        # tf wave-41: watch for all tf-tagged enemies dead → start ceremony → spawn 1M miniboss
-        if self._tf_wave41_active and not self._tf_miniboss_spawned and self._tf_miniboss is None:
-            tf_alive=[e for e in self.enemies if e.alive and getattr(e,'_tf_wave41_enemy',False)]
-            if not tf_alive:
-                if self._tf_miniboss_music_timer is None:
-                    _fkm=os.path.join(os.path.dirname(os.path.abspath(__file__)),"assets","sound","fallenking.mp3")
-                    try:
-                        pygame.mixer.music.load(_fkm)
-                        pygame.mixer.music.play(0)
-                        pygame.mixer.music.set_endevent(pygame.USEREVENT+1)
-                    except Exception:
-                        pass
-                    self._tf_miniboss_music_timer=8.025
-                    self._tf_ceremony_phase='waiting'
-                    self._tf_ceremony_timer=0.0
-                    self._tf_ceremony_flash_alpha=0
-                    self._tf_ceremony_flash_color=(255,255,255)
-                else:
-                    self._tf_miniboss_music_timer-=dt
-                    self._tf_ceremony_timer+=dt
-                    time_to_spawn=self._tf_miniboss_music_timer
-                    if time_to_spawn<=1.0 and self._tf_ceremony_phase=='waiting':
-                        self._tf_ceremony_phase='flash_in'; self._tf_ceremony_timer=0.0
-                    if self._tf_ceremony_phase=='flash_in':
-                        self._tf_ceremony_flash_color=(255,255,255)
-                        self._tf_ceremony_flash_alpha=min(255,int(self._tf_ceremony_timer/0.2*255))
-                        if self._tf_ceremony_timer>=0.2: self._tf_ceremony_phase='flash_hold'
-                    elif self._tf_ceremony_phase=='flash_hold':
-                        if time_to_spawn<=0.4:
-                            pt=1.0-(time_to_spawn/0.4)
-                            self._tf_ceremony_flash_color=(int(255*(1-pt)+180*pt),int(255*(1-pt)),int(255*(1-pt)+255*pt))
-                        self._tf_ceremony_flash_alpha=255
-                    if self._tf_miniboss_music_timer<=0:
-                        mb=FallenKing(1); mb.hp=1000000; mb.maxhp=1000000; mb.x=-60.0
-                        mb.speed=FallenKing.BASE_SPEED*4; mb._base_speed=FallenKing.BASE_SPEED*4
-                        self.enemies.append(mb)
-                        self._tf_miniboss=mb
-                        self._tf_miniboss_spawned=True
-                        self._tf_miniboss_timer=0.0
-                        self._tf_music_switch_done=False
-                        self._tf_ceremony_flash_alpha=0
-                        self._tf_ceremony_phase='done'
-        # 10s after miniboss spawn → cut to true_fallenking.mp3 at 2s
-        if self._tf_miniboss is not None and self._tf_miniboss_timer is not None:
-            if self._tf_miniboss.alive:
-                self._tf_miniboss_timer+=dt
-                if self._tf_miniboss_timer>=10.0 and not self._tf_music_switch_done:
-                    self._tf_music_switch_done=True
-                    _sdir=os.path.join(os.path.dirname(os.path.abspath(__file__)),"assets","sound")
-                    _sfx_path=os.path.join(_sdir,"true_fallenking_spawnsfx.mp3")
-                    self._tf_music_path=os.path.join(_sdir,"true_fallenking.mp3")
-                    try:
-                        pygame.mixer.music.set_endevent(0)
-                        pygame.mixer.music.stop()
-                        pygame.mixer.music.load(_sfx_path)
-                        pygame.mixer.music.set_endevent(pygame.USEREVENT+2)
-                        pygame.mixer.music.play(0)
-                    except Exception:
-                        pass
-                    self._tf_retreat_timer=1.1
-                if self._tf_retreat_timer is not None:
-                    self._tf_retreat_timer-=dt
-                    self._tf_miniboss.x-=180*dt
-                    self._tf_miniboss._sword_state='idle'
-                    self._tf_miniboss.frozen=True
-                    if self._tf_retreat_timer<=0:
-                        self._tf_miniboss.frozen=False
-                        self._tf_miniboss.alive=False
-                        self._tf_retreat_timer=None
-                        self._tf_miniboss_timer=None
-                        tfk=TrueFallenKing(); tfk.x=-30.0
-                        self.enemies.append(tfk)
-                        self._tf_tfk=tfk
-        # Clear wave41 override once TFK is dead
-        if self._tf_tfk is not None and not self._tf_tfk.alive:
-            self._tf_wave41_active=False
-            self._tf_tfk=None
-            self.wave_mgr._tf_wave41_override=False
         prev_wave=self.wave_mgr.wave
-        tf_blocks_wave=self._tf_wave41_active or (self._tf_phase is not None)
-        if not tf_blocks_wave and not getattr(self,'natural_spawn_stopped',False):
+        if not getattr(self,'natural_spawn_stopped',False):
             _pre_count = len(self.enemies)
             self.wave_mgr.update(dt,self.enemies)
             # Frosty mode: assign each newly spawned enemy a lane path
@@ -3723,28 +3308,6 @@ class Game:
             self._wave_leaked=False
             # Wave just advanced — immediately pay coins for the completed wave
             self._give_wave_coins(prev_wave)
-
-        # Skip wave banner: show after 3s when enemies are alive but no unit can reach any of them
-        if (not self.game_over and not self.win and not self.paused
-                and self.wave_mgr.state=="spawning" or self.wave_mgr.state=="waiting"):
-            alive_enemies=[e for e in self.enemies if e.alive]
-            if alive_enemies and self.units:
-                any_in_range=False
-                for u in self.units:
-                    r=getattr(u,'range_tiles',0)*TILE
-                    hx=getattr(u,'_home_x',u.px); hy=getattr(u,'_home_y',u.py)
-                    for e in alive_enemies:
-                        if dist((e.x,e.y),(hx,hy))<=r:
-                            any_in_range=True; break
-                    if any_in_range: break
-                if not any_in_range:
-                    self._skip_wave_timer+=dt
-                else:
-                    self._skip_wave_timer=0.0
-            else:
-                self._skip_wave_timer=0.0
-        else:
-            self._skip_wave_timer=0.0
 
         for n in [e for e in self.enemies if isinstance(e,Necromancer) and e.alive]:
             if n.should_summon():
@@ -3772,33 +3335,6 @@ class Game:
                     s2.x=n.x; s2.y=n.y; s2._wp_index=getattr(n,'_wp_index',1)
                     if hasattr(n,'_frosty_path'): s2._frosty_path=n._frosty_path
                     self.enemies.append(s2)
-
-        # TrueFallenKing abilities: Curse Wave, Dark Summon, fire trail stun, Phase Shift
-        for tfk in [e for e in self.enemies if isinstance(e,TrueFallenKing) and e.alive]:
-            # Curse Wave: stun all units in 300px
-            if tfk._curse_active and tfk._curse_ring_r<300:
-                for u in self.units:
-                    if math.hypot(u.px-tfk.x, u.py-tfk.y) <= 300:
-                        self._apply_stun(u, 3.0)
-            # Dark Summon
-            if tfk.should_dark_summon():
-                for _ in range(2):
-                    h=FallenHero(1); h.x=tfk.x; h.y=tfk.y
-                    h._wp_index=getattr(tfk,'_wp_index',1); h.free_kill=True
-                    if hasattr(tfk,'_frosty_path'): h._frosty_path=tfk._frosty_path
-                    self.enemies.append(h)
-                sh=FallenShield(1); sh.x=tfk.x; sh.y=tfk.y
-                sh._wp_index=getattr(tfk,'_wp_index',1); sh.free_kill=True
-                if hasattr(tfk,'_frosty_path'): sh._frosty_path=tfk._frosty_path
-                self.enemies.append(sh)
-            # Fire trail: stun units that stand in it
-            for p in tfk._fire_trail:
-                for u in self.units:
-                    if math.hypot(u.px-p[0], u.py-p[1]) <= 22:
-                        self._apply_stun(u, 1.5)
-            # Phase Shift: prevent freeze
-            if tfk._phase_shift_active:
-                tfk._frost_frozen=False; tfk.frozen=False
 
         # FrostHero: Curse Wave stun (TFK-like)
         for fh in [e for e in self.enemies if isinstance(e,FrostHero) and e.alive]:
@@ -3868,7 +3404,7 @@ class Game:
                 fm._snowball_timer=random.uniform(7,15)
 
         # FallenKing: hero summon + sword lunge stun
-        for k in [e for e in self.enemies if isinstance(e,FallenKing) and not isinstance(e,TrueFallenKing) and e.alive]:
+        for k in [e for e in self.enemies if isinstance(e,FallenKing) and e.alive]:
             if k.should_summon_hero():
                 path = getattr(k,'_frosty_path',None) or get_map_path()
                 # Spawn hero slightly behind king on the path (negative offset)
@@ -4048,7 +3584,7 @@ class Game:
             self.game_over=True
             # ── Achievement: Жертва Короля ─ lose to FallenKing at wave 40 in Fallen
             if self.mode=="fallen" and self.wave_mgr.wave==40:
-                if any(isinstance(e,FallenKing) and not isinstance(e,TrueFallenKing)
+                if any(isinstance(e,FallenKing)
                        for e in dead_reached):
                     self.ach_mgr.try_grant("king_victim")
             try:
@@ -4180,9 +3716,9 @@ class Game:
                 if cls in _fallen_bar_classes and cls not in self._fallen_boss_bars:
                     self._fallen_boss_bars[cls]=e
             # Always keep FallenKing bar updated to current alive instance
-            fk_alive=[e for e in self.enemies if isinstance(e,FallenKing) and not isinstance(e,TrueFallenKing) and e.alive]
-            if fk_alive:
-                self._fallen_boss_bars[FallenKing]=fk_alive[0]
+                fk_alive=[e for e in self.enemies if isinstance(e,FallenKing) and e.alive]
+                if fk_alive:
+                    self._fallen_boss_bars[FallenKing]=fk_alive[0]
 
         # Frosty boss bars: only on FIRST wave-spawned appearance (no sandbox spawns)
         if self.mode=="frosty":
@@ -4205,10 +3741,6 @@ class Game:
             self._fallen_boss_bars[FrostSpirit] = fs_alive[0]
 
         # tf_test: always track 1M miniboss and TFK in boss bars regardless of mode
-        if self._tf_miniboss and self._tf_miniboss.alive:
-            self._fallen_boss_bars[FallenKing]=self._tf_miniboss
-        if self._tf_tfk and self._tf_tfk.alive:
-            self._fallen_boss_bars[TrueFallenKing]=self._tf_tfk
 
         if (self.wave_mgr.state=="waiting"
                 and not any(e.alive for e in self.enemies) and not self.wave_mgr._lmoney_paid):
@@ -4249,10 +3781,6 @@ class Game:
             and self._fallen_king_spawned
             and not any(isinstance(e,FallenKing) and e.alive for e in self.enemies)
             and self._elapsed < 900.0
-            and not self._tf_wave41_active
-            and not self._tf_miniboss_spawned
-            and self._tf_king is None
-            and self._tf_phase is None
             and not getattr(self,"_tf_triggered_auto",False)
         )
         if tf_can_trigger and self.wave_mgr.state=="done" and not any(e.alive for e in self.enemies):
@@ -4261,20 +3789,7 @@ class Game:
             fk_tf = FallenKing(1)
             fk_tf.hp = 10000; fk_tf.maxhp = 10000; fk_tf.x = -30.0
             self.enemies.append(fk_tf)
-            self._tf_king = fk_tf
-            self._tf_phase = None; self._tf_timer = 0.0
-            self._tf_black_alpha = 0
-            self._tf_text1_alpha = 0; self._tf_text2_alpha = 0; self._tf_text3_alpha = 0
-            self._tf_music_started = False; self._tf_spawn_timer = None
-            self._tf_wave41_active = False; self._tf_miniboss = None
-            self._tf_miniboss_timer = None; self._tf_miniboss_music_timer = None
-            self._tf_miniboss_spawned = False
-            self._tf_ceremony_phase = None; self._tf_ceremony_timer = 0.0
-            self._tf_ceremony_flash_alpha = 0; self._tf_ceremony_flash_color = (255,255,255)
-            self._tf_music_switch_done = False; self._tf_retreat_timer = None
-            self._tf_tfk = None; self._tf_music_first_play = True
-            self.wave_mgr._tf_wave41_override = False
-        if self.wave_mgr.state=="done" and not any(e.alive for e in self.enemies) and not fk_pending and not self._tf_wave41_active and not self._tf_miniboss_spawned and self._tf_king is None and self._tf_phase is None:
+        if self.wave_mgr.state=="done" and not any(e.alive for e in self.enemies) and not fk_pending :
             if not self.win:
                 # ── Ensure all waves paid (covers state=done skipping the waiting block) ──
                 self._give_wave_coins(self.wave_mgr.wave)
@@ -4285,12 +3800,7 @@ class Game:
                     self._wave_coin_accum = 0.0
                 write_save(self.save_data)
                 # ── Grant achievements on win ──
-                _was_tf = (getattr(self,"_tf_tfk",None) is not None or
-                           getattr(self,"_tf_wave41_active",False) or
-                           getattr(self,"_tf_miniboss_spawned",False))
-                if _was_tf:
-                    self.ach_mgr.try_grant("true_end")
-                elif self.mode == "fallen":
+                if self.mode == "fallen":
                     self.ach_mgr.try_grant("fallen_angel")
                 elif self.mode == "frosty":
                     # Reward: unlock Frostcelerator
@@ -4559,16 +4069,14 @@ class Game:
 
         # Build fallen boss bars list
         fallen_bars=None
-        if (self.mode=="fallen" or self.mode=="frosty" or self._tf_wave41_active or self._tf_miniboss or self._tf_tfk) and self._fallen_boss_bars:
-            fallen_bars=[]
-            _bar_cfg={
+        fallen_bars=[]
+        _bar_cfg={
                 FallenGiant:       ("FALLEN GIANT",        (160,80,220)),
                 FallenJester:      ("FALLEN JESTER",       (200,60,220)),
                 FallenSquire:      ("FALLEN SQUIRE",       (140,70,200)),
                 FallenShield:      ("FALLEN SHIELD",       (80,160,220)),
                 FallenHonorGuard:  ("FALLEN HONOR GUARD",  (220,180,60)),
                 FallenKing:        ("FALLEN KING",         (200,100,255)),
-                TrueFallenKing:    ("TRUE FALLEN KING",    (220,30,30)),
                 # Frosty bosses
                 SnowMinion:        ("SNOW MINION",         (100,200,255)),
                 FrostHunter:       ("FROST HUNTER",        (60,160,240)),
@@ -4581,11 +4089,11 @@ class Game:
                 FrostHero:         ("FROST HERO",          (160,230,255)),
                 FrostSpirit:       ("FROST SPIRIT",        (220,248,255)),
             }
-            for cls,(label,col) in _bar_cfg.items():
-                e=self._fallen_boss_bars.get(cls)
-                if e and e.alive:
-                    fallen_bars.append((label,e.hp,e.maxhp,col))
-            if not fallen_bars: fallen_bars=None
+        for cls,(label,col) in _bar_cfg.items():
+            e=self._fallen_boss_bars.get(cls)
+            if e and e.alive:
+                fallen_bars.append((label,e.hp,e.maxhp,col))
+        if not fallen_bars: fallen_bars=None
 
         self.ui.draw(self.screen,self.units,self.money,self.wave_mgr,
                      self.player_hp,self.player_maxhp,self.enemies,
@@ -4606,10 +4114,7 @@ class Game:
             fl.fill(col); fl.set_alpha(self._ceremony_flash_alpha)
             self.screen.blit(fl,(0,0))
         # tf ceremony flash overlay
-        if self._tf_ceremony_flash_alpha>0:
-            col=self._tf_ceremony_flash_color
             fl=pygame.Surface((SCREEN_W,SCREEN_H))
-            fl.fill(col); fl.set_alpha(self._tf_ceremony_flash_alpha)
             self.screen.blit(fl,(0,0))
 
         # Draw stun indicator on stunned units
@@ -4624,50 +4129,6 @@ class Game:
 
         if self.game_over or self.win:
             self._draw_end_screen()
-
-        # tf_test overlay: black fade + texts
-        if self._tf_phase is not None or self._tf_black_alpha>0:
-            _t_tf=pygame.time.get_ticks()*0.001
-            if self._tf_black_alpha>0:
-                bl=pygame.Surface((SCREEN_W,SCREEN_H))
-                bl.fill((0,0,0)); bl.set_alpha(self._tf_black_alpha)
-                self.screen.blit(bl,(0,0))
-            cy_tf=SCREEN_H//2-80
-            if self._tf_text1_alpha>0:
-                f1=pygame.font.SysFont("segoeui",34,bold=True)
-                s1=f1.render("Ты прошел Fallen менее чем за 15 минут",True,(220,220,220))
-                s1.set_alpha(self._tf_text1_alpha)
-                self.screen.blit(s1,s1.get_rect(center=(SCREEN_W//2,cy_tf)))
-            if self._tf_text2_alpha>0:
-                f2=pygame.font.SysFont("segoeui",28)
-                s2=f2.render("а почему так быстро",True,(180,180,180))
-                s2.set_alpha(self._tf_text2_alpha)
-                self.screen.blit(s2,s2.get_rect(center=(SCREEN_W//2,cy_tf+60)))
-            if self._tf_text3_alpha>0:
-                f3=pygame.font.SysFont("consolas",64,bold=True)
-                shake_x=int(math.sin(_t_tf*47)*3) if self._tf_phase in ('text3','fade_out') else 0
-                shake_y=int(math.cos(_t_tf*61)*2) if self._tf_phase in ('text3','fade_out') else 0
-                s3=f3.render("True Fallen",True,(220,30,30))
-                s3.set_alpha(self._tf_text3_alpha)
-                self.screen.blit(s3,s3.get_rect(center=(SCREEN_W//2+shake_x,cy_tf+150+shake_y)))
-
-        # Skip wave banner — appears after 3s with no unit in range
-        if self._skip_wave_timer >= 3.0 and not self.game_over and not self.win and not self.paused:
-            btn = self._skip_wave_btn
-            mx2, my2 = pygame.mouse.get_pos()
-            hov = btn.collidepoint(mx2, my2)
-            # Slide-in animation: fully visible after 3.3s
-            anim = min(1.0, (self._skip_wave_timer - 3.0) / 0.3)
-            slide_y = int(-btn.h * (1.0 - anim))
-            draw_y = btn.y + slide_y
-            br = pygame.Rect(btn.x, draw_y, btn.w, btn.h)
-            bg = (50, 90, 50) if hov else (30, 60, 35)
-            brd = (80, 220, 100) if hov else (55, 160, 75)
-            draw_rect_alpha(self.screen, bg, (br.x, br.y, br.w, br.h), 230, 10)
-            pygame.draw.rect(self.screen, brd, br, 2, border_radius=10)
-            lf = pygame.font.SysFont("segoeui", 22, bold=True)
-            ls = lf.render("Пропустить волну", True, C_WHITE)
-            self.screen.blit(ls, ls.get_rect(center=br.center))
 
         # hixw5yt time-freeze overlay
         if self._hixw5yt_frozen:
@@ -4760,12 +4221,8 @@ class Game:
 
         elapsed=int(self._elapsed)
         mins=elapsed//60; secs=elapsed%60
-        # True Fallen if TFK was involved this run
-        _was_true_fallen = getattr(self,"_tf_tfk",None) is not None or getattr(self,"_tf_wave41_active",False) or getattr(self,"_tf_miniboss_spawned",False)
-        if _was_true_fallen:
-            mode_label = "True Fallen"
-        else:
-            mode_label={"easy":"Easy","fallen":"Fallen","sandbox":"Sandbox","frosty":"Frosty"}.get(self.mode,self.mode.title())
+        # True Fallen comment removed
+        mode_label={"easy":"Easy","fallen":"Fallen","sandbox":"Sandbox","frosty":"Frosty"}.get(self.mode,self.mode.title())
         rows=[
             ("Time:", f"{mins}m {secs:02d}s"),
             ("Wave:",           str(self.wave_mgr.wave)),
@@ -4956,6 +4413,33 @@ class MainMenu(_OrigMainMenu):
         ver = font_sm.render("v1.2", True, (40, 48, 65))
         surf.blit(ver, (10, SCREEN_H - 20))
 
+        # ── Changelog (top left) ──────────────────────────────────────────────
+        cl_x, cl_y = 12, 58
+        cl_w, cl_h = 310, 14 + len(_CHANGELOG) * 20 + 8
+        draw_rect_alpha(surf, (12, 10, 22), (cl_x, cl_y, cl_w, cl_h), 200, 8)
+        pygame.draw.rect(surf, (70, 50, 110), pygame.Rect(cl_x, cl_y, cl_w, cl_h), 1, border_radius=8)
+        cy_cl = cl_y + 8
+        for text, col, bold in _CHANGELOG:
+            cf = pygame.font.SysFont("segoeui", 13, bold=bold)
+            cs2 = cf.render(text, True, col)
+            surf.blit(cs2, (cl_x + 8, cy_cl))
+            cy_cl += 20
+
+
+# ── Changelog widget (drawn in MainMenu._draw) ────────────────────────────────
+_CHANGELOG = [
+    ("CHANGELOG", (200, 180, 255), True),
+    ("• Spotlight Tech REWORK", (255, 230, 80), False),
+    ("• Новый интерфейс лодаута", (200, 200, 200), False),
+    ("• 3 НОВЫХ Юнита:", (200, 200, 200), False),
+    ("  - Snowballer, commander, commando", (200, 200, 200), False),
+    ("• Frosty нерфы:", (160, 220, 255), False),
+    ("  - MegaFrostMystery: 140→55 speed", (180, 210, 240), False),
+    ("  - Yeti: 66→28 speed", (180, 210, 240), False),
+    ("• True Fallen УДАЛЁН", (255, 100, 100), False),
+    ("• я УСТАЛ писать этот ЧЕНДЖЛОГ", (255, 100, 100), False),
+    ("• если что я гуишку лодаута переделывать буду", (255, 100, 100), False),
+]
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":

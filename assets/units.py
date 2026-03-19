@@ -3027,52 +3027,46 @@ class HallowPunk(Unit):
 C_SPOTLIGHT      = (255, 230, 80)
 C_SPOTLIGHT_DARK = (80,  65,  10)
 
-# Tuple layout:
+# Tuple:
 #  (damage, firerate, range_tiles, upgrade_cost,
-#   beam_radius,       # AOE radius of the spotlight cone in tiles
-#   burn_dmg,          # burn damage per tick (0 = no burn)
-#   burn_time,         # burn duration
-#   burn_tick,         # seconds between burn ticks
-#   expose_hidden,     # bool: enemies in beam get Exposed (hidden → targetable)
-#   confusion_thresh)  # accumulated dmg before confusing enemies (0 = no confusion)
-#
-# Distance falloff: enemies within beam_radius get damage scaled by distance:
-#   < 33% of radius  → 100%
-#   33-66% of radius → 60%
-#   > 66% of radius  → 35%
-#
-# Beam slowly rotates toward target at 90 deg/sec (sweep mechanic)
-# Confusion: reverses enemy movement for 2s
-
+#   beam_radius,    # circle radius under beam in tiles (enemy hit zone)
+#   burn_dmg,       # fire damage per tick (0=no fire)
+#   burn_time,      # seconds fire lasts
+#   burn_tick,      # seconds between fire ticks
+#   expose_hidden,  # lv2+: hidden enemies in beam become exposed
+#   conf_thresh,    # lv4: confusion trigger after this much accumulated dmg
+#   hidden_detection)
 SPOTLIGHTTECH_LEVELS = [
-    # lv0 – place $4000  (flying + hidden det from lv0)
-    (2,  3.008, 20.0, None,  5.0, 0, 0.0, 0.5, False, 0),
-    # lv1 – +$500
-    (2,  3.008, 20.0,  500,  5.0, 2, 3.0, 0.5, False, 0),
-    # lv2 – +$1000  (expose hidden)
-    (4,  3.008, 20.0, 1000,  6.0, 2, 3.0, 0.5, True,  0),
-    # lv3 – +$3500
-    (8,  3.008, 25.0, 3500,  6.0, 6, 5.0, 0.5, True,  0),
-    # lv4 – +$8000  (confusion after 1800 dmg)
-    (15, 3.008, 30.0, 8000,  6.0,10, 5.0, 0.5, True,  1800),
+    # lv0  $3250
+    (4,  0.308, 7.0, None,  3.0, 0, 0.0,  0.25, False, 0,    True),
+    # lv1  +$1800  (burn unlocked, bigger circle)
+    (4,  0.308, 7.0, 1800,  3.6, 1, 2.0,  0.25, False, 0,    True),
+    # lv2  +$4800  (+4 dmg, +1 range, hidden det, bigger circle, burn 2, expose)
+    (8,  0.308, 8.0, 4800,  4.2, 2, 2.0,  0.25, True,  0,    True),
+    # lv3  +$12500  (+4 dmg, faster firerate, longer burn, bigger burn)
+    (12, 0.208, 8.0, 12500, 4.2, 5, 4.0,  0.25, True,  0,    True),
+    # lv4  +$20000  (bigger circle, burn 7, 6s, confusion every 1800 dmg, 7.5s cd)
+    (12, 0.208, 8.0, 20000, 5.0, 7, 6.0,  0.25, True,  1800, True),
 ]
 
-_SPOTLIGHT_BEAM_ROT_SPEED = 3.0   # radians per second (sweep speed)
-_SPOTLIGHT_CONFUSE_DUR    = 2.0   # seconds enemies are confused
+_SPOTLIGHT_BEAM_ROT_SPEED = 3.5   # radians/sec sweep speed
+_SPOTLIGHT_CONFUSE_DUR    = 2.5   # seconds confusion lasts
+_SPOTLIGHT_CONFUSE_CD     = 7.5   # seconds cooldown between confusions
 
 
 class SpotlightTech(Unit):
-    PLACE_COST       = 4000
+    PLACE_COST       = 3250
     COLOR            = C_SPOTLIGHT
     NAME             = "Spotlight Tech"
-    hidden_detection = True   # has hidden detection at all levels
+    hidden_detection = True
 
     def __init__(self, px, py):
         super().__init__(px, py)
-        self._beam_angle   = 0.0    # current beam direction (radians)
-        self._target_angle = 0.0    # angle toward current target
+        self._beam_angle   = 0.0
+        self._target_angle = 0.0
         self._anim_t       = 0.0
-        self._conf_accum   = 0.0    # accumulated damage for confusion trigger
+        self._conf_accum   = 0.0
+        self._conf_cd      = 0.0   # cooldown timer
         self._last_enemies = []
         self._apply_level()
 
@@ -3080,7 +3074,8 @@ class SpotlightTech(Unit):
         row = SPOTLIGHTTECH_LEVELS[self.level]
         (self.damage, self.firerate, self.range_tiles, _,
          self._beam_r, self._burn_dmg, self._burn_time, self._burn_tick,
-         self._expose_hidden, self._conf_thresh) = row
+         self._expose_hidden, self._conf_thresh,
+         self.hidden_detection) = row
 
     def upgrade_cost(self):
         nxt = self.level + 1
@@ -3092,21 +3087,15 @@ class SpotlightTech(Unit):
         if nxt < len(SPOTLIGHTTECH_LEVELS):
             self.level = nxt; self._apply_level()
 
-    def _get_falloff(self, d, beam_r_px):
-        frac = d / beam_r_px
-        if   frac < 0.33: return 1.00
-        elif frac < 0.66: return 0.60
-        else:             return 0.35
-
     def _confuse_enemies(self, enemies):
-        """Reverse all enemies currently in beam for confusion duration."""
-        bx = self.px + math.cos(self._beam_angle) * self.range_tiles * TILE * 0.5
-        by = self.py + math.sin(self._beam_angle) * self.range_tiles * TILE * 0.5
+        range_px  = self.range_tiles * TILE
         beam_r_px = self._beam_r * TILE
+        bx = self.px + math.cos(self._beam_angle) * range_px
+        by = self.py + math.sin(self._beam_angle) * range_px
         for e in enemies:
             if not e.alive: continue
             if dist((e.x, e.y), (bx, by)) <= beam_r_px:
-                e._confused      = True
+                e._confused = True
                 e._confused_timer = _SPOTLIGHT_CONFUSE_DUR
 
     def _tick_burn(self, enemies, dt):
@@ -3124,158 +3113,146 @@ class SpotlightTech(Unit):
     def update(self, dt, enemies, effects, money):
         self._anim_t += dt
         if self.cd_left > 0: self.cd_left -= dt
+        if self._conf_cd > 0: self._conf_cd -= dt
         if self._burn_dmg > 0:
             self._tick_burn(enemies, dt)
 
-        # Tick confusion on enemies
+        # Tick confusion
         for e in enemies:
             if not e.alive: continue
             ct = getattr(e, '_confused_timer', 0.0)
             if ct > 0:
                 e._confused_timer = ct - dt
                 if e._confused_timer <= 0:
-                    e._confused = False
-                    e._confused_timer = 0.0
+                    e._confused = False; e._confused_timer = 0.0
 
-        # Pick target — farthest in range (First mode = rightmost)
         self._last_enemies = enemies
         targets = self._get_targets(enemies, 1)
         if not targets: return
 
-        t = targets[0]
-        self._target_angle = math.atan2(t.y - self.py, t.x - self.px)
+        t0 = targets[0]
+        self._target_angle = math.atan2(t0.y - self.py, t0.x - self.px)
 
-        # Rotate beam toward target at fixed speed
+        # Rotate beam
         diff = math.atan2(math.sin(self._target_angle - self._beam_angle),
                           math.cos(self._target_angle - self._beam_angle))
         max_rot = _SPOTLIGHT_BEAM_ROT_SPEED * dt
-        if abs(diff) <= max_rot:
-            self._beam_angle = self._target_angle
-        else:
-            self._beam_angle += math.copysign(max_rot, diff)
+        self._beam_angle += math.copysign(min(abs(diff), max_rot), diff)
 
-        # Attack on cooldown — hit all enemies within beam cone
+        # Attack
         if self.cd_left <= 0:
             self.cd_left = self.firerate
-            range_px   = self.range_tiles * TILE
-            beam_half  = math.radians(25)  # ±25° cone half-angle
+            range_px  = self.range_tiles * TILE
+            beam_r_px = self._beam_r * TILE
+
+            # Find actual beam end (shortened to closest in-cone target)
+            actual_len = range_px
+            beam_half  = math.radians(22)
+            for e in self._last_enemies:
+                if not e.alive: continue
+                dx2 = e.x - self.px; dy2 = e.y - self.py
+                d2  = math.hypot(dx2, dy2)
+                if d2 < 1 or d2 > range_px: continue
+                at = math.atan2(dy2, dx2)
+                ad = abs(math.atan2(math.sin(at - self._beam_angle),
+                                    math.cos(at - self._beam_angle)))
+                if ad <= beam_half and d2 < actual_len:
+                    actual_len = d2
+                    break
+
+            # Circle center = beam end
+            bx = self.px + math.cos(self._beam_angle) * actual_len
+            by = self.py + math.sin(self._beam_angle) * actual_len
 
             for e in enemies:
                 if not e.alive: continue
-                if e.IS_HIDDEN and not self._expose_hidden and not self.hidden_detection:
-                    continue
-                dx2 = e.x - self.px; dy2 = e.y - self.py
-                d   = math.hypot(dx2, dy2)
-                if d > range_px or d < 1: continue
-                # Angle check — is enemy inside the cone?
-                angle_to = math.atan2(dy2, dx2)
-                angle_diff = abs(math.atan2(math.sin(angle_to - self._beam_angle),
-                                            math.cos(angle_to - self._beam_angle)))
-                if angle_diff > beam_half: continue
+                if e.IS_HIDDEN and not self._expose_hidden and not self.hidden_detection: continue
+                # Hit only enemies inside the circle at beam end
+                if dist((e.x, e.y), (bx, by)) > beam_r_px: continue
 
-                # Falloff by distance
-                frac = d / range_px
-                if   frac < 0.33: falloff = 1.00
-                elif frac < 0.66: falloff = 0.70
-                else:             falloff = 0.45
+                e.take_damage(self.damage)
+                self.total_damage += self.damage
+                self._conf_accum  += self.damage
 
-                dmg = self.damage * falloff
-                e.take_damage(dmg)
-                self.total_damage += dmg
-                self._conf_accum  += dmg
-
-                # Expose hidden (lv2+)
                 if self._expose_hidden and e.IS_HIDDEN:
-                    e._exposed       = True
-                    e._exposed_timer = self.firerate + 0.5
+                    e._exposed = True; e._exposed_timer = self.firerate + 0.5
 
-                # Apply burn (lv1+)
                 if self._burn_dmg > 0:
-                    e._st_fire_timer = self._burn_time
-                    e._st_fire_tick  = 0.0
+                    e._st_fire_timer = self._burn_time; e._st_fire_tick = 0.0
 
-            # Confusion trigger (lv4)
-            if self._conf_thresh > 0 and self._conf_accum >= self._conf_thresh:
+            # Confusion (lv4, with cooldown)
+            if self._conf_thresh > 0 and self._conf_accum >= self._conf_thresh and self._conf_cd <= 0:
                 self._conf_accum = 0.0
+                self._conf_cd    = _SPOTLIGHT_CONFUSE_CD
                 self._confuse_enemies(enemies)
 
-        # Tick exposed timers
+        # Tick exposed
         for e in enemies:
             if not e.alive: continue
             et = getattr(e, '_exposed_timer', 0.0)
             if et > 0:
                 e._exposed_timer = et - dt
                 if e._exposed_timer <= 0:
-                    e._exposed = False
-                    e._exposed_timer = 0.0
+                    e._exposed = False; e._exposed_timer = 0.0
 
     def draw(self, surf):
-        t  = self._anim_t
+        t   = self._anim_t
         cx, cy = int(self.px), int(self.py)
-        a  = self._beam_angle
+        a   = self._beam_angle
         ca, sa = math.cos(a), math.sin(a)
-        pa, pb = -sa, ca   # perpendicular
+        pa, pb = -sa, ca
 
-        # ── Beam cone (draw FIRST so tower body is on top) ──
-        beam_len  = self.range_tiles * TILE
-        cone_half = math.radians(25)   # ±25° cone
-        cone_s    = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+        # ── Beam: one thick semi-transparent ray ──
+        range_px = self.range_tiles * TILE
 
-        # Filled triangle cone — wide at tip fades
-        n_steps = 20
-        for i in range(n_steps):
-            frac   = i / (n_steps - 1)   # 0 = center, 1 = edge
-            spread = math.sin(frac * math.pi * 0.5)  # ease in
-            # Two rays symmetric around center
-            for sign in (1, -1):
-                ray_a  = a + sign * cone_half * spread
-                ray_len = beam_len * (1.0 - frac * 0.15)
-                ex2 = cx + int(math.cos(ray_a) * ray_len)
-                ey2 = cy + int(math.sin(ray_a) * ray_len)
-                # Alpha: bright in center, fade to edges and to distance
-                alpha = max(0, int((1.0 - spread) * 110 + 15))
-                pygame.draw.line(cone_s, (255, 245, 120, alpha),
-                                 (cx, cy), (ex2, ey2), 2)
+        # Only draw beam + circle if there's a target in range
+        has_target = any(
+            e.alive and not (e.IS_HIDDEN and not self.hidden_detection)
+            and dist((e.x, e.y), (self.px, self.py)) <= range_px
+            for e in getattr(self, '_last_enemies', [])
+        )
 
-        # Bright center ray
-        ex_c = cx + int(ca * beam_len)
-        ey_c = cy + int(sa * beam_len)
-        pygame.draw.line(cone_s, (255, 255, 200, 130), (cx, cy), (ex_c, ey_c), 3)
-        pygame.draw.line(cone_s, (255, 255, 255, 60),  (cx, cy), (ex_c, ey_c), 1)
+        if has_target:
+            # Shorten beam to closest in-cone target
+            actual_beam_len = range_px
+            beam_half = math.radians(22)
+            for e in getattr(self, '_last_enemies', []):
+                if not e.alive: continue
+                dx2 = e.x - self.px; dy2 = e.y - self.py
+                d2  = math.hypot(dx2, dy2)
+                if d2 < 1 or d2 > range_px: continue
+                angle_to   = math.atan2(dy2, dx2)
+                angle_diff = abs(math.atan2(math.sin(angle_to - self._beam_angle),
+                                            math.cos(angle_to - self._beam_angle)))
+                if angle_diff <= beam_half and d2 < actual_beam_len:
+                    actual_beam_len = d2
+                    break
 
-        surf.blit(cone_s, (0, 0))
+            beam_end_x = cx + int(ca * actual_beam_len)
+            beam_end_y = cy + int(sa * actual_beam_len)
 
-        # ── Glow circles under enemies in beam (TDS style) ──
-        # Draw for enemies currently in the cone
-        range_px  = self.range_tiles * TILE
-        beam_half = math.radians(25)
-        for e in getattr(self, '_last_enemies', []):
-            if not e.alive: continue
-            dx2 = e.x - self.px; dy2 = e.y - self.py
-            d   = math.hypot(dx2, dy2)
-            if d > range_px or d < 1: continue
-            angle_to   = math.atan2(dy2, dx2)
-            angle_diff = abs(math.atan2(math.sin(angle_to - self._beam_angle),
-                                        math.cos(angle_to - self._beam_angle)))
-            if angle_diff > beam_half: continue
-            # Golden circle under the enemy
-            ex3 = int(e.x); ey3 = int(e.y)
-            gs = pygame.Surface((80, 80), pygame.SRCALPHA)
-            pulse = int(abs(math.sin(t * 5)) * 40 + 140)
-            # Outer soft glow
-            pygame.draw.circle(gs, (255, 230, 80, 60),  (40, 40), e.radius + 14)
-            # Inner bright ring
-            pygame.draw.circle(gs, (255, 245, 120, pulse), (40, 40), e.radius + 6, 3)
-            # Tight inner ring
-            pygame.draw.circle(gs, (255, 255, 180, 200),   (40, 40), e.radius + 2, 2)
-            surf.blit(gs, (ex3 - 40, ey3 - 40))
+            beam_s = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            pygame.draw.line(beam_s, (255, 240, 100, 90),  (cx, cy), (beam_end_x, beam_end_y), 22)
+            pygame.draw.line(beam_s, (255, 255, 180, 140), (cx, cy), (beam_end_x, beam_end_y), 8)
+            pygame.draw.line(beam_s, (255, 255, 240, 200), (cx, cy), (beam_end_x, beam_end_y), 3)
+            surf.blit(beam_s, (0, 0))
+
+            # Small circle at beam end — ÷8 of original (÷2 of last version)
+            beam_r_px   = self._beam_r * TILE
+            circle_size = max(3, int(beam_r_px * 0.27))
+            bx2 = beam_end_x; by2 = beam_end_y
+            gs = pygame.Surface((circle_size * 2 + 4, circle_size * 2 + 4), pygame.SRCALPHA)
+            cx3, cy3 = circle_size + 2, circle_size + 2
+            pygame.draw.circle(gs, (255, 248, 120, 130), (cx3, cy3), circle_size)
+            pygame.draw.circle(gs, (255, 255, 200, 200), (cx3, cy3), max(2, circle_size - 1), 2)
+            surf.blit(gs, (bx2 - circle_size - 2, by2 - circle_size - 2))
 
         # ── Tower body ──
         pygame.draw.circle(surf, C_SPOTLIGHT_DARK, (cx, cy), 27)
         pygame.draw.circle(surf, C_SPOTLIGHT,      (cx, cy), 21)
         pygame.draw.circle(surf, (255, 250, 180),  (cx, cy), 21, 2)
 
-        # Rotating spotlight head (trapezoid housing)
+        # Rotating lamp head
         head_cx = cx + int(ca * 14); head_cy = cy + int(sa * 14)
         pts = [
             (int(head_cx + pa * 8  - ca * 6), int(head_cy + pb * 8  - sa * 6)),
@@ -3286,20 +3263,22 @@ class SpotlightTech(Unit):
         pygame.draw.polygon(surf, (180, 140, 20), pts)
         pygame.draw.polygon(surf, C_SPOTLIGHT, pts, 2)
 
-        # Lens — bright circle at front of housing
+        # Lens glow
         lx = cx + int(ca * 20); ly = cy + int(sa * 20)
         ls = pygame.Surface((20, 20), pygame.SRCALPHA)
         p2 = int(abs(math.sin(t * 4)) * 40 + 180)
         pygame.draw.circle(ls, (255, 250, 150, p2), (10, 10), 8)
-        pygame.draw.circle(ls, (255, 255, 220, 255),  (10, 10), 4)
+        pygame.draw.circle(ls, (255, 255, 220, 255), (10, 10), 4)
         surf.blit(ls, (lx - 10, ly - 10))
 
         # Confusion charge bar (lv4)
         if self._conf_thresh > 0:
             frac_c = min(1.0, self._conf_accum / self._conf_thresh)
-            bw = 40; bx2 = cx - bw // 2; by2 = cy - 42
-            pygame.draw.rect(surf, (40, 30, 10),   (bx2, by2, bw, 5), border_radius=2)
-            pygame.draw.rect(surf, (255, 200, 30), (bx2, by2, int(bw * frac_c), 5), border_radius=2)
+            cd_frac = max(0.0, 1.0 - self._conf_cd / _SPOTLIGHT_CONFUSE_CD) if self._conf_cd > 0 else 1.0
+            bw = 44; bx3 = cx - bw // 2; by3 = cy - 44
+            pygame.draw.rect(surf, (40, 30, 10),   (bx3, by3, bw, 5), border_radius=2)
+            bar_col = (255, 200, 30) if self._conf_cd <= 0 else (150, 120, 30)
+            pygame.draw.rect(surf, bar_col, (bx3, by3, int(bw * frac_c), 5), border_radius=2)
 
         # Level pips
         for i in range(self.level):
@@ -3311,21 +3290,836 @@ class SpotlightTech(Unit):
         pygame.draw.circle(s, (255, 255, 255, 22), (r, r), r)
         pygame.draw.circle(s, (255, 255, 255, 60), (r, r), r, 2)
         surf.blit(s, (int(self.px) - r, int(self.py) - r))
-        # Beam radius indicator
-        br = int(self._beam_r * TILE)
-        bs = pygame.Surface((br * 2, br * 2), pygame.SRCALPHA)
-        pygame.draw.circle(bs, (255, 230, 60, 25), (br, br), br)
-        pygame.draw.circle(bs, (255, 230, 60, 70), (br, br), br, 2)
-        surf.blit(bs, (int(self.px) - br, int(self.py) - br))
 
     def get_info(self):
-        conf_str = f"{int(self._conf_accum)}/{self._conf_thresh}" if self._conf_thresh else "—"
+        conf_str = (f"{int(self._conf_accum)}/{self._conf_thresh} (cd {self._conf_cd:.1f}s)"
+                    if self._conf_thresh else "—")
         return {
             "Damage":   self.damage,
             "Firerate": f"{self.firerate:.3f}",
             "Range":    self.range_tiles,
-            "BeamR":    f"{self._beam_r} tiles",
-            "Burn":     f"{self._burn_dmg}/tick" if self._burn_dmg else "—",
+            "BeamCircle": f"{self._beam_r} tiles",
+            "Burn":     f"{self._burn_dmg}/tick {self._burn_time:.0f}s" if self._burn_dmg else "—",
             "Expose":   "YES" if self._expose_hidden else "lv2+",
             "Confuse":  conf_str,
         }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Commander
+# ═══════════════════════════════════════════════════════════════════════════════
+C_COMMANDER      = (220, 160, 60)
+C_COMMANDER_DARK = (80,  50,  10)
+
+# Tuple layout:
+#  (damage, firerate, range_tiles, upgrade_cost,
+#   buff_range,   # tiles — radius that commander boosts nearby units
+#   buff_mult,    # firerate multiplier applied to units in range (0.72 = 28% faster)
+#   hidden_detection)
+#
+# Mechanic:
+#  - Passively boosts firerate of ALL friendly units within buff_range
+#    by applying a multiplier to their base firerate (lower = faster)
+#  - Shoots pistol at nearest enemy dealing modest damage
+#  - Lv4 (penultimate): unlocks Triple Upgrade ability — gives all units in
+#    buff_range a 40-second bonus of +25% on top of the existing commander buff
+#    (so if base buff is ×0.72, triple upgrade gives an extra ×0.75 on top)
+#    Cooldown: 40 seconds. Duration: 15 seconds.
+
+COMMANDER_LEVELS = [
+    # lv0  place $2500
+    (5,  0.850, 7.0, None, 7.0, 0.80, False),
+    # lv1  +$500
+    (6,  0.800, 8.0,  500, 8.0, 0.78, False),
+    # lv2  +$1500  (hidden detection)
+    (7,  0.750, 9.0, 1500, 9.0, 0.75, True),
+    # lv3  +$3000
+    (9,  0.700, 9.0, 3000, 9.0, 0.72, True),
+    # lv4  +$5000  Triple Upgrade ability unlocks here (penultimate)
+    (11, 0.650, 10.0,5000,10.0, 0.70, True),
+    # lv5  +$12000  (max)
+    (14, 0.600, 11.0,12000,11.0,0.65, True),
+]
+
+_COMMANDER_TRIPLE_CD  = 40.0   # seconds cooldown
+_COMMANDER_TRIPLE_DUR = 15.0   # seconds duration
+_COMMANDER_TRIPLE_BONUS = 0.25  # +25% of current commander buff added on top
+
+
+class TripleUpgradeAbility:
+    """Gives all units in commander range +25% of current buff as extra boost for 15s."""
+    name = "Triple Upgrade"
+    cooldown = _COMMANDER_TRIPLE_CD
+
+    def __init__(self, owner):
+        self.owner = owner
+        self.cd_left = 0.0
+        self._active_timer = 0.0  # countdown while ability is active
+        self._boosted_units = []  # units currently boosted
+
+    def update(self, dt):
+        if self.cd_left > 0:
+            self.cd_left -= dt
+        # Tick down active buff
+        if self._active_timer > 0:
+            self._active_timer -= dt
+            if self._active_timer <= 0:
+                self._expire()
+
+    def ready(self):
+        return self.cd_left <= 0 and self._active_timer <= 0
+
+    def activate(self, units):
+        if not self.ready():
+            return False
+        self.cd_left = self.cooldown
+        self._active_timer = _COMMANDER_TRIPLE_DUR
+        r = self.owner.buff_range * TILE
+        extra_mult = self.owner.buff_mult * (1.0 - _COMMANDER_TRIPLE_BONUS)  # e.g. 0.70 * 0.75 = 0.525 extra
+        self._boosted_units = []
+        for u in units:
+            if u is self.owner: continue
+            if dist((u.px, u.py), (self.owner.px, self.owner.py)) <= r:
+                # Save original firerate if not already commander-buffed
+                if not hasattr(u, '_cmd_triple_orig_fr'):
+                    u._cmd_triple_orig_fr = getattr(u, '_cmd_buffed_fr', u.firerate)
+                u._cmd_triple_active = True
+                u.firerate = u._cmd_triple_orig_fr * (1.0 - _COMMANDER_TRIPLE_BONUS)
+                self._boosted_units.append(u)
+        return True
+
+    def _expire(self):
+        for u in self._boosted_units:
+            if hasattr(u, '_cmd_triple_orig_fr'):
+                u.firerate = u._cmd_triple_orig_fr
+                del u._cmd_triple_orig_fr
+            u._cmd_triple_active = False
+        self._boosted_units = []
+
+    @property
+    def is_active(self):
+        return self._active_timer > 0
+
+
+class Commander(Unit):
+    PLACE_COST       = 2500
+    COLOR            = C_COMMANDER
+    NAME             = "Commander"
+    hidden_detection = False
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._aim_angle  = 0.0
+        self._shoot_flash = 0.0
+        self._anim_t     = 0.0
+        self._apply_level()
+
+    def _apply_level(self):
+        row = COMMANDER_LEVELS[self.level]
+        (self.damage, self.firerate, self.range_tiles, _,
+         self.buff_range, self.buff_mult,
+         self.hidden_detection) = row
+        # Triple Upgrade unlocks at lv4 (penultimate = index 4)
+        if self.level >= 4 and self.ability is None:
+            self.ability = TripleUpgradeAbility(self)
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(COMMANDER_LEVELS): return None
+        return COMMANDER_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(COMMANDER_LEVELS):
+            self.level = nxt; self._apply_level()
+
+    def _apply_buff(self, units):
+        """Apply commander firerate buff to units in range each frame."""
+        r = self.buff_range * TILE
+        for u in units:
+            if u is self: continue
+            in_range = dist((u.px, u.py), (self.px, self.py)) <= r
+            if in_range:
+                # Only apply if not already triple-boosted (triple upgrade handles its own)
+                if not getattr(u, '_cmd_triple_active', False):
+                    # Store baseline if not set
+                    if not hasattr(u, '_cmd_orig_fr'):
+                        u._cmd_orig_fr = u.firerate
+                    u.firerate = u._cmd_orig_fr * self.buff_mult
+                    u._cmd_buffed_fr = u.firerate
+                    u._cmd_in_range = True
+                else:
+                    # Update the "orig" for triple upgrade to reference current buff
+                    if hasattr(u, '_cmd_triple_orig_fr'):
+                        u._cmd_triple_orig_fr = u._cmd_orig_fr * self.buff_mult if hasattr(u, '_cmd_orig_fr') else u._cmd_triple_orig_fr
+            else:
+                # Remove buff when out of range
+                if getattr(u, '_cmd_in_range', False):
+                    u._cmd_in_range = False
+                    if hasattr(u, '_cmd_orig_fr'):
+                        if not getattr(u, '_cmd_triple_active', False):
+                            u.firerate = u._cmd_orig_fr
+                        del u._cmd_orig_fr
+                    if hasattr(u, '_cmd_buffed_fr'):
+                        del u._cmd_buffed_fr
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t += dt
+        if self.cd_left > 0: self.cd_left -= dt
+        if self._shoot_flash > 0: self._shoot_flash -= dt
+
+        if self.ability:
+            self.ability.update(dt)
+
+        # Shoot
+        targets = self._get_targets(enemies, 1)
+        if self.cd_left <= 0 and targets:
+            t = targets[0]
+            self._aim_angle = math.atan2(t.y - self.py, t.x - self.px)
+            self.cd_left = self.firerate
+            t.take_damage(self.damage)
+            self.total_damage += self.damage
+            self._shoot_flash = 0.12
+
+    def update_buff(self, units):
+        """Called from game loop AFTER all unit updates to apply buff."""
+        self._apply_buff(units)
+
+    def draw(self, surf):
+        t   = self._anim_t
+        cx, cy = int(self.px), int(self.py)
+
+        # Buff aura
+        r_px = int(self.buff_range * TILE)
+        aura_s = pygame.Surface((r_px * 2, r_px * 2), pygame.SRCALPHA)
+        pulse_a = int(abs(math.sin(t * 1.5)) * 18 + 10)
+        pygame.draw.circle(aura_s, (220, 170, 60, pulse_a), (r_px, r_px), r_px)
+        pygame.draw.circle(aura_s, (255, 200, 80, 40), (r_px, r_px), r_px, 2)
+        surf.blit(aura_s, (cx - r_px, cy - r_px))
+
+        # Triple Upgrade glow
+        if self.ability and self.ability.is_active:
+            glow_r = int(r_px * 1.08)
+            glow_s = pygame.Surface((glow_r * 2, glow_r * 2), pygame.SRCALPHA)
+            ga = int(abs(math.sin(t * 5)) * 60 + 60)
+            pygame.draw.circle(glow_s, (255, 240, 120, ga), (glow_r, glow_r), glow_r, 4)
+            surf.blit(glow_s, (cx - glow_r, cy - glow_r))
+
+        # Body
+        pygame.draw.circle(surf, C_COMMANDER_DARK, (cx, cy), 27)
+        pygame.draw.circle(surf, C_COMMANDER,      (cx, cy), 21)
+        pygame.draw.circle(surf, (255, 220, 100),  (cx, cy), 21, 2)
+
+        # Hat top accent
+        pygame.draw.ellipse(surf, (160, 110, 20), (cx - 15, cy - 33, 30, 8))
+        pygame.draw.ellipse(surf, (200, 150, 40), (cx - 9,  cy - 37, 18, 9))
+
+        # Gun barrel pointing at aim angle
+        ca, sa = math.cos(self._aim_angle), math.sin(self._aim_angle)
+        bx1 = cx + int(ca * 8);  by1 = cy + int(sa * 8)
+        bx2 = cx + int(ca * 28); by2 = cy + int(sa * 28)
+        pygame.draw.line(surf, (180, 140, 50), (bx1, by1), (bx2, by2), 4)
+        pygame.draw.circle(surf, (230, 190, 80), (bx2, by2), 3)
+
+        # Shoot muzzle flash
+        if self._shoot_flash > 0:
+            frac = self._shoot_flash / 0.12
+            fl = pygame.Surface((20, 20), pygame.SRCALPHA)
+            pygame.draw.circle(fl, (255, 240, 100, int(200 * frac)), (10, 10), int(8 * frac))
+            surf.blit(fl, (bx2 - 10, by2 - 10))
+
+        # Ability cooldown ring (lv4+)
+        if self.ability:
+            cd_frac = max(0.0, 1.0 - self.ability.cd_left / _COMMANDER_TRIPLE_CD)
+            ring_r = 30
+            ring_s = pygame.Surface((ring_r * 2 + 4, ring_r * 2 + 4), pygame.SRCALPHA)
+            if self.ability.is_active:
+                ring_col = (255, 240, 80, 200)
+            elif self.ability.ready():
+                ring_col = (255, 220, 60, 180)
+            else:
+                ring_col = (160, 130, 30, 100)
+            if cd_frac < 1.0 and not self.ability.is_active:
+                arc_end = int(cd_frac * 360)
+                if arc_end > 0:
+                    pygame.draw.arc(ring_s, ring_col,
+                                    pygame.Rect(2, 2, ring_r * 2, ring_r * 2),
+                                    math.radians(-90),
+                                    math.radians(-90 + arc_end), 3)
+            elif self.ability.ready():
+                pygame.draw.circle(ring_s, (255, 240, 60, 80), (ring_r + 2, ring_r + 2), ring_r, 3)
+            surf.blit(ring_s, (cx - ring_r - 2, cy - ring_r - 2))
+
+        # Hidden detection dot
+        if self.hidden_detection:
+            pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
+
+        # Level pips
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_COMMANDER, (cx - 10 + i * 7, cy + 36), 3)
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (255, 255, 255, 22), (r, r), r)
+        pygame.draw.circle(s, (255, 255, 255, 60), (r, r), r, 2)
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+        # Also show buff range
+        rb = int(self.buff_range * TILE)
+        sb = pygame.Surface((rb * 2, rb * 2), pygame.SRCALPHA)
+        pygame.draw.circle(sb, (255, 200, 60, 14), (rb, rb), rb)
+        pygame.draw.circle(sb, (255, 200, 60, 50), (rb, rb), rb, 2)
+        surf.blit(sb, (int(self.px) - rb, int(self.py) - rb))
+
+    def get_info(self):
+        info = {
+            "Damage":    self.damage,
+            "Firerate":  f"{self.firerate:.3f}",
+            "Range":     self.range_tiles,
+            "BuffRange": f"{self.buff_range} tiles",
+            "BuffSpeed": f"+{int((1.0-self.buff_mult)*100)}% faster",
+            "HidDet":    "YES" if self.hidden_detection else "no",
+        }
+        if self.ability:
+            if self.ability.is_active:
+                info["TripleUpg"] = f"ACTIVE {self.ability._active_timer:.1f}s"
+            elif self.ability.ready():
+                info["TripleUpg"] = "READY"
+            else:
+                info["TripleUpg"] = f"CD {self.ability.cd_left:.1f}s"
+        return info
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Snowballer
+# ═══════════════════════════════════════════════════════════════════════════════
+C_SNOWBALLER      = (180, 230, 255)
+C_SNOWBALLER_DARK = (40,  80,  130)
+
+# Tuple layout:
+#  (damage, firerate, range_tiles, upgrade_cost,
+#   splash_r,     # explosion radius in tiles on snowball impact
+#   slow_pct,     # slow applied to hit enemies (stacks up to slow_max)
+#   slow_max,     # max accumulated slow fraction
+#   slow_dur,     # seconds slow lasts
+#   hidden_detection)
+#
+# Mechanic:
+#  - Throws a homing snowball at target enemy
+#  - On impact: deals damage + AoE slow in splash_r radius
+#  - Slow stacks up to slow_max (refreshes timer each hit)
+#  - Lv3+: snowball leaves a 2s puddle that slow any enemy walking through it
+
+SNOWBALLER_LEVELS = [
+    # lv0  place $400
+    (8,  1.200, 6.0, None, 2.5, 0.20, 0.40, 3.0, False),
+    # lv1  +$350
+    (10, 1.100, 6.5,  350, 2.5, 0.25, 0.45, 3.5, False),
+    # lv2  +$700  (more range, bigger splash)
+    (14, 1.000, 7.0,  700, 3.0, 0.30, 0.50, 4.0, False),
+    # lv3  +$2000  (puddle, hidden detect)
+    (18, 0.900, 7.5, 2000, 3.5, 0.30, 0.55, 5.0, True),
+    # lv4  +$6000  (max, huge splash, long slow)
+    (24, 0.750, 8.0, 6000, 4.0, 0.35, 0.60, 6.0, True),
+]
+
+_SB_BALL_SPEED = 440.0
+
+
+class SnowballerBall:
+    """Homing snowball that explodes on impact, dealing AoE slow + damage."""
+    def __init__(self, ox, oy, target, damage, splash_r, slow_pct, slow_max,
+                 slow_dur, leave_puddle, all_enemies_ref):
+        self.x = float(ox); self.y = float(oy)
+        self._target   = target
+        dx = target.x - ox; dy = target.y - oy
+        d  = math.hypot(dx, dy) or 1
+        self.vx = dx / d; self.vy = dy / d
+        self.speed     = _SB_BALL_SPEED
+        self.damage    = damage
+        self.splash_r  = splash_r * TILE
+        self.slow_pct  = slow_pct
+        self.slow_max  = slow_max
+        self.slow_dur  = slow_dur
+        self.leave_puddle = leave_puddle
+        self._enemies  = all_enemies_ref
+        self.alive     = True
+        self._dist_left = 1200.0
+        self._trail    = []
+
+    def _explode(self):
+        from game_core import dist as _dist
+        for e in self._enemies:
+            if not e.alive: continue
+            if _dist((e.x, e.y), (self.x, self.y)) <= self.splash_r:
+                e.take_damage(self.damage)
+                self._apply_slow(e)
+        if self.leave_puddle:
+            # Puddle: stored on the ball for the game to draw/tick
+            self.puddle = {"x": self.x, "y": self.y,
+                           "r": self.splash_r, "timer": 2.0,
+                           "slow_pct": self.slow_pct,
+                           "slow_max": self.slow_max,
+                           "slow_dur": self.slow_dur}
+        else:
+            self.puddle = None
+
+    def _apply_slow(self, e):
+        cur = getattr(e, '_sb_slow', 0.0)
+        new = min(cur + self.slow_pct, self.slow_max)
+        e._sb_slow = new
+        e._sb_timer = self.slow_dur
+        if not hasattr(e, '_sb_orig_speed'):
+            e._sb_orig_speed = e.speed
+        resistance = getattr(e, 'SLOW_RESISTANCE', 1.0)
+        e.speed = e._sb_orig_speed * (1.0 - new * resistance)
+
+    def update(self, dt):
+        if not self.alive: return
+        self._trail.append((self.x, self.y, 0.0))
+        self._trail = [(x, y, a + dt) for x, y, a in self._trail if a < 0.25]
+        if self._target and self._target.alive:
+            dx = self._target.x - self.x; dy = self._target.y - self.y
+            d  = math.hypot(dx, dy) or 1
+            self.vx = dx / d; self.vy = dy / d
+            if d < 14:
+                self._explode(); self.alive = False; return
+        else:
+            for e in self._enemies:
+                if e.alive and math.hypot(e.x - self.x, e.y - self.y) < 18:
+                    self._explode(); self.alive = False; return
+        step = self.speed * dt
+        self.x += self.vx * step; self.y += self.vy * step
+        self._dist_left -= step
+        if self._dist_left <= 0:
+            self._explode(); self.alive = False
+
+    def draw(self, surf):
+        if not self.alive: return
+        for tx, ty, age in self._trail:
+            a = max(0, int(160 * (1 - age / 0.25)))
+            ts = pygame.Surface((12, 12), pygame.SRCALPHA)
+            pygame.draw.circle(ts, (200, 240, 255, a), (6, 6), 5)
+            surf.blit(ts, (int(tx) - 6, int(ty) - 6))
+        cx, cy = int(self.x), int(self.y)
+        pygame.draw.circle(surf, (120, 180, 255), (cx, cy), 8)
+        pygame.draw.circle(surf, (220, 245, 255), (cx, cy), 5)
+        pygame.draw.circle(surf, (255, 255, 255), (cx - 2, cy - 2), 2)
+
+
+class Snowballer(Unit):
+    PLACE_COST       = 400
+    COLOR            = C_SNOWBALLER
+    NAME             = "Snowballer"
+    hidden_detection = False
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._balls   = []
+        self._puddles = []  # active ground puddles
+        self._aim_angle = 0.0
+        self._apply_level()
+
+    def _apply_level(self):
+        row = SNOWBALLER_LEVELS[self.level]
+        (self.damage, self.firerate, self.range_tiles, _,
+         self._splash_r, self._slow_pct, self._slow_max,
+         self._slow_dur, self.hidden_detection) = row
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(SNOWBALLER_LEVELS): return None
+        return SNOWBALLER_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(SNOWBALLER_LEVELS): self.level = nxt; self._apply_level()
+
+    def update(self, dt, enemies, effects, money):
+        if self.cd_left > 0: self.cd_left -= dt
+
+        targets = self._get_targets(enemies, 1)
+        if self.cd_left <= 0 and targets:
+            t = targets[0]
+            self._aim_angle = math.atan2(t.y - self.py, t.x - self.px)
+            self.cd_left = self.firerate
+            self.total_damage += self.damage
+            leave_puddle = (self.level >= 3)
+            ball = SnowballerBall(self.px, self.py, t,
+                                  self.damage, self._splash_r,
+                                  self._slow_pct, self._slow_max,
+                                  self._slow_dur, leave_puddle, enemies)
+            self._balls.append(ball)
+
+        for b in self._balls:
+            b.update(dt)
+        # Collect new puddles
+        for b in self._balls:
+            if not b.alive and hasattr(b, 'puddle') and b.puddle:
+                self._puddles.append(b.puddle)
+                b.puddle = None
+        self._balls = [b for b in self._balls if b.alive]
+
+        # Tick slow timers
+        for e in enemies:
+            if not e.alive: continue
+            t2 = getattr(e, '_sb_timer', 0.0)
+            if t2 > 0:
+                e._sb_timer = t2 - dt
+                if e._sb_timer <= 0:
+                    e._sb_slow = 0.0
+                    if hasattr(e, '_sb_orig_speed'):
+                        e.speed = e._sb_orig_speed
+                        del e._sb_orig_speed
+
+        # Tick puddles
+        new_puddles = []
+        for p in self._puddles:
+            p['timer'] -= dt
+            if p['timer'] > 0:
+                for e in enemies:
+                    if not e.alive: continue
+                    if math.hypot(e.x - p['x'], e.y - p['y']) <= p['r']:
+                        cur = getattr(e, '_sb_slow', 0.0)
+                        new2 = min(cur + p['slow_pct'] * dt, p['slow_max'])
+                        e._sb_slow = new2
+                        e._sb_timer = p['slow_dur']
+                        if not hasattr(e, '_sb_orig_speed'):
+                            e._sb_orig_speed = e.speed
+                        resistance = getattr(e, 'SLOW_RESISTANCE', 1.0)
+                        e.speed = e._sb_orig_speed * (1.0 - new2 * resistance)
+                new_puddles.append(p)
+        self._puddles = new_puddles
+
+    def draw(self, surf):
+        # Draw puddles
+        for p in self._puddles:
+            frac = p['timer'] / 2.0
+            pr = int(p['r'])
+            ps = pygame.Surface((pr * 2 + 2, pr * 2 + 2), pygame.SRCALPHA)
+            a = int(frac * 80)
+            pygame.draw.circle(ps, (140, 200, 255, a), (pr + 1, pr + 1), pr)
+            pygame.draw.circle(ps, (180, 230, 255, a + 20), (pr + 1, pr + 1), pr, 2)
+            surf.blit(ps, (int(p['x']) - pr - 1, int(p['y']) - pr - 1))
+
+        cx, cy = int(self.px), int(self.py)
+        pygame.draw.circle(surf, C_SNOWBALLER_DARK, (cx, cy), 27)
+        pygame.draw.circle(surf, C_SNOWBALLER,      (cx, cy), 21)
+        pygame.draw.circle(surf, (220, 245, 255),   (cx, cy), 21, 2)
+
+        # Snowflake symbol (simple 4-spoke)
+        for i in range(4):
+            a = math.radians(i * 45)
+            sx2 = cx + int(math.cos(a) * 14); sy2 = cy + int(math.sin(a) * 14)
+            pygame.draw.line(surf, (255, 255, 255), (cx, cy), (sx2, sy2), 2)
+
+        # Center dot
+        pygame.draw.circle(surf, (255, 255, 255), (cx, cy), 3)
+
+        # Aim direction indicator
+        ca, sa = math.cos(self._aim_angle), math.sin(self._aim_angle)
+        pygame.draw.line(surf, (160, 220, 255),
+                         (cx + int(ca * 8), cy + int(sa * 8)),
+                         (cx + int(ca * 26), cy + int(sa * 26)), 3)
+
+        if self.hidden_detection:
+            pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
+
+        for b in self._balls: b.draw(surf)
+
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_SNOWBALLER, (cx - 10 + i * 7, cy + 36), 3)
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (180, 230, 255, 22), (r, r), r)
+        pygame.draw.circle(s, (180, 230, 255, 60), (r, r), r, 2)
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+
+    def get_info(self):
+        return {
+            "Damage":   self.damage,
+            "Firerate": f"{self.firerate:.3f}",
+            "Range":    self.range_tiles,
+            "Splash":   f"{self._splash_r} tiles",
+            "Slow":     f"+{int(self._slow_pct*100)}%, max {int(self._slow_max*100)}% / {self._slow_dur:.0f}s",
+            "Puddle":   "YES" if self.level >= 3 else "lv3+",
+            "HidDet":   "YES" if self.hidden_detection else "no",
+        }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Commando
+# ═══════════════════════════════════════════════════════════════════════════════
+C_COMMANDO      = (80, 160, 80)
+C_COMMANDO_DARK = (20, 55,  20)
+
+# Tuple layout:
+#  (damage, firerate, range_tiles, upgrade_cost,
+#   burst,        # shots per burst
+#   burst_cd,     # seconds pause after burst
+#   pierce,       # how many enemies each bullet passes through
+#   hidden_detection)
+#
+# Mechanic:
+#  - Fires a burst of `burst` bullets rapidly, then reloads for burst_cd seconds
+#  - Each bullet homes toward its target (first enemy) and pierces `pierce` enemies
+#  - Lv2+: grenades — every burst fires one grenade that deals AoE damage in 3-tile radius
+#  - Lv4: dual fire — two bullets per shot toward two closest enemies
+
+COMMANDO_LEVELS = [
+    # lv0  place $900
+    (4,  0.12, 8.0, None, 4,  1.2, 1, False),
+    # lv1  +$600
+    (5,  0.11, 8.5,  600, 5,  1.1, 2, False),
+    # lv2  +$1500  (grenade)
+    (6,  0.10, 9.0, 1500, 6,  1.0, 2, False),
+    # lv3  +$4000  (hidden det, faster fire)
+    (8,  0.09, 9.5, 4000, 8,  0.9, 3, True),
+    # lv4  +$10000  (dual fire, more pierce)
+    (12, 0.08,10.0,10000, 10, 0.8, 4, True),
+]
+
+_COMMANDO_BULLET_SPEED = 560.0
+_COMMANDO_GRENADE_SPEED = 340.0
+
+
+class CommandoBullet:
+    def __init__(self, ox, oy, target, damage, pierce, all_enemies_ref):
+        self.x = float(ox); self.y = float(oy)
+        self._target = target
+        dx = target.x - ox; dy = target.y - oy
+        d  = math.hypot(dx, dy) or 1
+        self.vx = dx / d; self.vy = dy / d
+        self.speed  = _COMMANDO_BULLET_SPEED
+        self.damage = damage
+        self.pierce_left = pierce
+        self._enemies = all_enemies_ref
+        self._hit_ids = set()
+        self._dist_left = 900.0
+        self.alive = True
+
+    def update(self, dt):
+        if not self.alive: return
+        if self._target and self._target.alive and id(self._target) not in self._hit_ids:
+            dx = self._target.x - self.x; dy = self._target.y - self.y
+            d  = math.hypot(dx, dy) or 1
+            self.vx = dx / d; self.vy = dy / d
+        step = self.speed * dt
+        self.x += self.vx * step; self.y += self.vy * step
+        self._dist_left -= step
+        if self._dist_left <= 0:
+            self.alive = False; return
+        for e in self._enemies:
+            if not e.alive or id(e) in self._hit_ids: continue
+            if math.hypot(e.x - self.x, e.y - self.y) < e.radius + 5:
+                e.take_damage(self.damage)
+                self._hit_ids.add(id(e))
+                self.pierce_left -= 1
+                if self.pierce_left <= 0:
+                    self.alive = False; return
+
+    def draw(self, surf):
+        if not self.alive: return
+        cx, cy = int(self.x), int(self.y)
+        tail_x = self.x - self.vx * 10; tail_y = self.y - self.vy * 10
+        pygame.draw.line(surf, (140, 220, 100), (int(tail_x), int(tail_y)), (cx, cy), 2)
+        pygame.draw.circle(surf, (200, 255, 150), (cx, cy), 3)
+
+
+class CommandoGrenade:
+    def __init__(self, ox, oy, target, damage, splash_r, all_enemies_ref):
+        self.x = float(ox); self.y = float(oy)
+        self._target = target
+        dx = target.x - ox; dy = target.y - oy
+        d  = math.hypot(dx, dy) or 1
+        self.vx = dx / d; self.vy = dy / d
+        self.speed  = _COMMANDO_GRENADE_SPEED
+        self.damage = damage * 3  # grenade deals 3x bullet damage AoE
+        self.splash_r = splash_r
+        self._enemies = all_enemies_ref
+        self._dist_left = 800.0
+        self.alive = True
+        self._exploded = False
+
+    def _explode(self):
+        from game_core import dist as _dist
+        for e in self._enemies:
+            if not e.alive: continue
+            if _dist((e.x, e.y), (self.x, self.y)) <= self.splash_r:
+                e.take_damage(self.damage)
+        self._exploded = True
+
+    def update(self, dt):
+        if not self.alive: return
+        if self._target and self._target.alive:
+            dx = self._target.x - self.x; dy = self._target.y - self.y
+            d  = math.hypot(dx, dy) or 1
+            self.vx = dx / d; self.vy = dy / d
+            if d < 16:
+                self._explode(); self.alive = False; return
+        step = self.speed * dt
+        self.x += self.vx * step; self.y += self.vy * step
+        self._dist_left -= step
+        if self._dist_left <= 0:
+            self._explode(); self.alive = False
+
+    def draw(self, surf):
+        if not self.alive: return
+        cx, cy = int(self.x), int(self.y)
+        gs = pygame.Surface((20, 20), pygame.SRCALPHA)
+        pygame.draw.circle(gs, (80, 160, 60, 200), (10, 10), 6)
+        pygame.draw.circle(gs, (140, 220, 80, 255), (10, 10), 4)
+        pygame.draw.rect(gs, (60, 120, 50), (8, 2, 4, 5))
+        surf.blit(gs, (cx - 10, cy - 10))
+
+
+class Commando(Unit):
+    PLACE_COST       = 900
+    COLOR            = C_COMMANDO
+    NAME             = "Commando"
+    hidden_detection = False
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._bullets   = []
+        self._grenades  = []
+        self._burst_left = 0
+        self._burst_timer = 0.0
+        self._in_burst   = False
+        self._burst_cd_left = 0.0
+        self._aim_angle = 0.0
+        self._anim_t    = 0.0
+        self._apply_level()
+
+    def _apply_level(self):
+        row = COMMANDO_LEVELS[self.level]
+        (self.damage, self.firerate, self.range_tiles, _,
+         self._burst, self._burst_cd, self._pierce,
+         self.hidden_detection) = row
+        self._grenade_on = (self.level >= 2)
+        self._dual_fire  = (self.level >= 4)
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(COMMANDO_LEVELS): return None
+        return COMMANDO_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(COMMANDO_LEVELS): self.level = nxt; self._apply_level()
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t += dt
+
+        # Burst cooldown
+        if self._burst_cd_left > 0:
+            self._burst_cd_left -= dt
+            for b in self._bullets: b.update(dt)
+            for g in self._grenades: g.update(dt)
+            self._bullets  = [b for b in self._bullets  if b.alive]
+            self._grenades = [g for g in self._grenades if g.alive]
+            return
+
+        # Shoot timer
+        if self.cd_left > 0: self.cd_left -= dt
+
+        targets = self._get_targets(enemies, 2 if self._dual_fire else 1)
+
+        if not self._in_burst:
+            if self.cd_left <= 0 and targets:
+                self._in_burst   = True
+                self._burst_left = self._burst
+        
+        if self._in_burst and self.cd_left <= 0 and targets:
+            t1 = targets[0]
+            self._aim_angle = math.atan2(t1.y - self.py, t1.x - self.px)
+            self.cd_left = self.firerate
+
+            # Fire primary bullet
+            b = CommandoBullet(self.px, self.py, t1, self.damage, self._pierce, enemies)
+            self._bullets.append(b)
+            self.total_damage += self.damage
+
+            # Dual fire: second bullet at second target
+            if self._dual_fire and len(targets) >= 2:
+                b2 = CommandoBullet(self.px, self.py, targets[1], self.damage, self._pierce, enemies)
+                self._bullets.append(b2)
+                self.total_damage += self.damage
+
+            self._burst_left -= 1
+
+            # On first shot of burst, optionally launch grenade
+            if self._grenade_on and self._burst_left == self._burst - 1:
+                splash_r = 3.0 * TILE
+                g = CommandoGrenade(self.px, self.py, t1,
+                                    self.damage, splash_r, enemies)
+                self._grenades.append(g)
+
+            if self._burst_left <= 0:
+                self._in_burst    = False
+                self._burst_cd_left = self._burst_cd
+
+        for b in self._bullets: b.update(dt)
+        for g in self._grenades: g.update(dt)
+        self._bullets  = [b for b in self._bullets  if b.alive]
+        self._grenades = [g for g in self._grenades if g.alive]
+
+    def draw(self, surf):
+        t   = self._anim_t
+        cx, cy = int(self.px), int(self.py)
+
+        pygame.draw.circle(surf, C_COMMANDO_DARK, (cx, cy), 27)
+        pygame.draw.circle(surf, C_COMMANDO,      (cx, cy), 21)
+        pygame.draw.circle(surf, (120, 200, 100), (cx, cy), 21, 2)
+
+        # Gun — rectangular barrel with sight
+        ca, sa = math.cos(self._aim_angle), math.sin(self._aim_angle)
+        pa, pb = -sa, ca
+        bx1 = cx + int(ca * 8);  by1 = cy + int(sa * 8)
+        bx2 = cx + int(ca * 30); by2 = cy + int(sa * 30)
+        # Barrel (thick)
+        for w in [6, 4, 2]:
+            col = (40, 100, 40) if w == 6 else (80, 160, 80) if w == 4 else (140, 220, 100)
+            pygame.draw.line(surf, col, (bx1, by1), (bx2, by2), w)
+        # Sight
+        pygame.draw.circle(surf, (180, 255, 140), (bx2, by2), 3)
+
+        # Ammo indicator (burst count)
+        shots_left = max(0, self._burst - (self._burst - self._burst_left)) if self._in_burst else self._burst
+        burst_frac = shots_left / max(1, self._burst)
+        bw2 = 32; bh2 = 4
+        bx3 = cx - bw2 // 2; by3 = cy - 42
+        pygame.draw.rect(surf, (20, 40, 20), (bx3, by3, bw2, bh2), border_radius=2)
+        bcol = (100, 220, 80) if burst_frac > 0.4 else (220, 200, 60)
+        pygame.draw.rect(surf, bcol, (bx3, by3, int(bw2 * burst_frac), bh2), border_radius=2)
+
+        if self.hidden_detection:
+            pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
+
+        for b in self._bullets: b.draw(surf)
+        for g in self._grenades: g.draw(surf)
+
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_COMMANDO, (cx - 10 + i * 7, cy + 36), 3)
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (80, 200, 80, 22), (r, r), r)
+        pygame.draw.circle(s, (80, 200, 80, 60), (r, r), r, 2)
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+
+    def get_info(self):
+        cd_str = f"reload {self._burst_cd_left:.1f}s" if self._burst_cd_left > 0 else "ready"
+        info = {
+            "Damage":   self.damage,
+            "Firerate": f"{self.firerate:.3f}",
+            "Range":    self.range_tiles,
+            "Burst":    f"{self._burst} shots / {self._burst_cd:.1f}s cd ({cd_str})",
+            "Pierce":   self._pierce,
+            "Grenade":  "YES" if self._grenade_on else "lv2+",
+            "DualFire": "YES" if self._dual_fire  else "lv4+",
+            "HidDet":   "YES" if self.hidden_detection else "no",
+        }
+        return info

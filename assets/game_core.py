@@ -182,6 +182,9 @@ UNIT_LIMITS = {
     "Golden Cowboy":  6,
     "Hallow Punk":    10,
     "Spotlight Tech": 1,
+    "Commander":      3,
+    "Snowballer":     5,
+    "Commando":       4,
 }
 
 def load_save():
