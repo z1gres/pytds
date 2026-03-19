@@ -3305,133 +3305,116 @@ class SpotlightTech(Unit):
         }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Commander
+# Commander  (REWORK)
 # ═══════════════════════════════════════════════════════════════════════════════
 C_COMMANDER      = (220, 160, 60)
 C_COMMANDER_DARK = (80,  50,  10)
 
-# Tuple layout:
-#  (damage, firerate, range_tiles, upgrade_cost,
-#   buff_range,   # tiles — radius that commander boosts nearby units
-#   buff_mult,    # firerate multiplier applied to units in range (0.72 = 28% faster)
-#   hidden_detection)
+# Tuple: (damage, firerate, range_tiles, upgrade_cost,
+#         buff_pct,        # passive firerate buff to nearby units (0.10 = 10% faster)
+#         cta_buff_pct,    # Call to Arms ability extra buff (0 = ability not unlocked)
+#         hidden_detection)
 #
 # Mechanic:
-#  - Passively boosts firerate of ALL friendly units within buff_range
-#    by applying a multiplier to their base firerate (lower = faster)
-#  - Shoots pistol at nearest enemy dealing modest damage
-#  - Lv4 (penultimate): unlocks Triple Upgrade ability — gives all units in
-#    buff_range a 40-second bonus of +25% on top of the existing commander buff
-#    (so if base buff is ×0.72, triple upgrade gives an extra ×0.75 on top)
-#    Cooldown: 40 seconds. Duration: 15 seconds.
+#  - Passively boosts firerate of all units in buff_range by buff_pct
+#  - lv2+: Call to Arms ability — temporary bonus buff_pct on top of passive, 15s cd 30s dur
+#  - lv2: unlocks hidden + lead + fly detection
+
+COMMANDER_LEVEL_NAMES = [None, "Leadership", "Call to Arms", "Intense Training", "Strength in Numbers"]
 
 COMMANDER_LEVELS = [
     # lv0  place $2500
-    (5,  0.850, 7.0, None, 7.0, 0.80, False),
-    # lv1  +$500
-    (6,  0.800, 8.0,  500, 8.0, 0.78, False),
-    # lv2  +$1500  (hidden detection)
-    (7,  0.750, 9.0, 1500, 9.0, 0.75, True),
-    # lv3  +$3000
-    (9,  0.700, 9.0, 3000, 9.0, 0.72, True),
-    # lv4  +$5000  Triple Upgrade ability unlocks here (penultimate)
-    (11, 0.650, 10.0,5000,10.0, 0.70, True),
-    # lv5  +$12000  (max)
-    (14, 0.600, 11.0,12000,11.0,0.65, True),
+    # dmg   fr     rng   cost   buff%  cta%   hid
+    ( 10,  0.608,  7.0,  None,  0.10,  0.0,  False),
+    # lv1  Leadership  +$400
+    ( 10,  0.608,  7.0,   400,  0.15,  0.0,  False),
+    # lv2  Call to Arms  +$2450
+    ( 25,  0.608, 10.0,  2450,  0.15,  0.10,  True),
+    # lv3  Intense Training  +$4500
+    ( 40,  0.608, 12.0,  4500,  0.175, 0.15,  True),
+    # lv4  Strength in Numbers  +$14000
+    ( 60,  0.608, 14.0, 14000,  0.20,  0.20,  True),
 ]
 
-_COMMANDER_TRIPLE_CD  = 40.0   # seconds cooldown
-_COMMANDER_TRIPLE_DUR = 15.0   # seconds duration
-_COMMANDER_TRIPLE_BONUS = 0.25  # +25% of current commander buff added on top
+_CMD_BUFF_RANGE   = 12.0   # tiles — fixed buff radius (same all levels)
+_CMD_CTA_CD       = 15.0   # Call to Arms cooldown seconds
+_CMD_CTA_DUR      = 30.0   # Call to Arms duration seconds
 
 
-class TripleUpgradeAbility:
-    """Gives all units in commander range +25% of current buff as extra boost for 15s."""
-    name = "Triple Upgrade"
-    cooldown = _COMMANDER_TRIPLE_CD
+class CallToArmsAbility:
+    """Temporarily adds cta_buff_pct on top of passive buff for 30s, 15s cd."""
+    name = "Call to Arms"
+    cooldown = _CMD_CTA_CD
 
     def __init__(self, owner):
-        self.owner = owner
-        self.cd_left = 0.0
-        self._active_timer = 0.0  # countdown while ability is active
-        self._boosted_units = []  # units currently boosted
+        self.owner       = owner
+        self.cd_left     = 0.0
+        self._active_timer = 0.0
+        self._boosted    = []
 
     def update(self, dt):
-        if self.cd_left > 0:
-            self.cd_left -= dt
-        # Tick down active buff
+        if self.cd_left > 0: self.cd_left -= dt
         if self._active_timer > 0:
             self._active_timer -= dt
-            if self._active_timer <= 0:
-                self._expire()
+            if self._active_timer <= 0: self._expire()
 
-    def ready(self):
-        return self.cd_left <= 0 and self._active_timer <= 0
+    def ready(self): return self.cd_left <= 0 and self._active_timer <= 0
 
     def activate(self, enemies_or_units=None, effects=None):
-        """
-        Compatible with both the generic ability call activate(enemies, effects)
-        and the direct call activate(units).
-        We locate the game's unit list via the owner's internal state — or fall
-        back to the first argument if it looks like a unit list.
-        """
-        # The generic UI calls activate(enemies, effects); enemies_or_units is
-        # the enemy list in that case, which we don't need.
-        # We reach into the game via the owner to get the unit list.
-        # The owner's update_buff was called with self.units, so we go up:
-        units = getattr(self.owner, '_game_units_ref', enemies_or_units) or []
-        if not self.ready():
-            return False
+        units = getattr(self.owner, '_game_units_ref', None) or []
+        if not self.ready(): return False
         self.cd_left = self.cooldown
-        self._active_timer = _COMMANDER_TRIPLE_DUR
-        r = self.owner.buff_range * TILE
-        extra_mult = self.owner.buff_mult * (1.0 - _COMMANDER_TRIPLE_BONUS)  # e.g. 0.70 * 0.75 = 0.525 extra
-        self._boosted_units = []
+        self._active_timer = _CMD_CTA_DUR
+        r = _CMD_BUFF_RANGE * TILE
+        self._boosted = []
         for u in units:
             if u is self.owner: continue
             if dist((u.px, u.py), (self.owner.px, self.owner.py)) <= r:
-                # Save original firerate if not already commander-buffed
-                if not hasattr(u, '_cmd_triple_orig_fr'):
-                    u._cmd_triple_orig_fr = getattr(u, '_cmd_buffed_fr', u.firerate)
-                u._cmd_triple_active = True
-                u.firerate = u._cmd_triple_orig_fr * (1.0 - _COMMANDER_TRIPLE_BONUS)
-                self._boosted_units.append(u)
+                base = getattr(u, '_cmd_orig_fr', u.firerate)
+                # Apply both passive + CTA buff
+                total_mult = 1.0 - (self.owner.buff_pct + self.owner.cta_buff_pct)
+                u._cmd_cta_orig = base
+                u.firerate = base * total_mult
+                u._cmd_cta_active = True
+                self._boosted.append(u)
         return True
 
     def _expire(self):
-        for u in self._boosted_units:
-            if hasattr(u, '_cmd_triple_orig_fr'):
-                u.firerate = u._cmd_triple_orig_fr
-                del u._cmd_triple_orig_fr
-            u._cmd_triple_active = False
-        self._boosted_units = []
+        for u in self._boosted:
+            if hasattr(u, '_cmd_cta_orig'):
+                # Restore to passive-buffed value
+                base = u._cmd_cta_orig
+                u.firerate = base * (1.0 - self.owner.buff_pct)
+                del u._cmd_cta_orig
+            u._cmd_cta_active = False
+        self._boosted = []
 
     @property
-    def is_active(self):
-        return self._active_timer > 0
+    def is_active(self): return self._active_timer > 0
 
 
 class Commander(Unit):
-    PLACE_COST       = 2500
+    PLACE_COST       = 650
     COLOR            = C_COMMANDER
     NAME             = "Commander"
     hidden_detection = False
 
     def __init__(self, px, py):
         super().__init__(px, py)
-        self._aim_angle  = 0.0
+        self._aim_angle   = 0.0
         self._shoot_flash = 0.0
-        self._anim_t     = 0.0
+        self._anim_t      = 0.0
+        self.buff_range   = _CMD_BUFF_RANGE
         self._apply_level()
 
     def _apply_level(self):
         row = COMMANDER_LEVELS[self.level]
         (self.damage, self.firerate, self.range_tiles, _,
-         self.buff_range, self.buff_mult,
+         self.buff_pct, self.cta_buff_pct,
          self.hidden_detection) = row
-        # Triple Upgrade unlocks at lv4 (penultimate = index 4)
-        if self.level >= 4 and self.ability is None:
-            self.ability = TripleUpgradeAbility(self)
+        # Unlock CTA ability at lv2
+        if self.level >= 2 and self.ability is None:
+            self.ability = CallToArmsAbility(self)
 
     def upgrade_cost(self):
         nxt = self.level + 1
@@ -3440,48 +3423,32 @@ class Commander(Unit):
 
     def upgrade(self):
         nxt = self.level + 1
-        if nxt < len(COMMANDER_LEVELS):
-            self.level = nxt; self._apply_level()
+        if nxt < len(COMMANDER_LEVELS): self.level = nxt; self._apply_level()
 
     def _apply_buff(self, units):
-        """Apply commander firerate buff to units in range each frame."""
         r = self.buff_range * TILE
         for u in units:
             if u is self: continue
             in_range = dist((u.px, u.py), (self.px, self.py)) <= r
             if in_range:
-                # Only apply if not already triple-boosted (triple upgrade handles its own)
-                if not getattr(u, '_cmd_triple_active', False):
-                    # Store baseline if not set
+                if not getattr(u, '_cmd_cta_active', False):
                     if not hasattr(u, '_cmd_orig_fr'):
                         u._cmd_orig_fr = u.firerate
-                    u.firerate = u._cmd_orig_fr * self.buff_mult
-                    u._cmd_buffed_fr = u.firerate
+                    u.firerate = u._cmd_orig_fr * (1.0 - self.buff_pct)
                     u._cmd_in_range = True
-                else:
-                    # Update the "orig" for triple upgrade to reference current buff
-                    if hasattr(u, '_cmd_triple_orig_fr'):
-                        u._cmd_triple_orig_fr = u._cmd_orig_fr * self.buff_mult if hasattr(u, '_cmd_orig_fr') else u._cmd_triple_orig_fr
             else:
-                # Remove buff when out of range
                 if getattr(u, '_cmd_in_range', False):
                     u._cmd_in_range = False
-                    if hasattr(u, '_cmd_orig_fr'):
-                        if not getattr(u, '_cmd_triple_active', False):
+                    if not getattr(u, '_cmd_cta_active', False):
+                        if hasattr(u, '_cmd_orig_fr'):
                             u.firerate = u._cmd_orig_fr
-                        del u._cmd_orig_fr
-                    if hasattr(u, '_cmd_buffed_fr'):
-                        del u._cmd_buffed_fr
+                            del u._cmd_orig_fr
 
     def update(self, dt, enemies, effects, money):
         self._anim_t += dt
         if self.cd_left > 0: self.cd_left -= dt
         if self._shoot_flash > 0: self._shoot_flash -= dt
-
-        if self.ability:
-            self.ability.update(dt)
-
-        # Shoot
+        if self.ability: self.ability.update(dt)
         targets = self._get_targets(enemies, 1)
         if self.cd_left <= 0 and targets:
             t = targets[0]
@@ -3492,188 +3459,163 @@ class Commander(Unit):
             self._shoot_flash = 0.12
 
     def update_buff(self, units):
-        """Called from game loop AFTER all unit updates to apply buff."""
         self._game_units_ref = units
         self._apply_buff(units)
 
     def draw(self, surf):
-        t   = self._anim_t
+        t = self._anim_t
         cx, cy = int(self.px), int(self.py)
-
         # Buff aura
         r_px = int(self.buff_range * TILE)
-        aura_s = pygame.Surface((r_px * 2, r_px * 2), pygame.SRCALPHA)
-        pulse_a = int(abs(math.sin(t * 1.5)) * 18 + 10)
-        pygame.draw.circle(aura_s, (220, 170, 60, pulse_a), (r_px, r_px), r_px)
-        pygame.draw.circle(aura_s, (255, 200, 80, 40), (r_px, r_px), r_px, 2)
-        surf.blit(aura_s, (cx - r_px, cy - r_px))
-
-        # Triple Upgrade glow
+        aura_s = pygame.Surface((r_px*2, r_px*2), pygame.SRCALPHA)
+        pulse_a = int(abs(math.sin(t*1.5))*18+10)
+        pygame.draw.circle(aura_s, (220,170,60,pulse_a), (r_px,r_px), r_px)
+        pygame.draw.circle(aura_s, (255,200,80,40),      (r_px,r_px), r_px, 2)
+        surf.blit(aura_s, (cx-r_px, cy-r_px))
+        # CTA glow
         if self.ability and self.ability.is_active:
-            glow_r = int(r_px * 1.08)
-            glow_s = pygame.Surface((glow_r * 2, glow_r * 2), pygame.SRCALPHA)
-            ga = int(abs(math.sin(t * 5)) * 60 + 60)
-            pygame.draw.circle(glow_s, (255, 240, 120, ga), (glow_r, glow_r), glow_r, 4)
-            surf.blit(glow_s, (cx - glow_r, cy - glow_r))
-
+            glow_r = int(r_px*1.08)
+            glow_s = pygame.Surface((glow_r*2, glow_r*2), pygame.SRCALPHA)
+            ga = int(abs(math.sin(t*5))*60+60)
+            pygame.draw.circle(glow_s, (255,240,120,ga), (glow_r,glow_r), glow_r, 4)
+            surf.blit(glow_s, (cx-glow_r, cy-glow_r))
         # Body
-        pygame.draw.circle(surf, C_COMMANDER_DARK, (cx, cy), 27)
-        pygame.draw.circle(surf, C_COMMANDER,      (cx, cy), 21)
-        pygame.draw.circle(surf, (255, 220, 100),  (cx, cy), 21, 2)
-
-        # Hat top accent
-        pygame.draw.ellipse(surf, (160, 110, 20), (cx - 15, cy - 33, 30, 8))
-        pygame.draw.ellipse(surf, (200, 150, 40), (cx - 9,  cy - 37, 18, 9))
-
-        # Gun barrel pointing at aim angle
+        pygame.draw.circle(surf, C_COMMANDER_DARK, (cx,cy), 27)
+        pygame.draw.circle(surf, C_COMMANDER,      (cx,cy), 21)
+        pygame.draw.circle(surf, (255,220,100),    (cx,cy), 21, 2)
+        # Hat
+        pygame.draw.ellipse(surf, (160,110,20), (cx-15, cy-33, 30, 8))
+        pygame.draw.ellipse(surf, (200,150,40), (cx-9,  cy-37, 18, 9))
+        # Gun
         ca, sa = math.cos(self._aim_angle), math.sin(self._aim_angle)
-        bx1 = cx + int(ca * 8);  by1 = cy + int(sa * 8)
-        bx2 = cx + int(ca * 28); by2 = cy + int(sa * 28)
-        pygame.draw.line(surf, (180, 140, 50), (bx1, by1), (bx2, by2), 4)
-        pygame.draw.circle(surf, (230, 190, 80), (bx2, by2), 3)
-
-        # Shoot muzzle flash
+        bx1=cx+int(ca*8); by1=cy+int(sa*8); bx2=cx+int(ca*28); by2=cy+int(sa*28)
+        pygame.draw.line(surf, (180,140,50), (bx1,by1), (bx2,by2), 4)
+        pygame.draw.circle(surf, (230,190,80), (bx2,by2), 3)
         if self._shoot_flash > 0:
-            frac = self._shoot_flash / 0.12
-            fl = pygame.Surface((20, 20), pygame.SRCALPHA)
-            pygame.draw.circle(fl, (255, 240, 100, int(200 * frac)), (10, 10), int(8 * frac))
-            surf.blit(fl, (bx2 - 10, by2 - 10))
-
-        # Ability cooldown ring (lv4+)
+            frac = self._shoot_flash/0.12
+            fl = pygame.Surface((20,20), pygame.SRCALPHA)
+            pygame.draw.circle(fl, (255,240,100,int(200*frac)), (10,10), int(8*frac))
+            surf.blit(fl, (bx2-10, by2-10))
+        # CTA ability ring
         if self.ability:
-            cd_frac = max(0.0, 1.0 - self.ability.cd_left / _COMMANDER_TRIPLE_CD)
+            cd_frac = max(0.0, 1.0 - self.ability.cd_left/_CMD_CTA_CD)
             ring_r = 30
-            ring_s = pygame.Surface((ring_r * 2 + 4, ring_r * 2 + 4), pygame.SRCALPHA)
+            ring_s = pygame.Surface((ring_r*2+4, ring_r*2+4), pygame.SRCALPHA)
             if self.ability.is_active:
-                ring_col = (255, 240, 80, 200)
+                rc = (255,240,80,200)
             elif self.ability.ready():
-                ring_col = (255, 220, 60, 180)
+                rc = (255,220,60,180)
             else:
-                ring_col = (160, 130, 30, 100)
+                rc = (160,130,30,100)
             if cd_frac < 1.0 and not self.ability.is_active:
-                arc_end = int(cd_frac * 360)
-                if arc_end > 0:
-                    pygame.draw.arc(ring_s, ring_col,
-                                    pygame.Rect(2, 2, ring_r * 2, ring_r * 2),
-                                    math.radians(-90),
-                                    math.radians(-90 + arc_end), 3)
+                ae = int(cd_frac*360)
+                if ae > 0:
+                    pygame.draw.arc(ring_s, rc, pygame.Rect(2,2,ring_r*2,ring_r*2),
+                                    math.radians(-90), math.radians(-90+ae), 3)
             elif self.ability.ready():
-                pygame.draw.circle(ring_s, (255, 240, 60, 80), (ring_r + 2, ring_r + 2), ring_r, 3)
-            surf.blit(ring_s, (cx - ring_r - 2, cy - ring_r - 2))
-
-        # Hidden detection dot
+                pygame.draw.circle(ring_s, (255,240,60,80), (ring_r+2,ring_r+2), ring_r, 3)
+            surf.blit(ring_s, (cx-ring_r-2, cy-ring_r-2))
+        # Detection dots
         if self.hidden_detection:
-            pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
-
-        # Level pips
+            pygame.draw.circle(surf, (100,255,100), (cx+21, cy-21), 6)
         for i in range(self.level):
-            pygame.draw.circle(surf, C_COMMANDER, (cx - 10 + i * 7, cy + 36), 3)
+            pygame.draw.circle(surf, C_COMMANDER, (cx-10+i*7, cy+36), 3)
 
     def draw_range(self, surf):
-        r = int(self.range_tiles * TILE)
-        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
-        pygame.draw.circle(s, (255, 255, 255, 22), (r, r), r)
-        pygame.draw.circle(s, (255, 255, 255, 60), (r, r), r, 2)
-        surf.blit(s, (int(self.px) - r, int(self.py) - r))
-        # Also show buff range
-        rb = int(self.buff_range * TILE)
-        sb = pygame.Surface((rb * 2, rb * 2), pygame.SRCALPHA)
-        pygame.draw.circle(sb, (255, 200, 60, 14), (rb, rb), rb)
-        pygame.draw.circle(sb, (255, 200, 60, 50), (rb, rb), rb, 2)
-        surf.blit(sb, (int(self.px) - rb, int(self.py) - rb))
+        try:
+            import game_core as _gc
+            colored = _gc.SETTINGS.get("colored_range", False)
+        except Exception:
+            colored = False
+        col = C_COMMANDER if colored else (255,255,255)
+        r = int(self.range_tiles*TILE)
+        s = pygame.Surface((r*2, r*2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (*col,22), (r,r), r)
+        pygame.draw.circle(s, (*col,60), (r,r), r, 2)
+        surf.blit(s, (int(self.px)-r, int(self.py)-r))
+        rb = int(self.buff_range*TILE)
+        sb = pygame.Surface((rb*2, rb*2), pygame.SRCALPHA)
+        pygame.draw.circle(sb, (255,200,60,14), (rb,rb), rb)
+        pygame.draw.circle(sb, (255,200,60,50), (rb,rb), rb, 2)
+        surf.blit(sb, (int(self.px)-rb, int(self.py)-rb))
 
     def get_info(self):
         info = {
             "Damage":    self.damage,
             "Firerate":  f"{self.firerate:.3f}",
             "Range":     self.range_tiles,
-            "BuffRange": f"{self.buff_range} tiles",
-            "BuffSpeed": f"+{int((1.0-self.buff_mult)*100)}% faster",
-            "HidDet":    "YES" if self.hidden_detection else "no",
+            "Buff":      f"+{int(self.buff_pct*100)}% faster",
         }
-        if self.ability:
-            if self.ability.is_active:
-                info["TripleUpg"] = f"ACTIVE {self.ability._active_timer:.1f}s"
-            elif self.ability.ready():
-                info["TripleUpg"] = "READY"
-            else:
-                info["TripleUpg"] = f"CD {self.ability.cd_left:.1f}s"
+        if self.cta_buff_pct > 0:
+            info["CtaBuff"] = f"+{int(self.cta_buff_pct*100)}% CTA"
+        if self.hidden_detection:
+            info["HidDet"] = "Hidden Detection"
         return info
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Snowballer
+# Snowballer  (REWORK)
 # ═══════════════════════════════════════════════════════════════════════════════
 C_SNOWBALLER      = (180, 230, 255)
 C_SNOWBALLER_DARK = (40,  80,  130)
 
 # Tuple layout:
 #  (damage, firerate, range_tiles, upgrade_cost,
-#   splash_r,     # explosion radius in tiles on snowball impact
-#   slow_pct,     # slow applied to hit enemies (stacks up to slow_max)
-#   slow_max,     # max accumulated slow fraction
-#   slow_dur,     # seconds slow lasts
-#   hidden_detection)
-#
-# Mechanic:
-#  - Throws a homing snowball at target enemy
-#  - On impact: deals damage + AoE slow in splash_r radius
-#  - Slow stacks up to slow_max (refreshes timer each hit)
-#  - Lv3+: snowball leaves a 2s puddle that slow any enemy walking through it
+#   slow_pct, slow_max, slow_dur,   # slow per hit / cap / seconds
+#   freeze_thresh,                  # slow fraction that triggers freeze (0 = no freeze)
+#   freeze_time,                    # seconds enemy stays frozen
+#   flying_detection,
+#   explosive,                      # lv3+: snowballs AoE-explode on impact
+#   splash_r,                       # AoE radius in tiles (0 if not explosive)
+#   max_hits,                       # how many enemies the AoE damages (0 = all in radius)
+#   defense_bypass)                 # lv3+: ignore armor/defense
 
+# Tuple: (damage, firerate, range_tiles, upgrade_cost,
+#          slow_pct, slow_max, slow_dur,
+#          freeze_thresh, freeze_time,
+#          explosive, splash_r, defense_bypass)
+# upgrade_name stored separately below
+SNOWBALLER_LEVEL_NAMES = [None, "Snow Day", "Frigid Temperatures", "Snowball Cannon"]
 SNOWBALLER_LEVELS = [
     # lv0  place $400
-    (8,  1.200, 6.0, None, 2.5, 0.20, 0.40, 3.0, False),
-    # lv1  +$350
-    (10, 1.100, 6.5,  350, 2.5, 0.25, 0.45, 3.5, False),
-    # lv2  +$700  (more range, bigger splash)
-    (14, 1.000, 7.0,  700, 3.0, 0.30, 0.50, 4.0, False),
-    # lv3  +$2000  (puddle, hidden detect)
-    (18, 0.900, 7.5, 2000, 3.5, 0.30, 0.55, 5.0, True),
-    # lv4  +$6000  (max, huge splash, long slow)
-    (24, 0.750, 8.0, 6000, 4.0, 0.35, 0.60, 6.0, True),
+    # dmg   fr     rng  cost  sl%   slmax  sldr  frz_t  frz_s  expl   spl   defbyp  hidet
+    (  6,  2.258,  6.0, None, 0.15,  0.30,  2.5,  0.0,  0.0,  False, 0.0,  False,  False),
+    # lv1  Snow Day  +$75
+    (  7,  2.008,  8.0,   75, 0.15,  0.40,  2.5,  0.0,  0.0,  False, 0.0,  False,  False),
+    # lv2  Frigid Temperatures  +$375
+    ( 12,  2.008, 10.0,  375, 0.20,  0.60,  3.0,  0.0,  0.0,  False, 0.0,  False,  False),
+    # lv3  Snowball Cannon  +$1650 → explosive AoE, freeze, defense bypass, hidden detect
+    ( 30,  1.758, 10.0, 1650, 0.30,  0.60,  3.0,  0.60, 2.0,  True,  4.0,  True,   True),
 ]
 
 _SB_BALL_SPEED = 440.0
 
 
 class SnowballerBall:
-    """Homing snowball that explodes on impact, dealing AoE slow + damage."""
-    def __init__(self, ox, oy, target, damage, splash_r, slow_pct, slow_max,
-                 slow_dur, leave_puddle, all_enemies_ref):
+    """Homing snowball — on impact slow + optional AoE explosion."""
+    def __init__(self, ox, oy, target, damage, slow_pct, slow_max, slow_dur,
+                 freeze_thresh, freeze_time, explosive, splash_r, defense_bypass,
+                 all_enemies_ref):
         self.x = float(ox); self.y = float(oy)
-        self._target   = target
+        self._target      = target
         dx = target.x - ox; dy = target.y - oy
         d  = math.hypot(dx, dy) or 1
         self.vx = dx / d; self.vy = dy / d
-        self.speed     = _SB_BALL_SPEED
-        self.damage    = damage
-        self.splash_r  = splash_r * TILE
-        self.slow_pct  = slow_pct
-        self.slow_max  = slow_max
-        self.slow_dur  = slow_dur
-        self.leave_puddle = leave_puddle
-        self._enemies  = all_enemies_ref
-        self.alive     = True
-        self._dist_left = 1200.0
-        self._trail    = []
-
-    def _explode(self):
-        from game_core import dist as _dist
-        for e in self._enemies:
-            if not e.alive: continue
-            if _dist((e.x, e.y), (self.x, self.y)) <= self.splash_r:
-                e.take_damage(self.damage)
-                self._apply_slow(e)
-        if self.leave_puddle:
-            # Puddle: stored on the ball for the game to draw/tick
-            self.puddle = {"x": self.x, "y": self.y,
-                           "r": self.splash_r, "timer": 2.0,
-                           "slow_pct": self.slow_pct,
-                           "slow_max": self.slow_max,
-                           "slow_dur": self.slow_dur}
-        else:
-            self.puddle = None
+        self.speed        = _SB_BALL_SPEED
+        self.damage       = damage
+        self.slow_pct     = slow_pct
+        self.slow_max     = slow_max
+        self.slow_dur     = slow_dur
+        self.freeze_thresh= freeze_thresh
+        self.freeze_time  = freeze_time
+        self.explosive    = explosive
+        self.splash_r     = splash_r * TILE
+        self.defense_bypass = defense_bypass
+        self._enemies     = all_enemies_ref
+        self.alive        = True
+        self._dist_left   = 1400.0
+        self._trail       = []
+        self.puddle       = None
 
     def _apply_slow(self, e):
         cur = getattr(e, '_sb_slow', 0.0)
@@ -3684,11 +3626,34 @@ class SnowballerBall:
             e._sb_orig_speed = e.speed
         resistance = getattr(e, 'SLOW_RESISTANCE', 1.0)
         e.speed = e._sb_orig_speed * (1.0 - new * resistance)
+        # Freeze check
+        if self.freeze_thresh > 0 and new >= self.freeze_thresh and self.freeze_time > 0:
+            e.frozen = True
+            e._sb_freeze_timer = self.freeze_time
+
+    def _hit_enemy(self, e):
+        if self.defense_bypass:
+            e.hp -= self.damage
+            if e.hp <= 0: e.alive = False
+        else:
+            e.take_damage(self.damage)
+        self._apply_slow(e)
+
+    def _explode(self):
+        from game_core import dist as _dist
+        if self.explosive:
+            for e in self._enemies:
+                if not e.alive: continue
+                if _dist((e.x, e.y), (self.x, self.y)) <= self.splash_r:
+                    self._hit_enemy(e)
+        else:
+            if self._target and self._target.alive:
+                self._hit_enemy(self._target)
 
     def update(self, dt):
         if not self.alive: return
         self._trail.append((self.x, self.y, 0.0))
-        self._trail = [(x, y, a + dt) for x, y, a in self._trail if a < 0.25]
+        self._trail = [(x, y, a + dt) for x, y, a in self._trail if a < 0.22]
         if self._target and self._target.alive:
             dx = self._target.x - self.x; dy = self._target.y - self.y
             d  = math.hypot(dx, dy) or 1
@@ -3704,18 +3669,21 @@ class SnowballerBall:
         self._dist_left -= step
         if self._dist_left <= 0:
             self._explode(); self.alive = False
+        # Store explosion flash for drawing
+        if not self.alive and self.explosive and self.splash_r > 0:
+            self._flash = {"r": self.splash_r, "x": self.x, "y": self.y, "t": 0.18}
 
     def draw(self, surf):
         if not self.alive: return
         for tx, ty, age in self._trail:
-            a = max(0, int(160 * (1 - age / 0.25)))
+            a = max(0, int(160 * (1 - age / 0.22)))
             ts = pygame.Surface((12, 12), pygame.SRCALPHA)
             pygame.draw.circle(ts, (200, 240, 255, a), (6, 6), 5)
             surf.blit(ts, (int(tx) - 6, int(ty) - 6))
         cx, cy = int(self.x), int(self.y)
         pygame.draw.circle(surf, (120, 180, 255), (cx, cy), 8)
         pygame.draw.circle(surf, (220, 245, 255), (cx, cy), 5)
-        pygame.draw.circle(surf, (255, 255, 255), (cx - 2, cy - 2), 2)
+        pygame.draw.circle(surf, (255, 255, 255),  (cx - 2, cy - 2), 2)
 
 
 class Snowballer(Unit):
@@ -3726,16 +3694,19 @@ class Snowballer(Unit):
 
     def __init__(self, px, py):
         super().__init__(px, py)
-        self._balls   = []
-        self._puddles = []  # active ground puddles
+        self._balls     = []
+        self._puddles   = []
+        self._flashes   = []
         self._aim_angle = 0.0
         self._apply_level()
 
     def _apply_level(self):
         row = SNOWBALLER_LEVELS[self.level]
         (self.damage, self.firerate, self.range_tiles, _,
-         self._splash_r, self._slow_pct, self._slow_max,
-         self._slow_dur, self.hidden_detection) = row
+         self._slow_pct, self._slow_max, self._slow_dur,
+         self._freeze_thresh, self._freeze_time,
+         self._explosive, self._splash_r, self._defense_bypass,
+         self.hidden_detection) = row
 
     def upgrade_cost(self):
         nxt = self.level + 1
@@ -3748,28 +3719,36 @@ class Snowballer(Unit):
 
     def update(self, dt, enemies, effects, money):
         if self.cd_left > 0: self.cd_left -= dt
-
         targets = self._get_targets(enemies, 1)
         if self.cd_left <= 0 and targets:
             t = targets[0]
             self._aim_angle = math.atan2(t.y - self.py, t.x - self.px)
             self.cd_left = self.firerate
             self.total_damage += self.damage
-            leave_puddle = (self.level >= 3)
             ball = SnowballerBall(self.px, self.py, t,
-                                  self.damage, self._splash_r,
-                                  self._slow_pct, self._slow_max,
-                                  self._slow_dur, leave_puddle, enemies)
+                                  self.damage, self._slow_pct, self._slow_max,
+                                  self._slow_dur, self._freeze_thresh, self._freeze_time,
+                                  self._explosive, self._splash_r, self._defense_bypass,
+                                  enemies)
             self._balls.append(ball)
 
+        for b in self._balls: b.update(dt)
+        # Collect explosion flashes from newly dead explosive balls
         for b in self._balls:
-            b.update(dt)
-        # Collect new puddles
-        for b in self._balls:
-            if not b.alive and hasattr(b, 'puddle') and b.puddle:
-                self._puddles.append(b.puddle)
-                b.puddle = None
+            if not b.alive and b.explosive and b.splash_r > 0:
+                self._flashes.append({"r": b.splash_r, "x": b.x, "y": b.y, "t": 0.22})
         self._balls = [b for b in self._balls if b.alive]
+        self._flashes = [f for f in self._flashes if f["t"] > 0]
+        for f in self._flashes: f["t"] -= dt
+
+        # Tick freeze timers
+        for e in enemies:
+            if not e.alive: continue
+            ft = getattr(e, '_sb_freeze_timer', 0.0)
+            if ft > 0:
+                e._sb_freeze_timer = ft - dt
+                if e._sb_freeze_timer <= 0:
+                    e.frozen = False
 
         # Tick slow timers
         for e in enemies:
@@ -3783,81 +3762,209 @@ class Snowballer(Unit):
                         e.speed = e._sb_orig_speed
                         del e._sb_orig_speed
 
-        # Tick puddles
-        new_puddles = []
-        for p in self._puddles:
-            p['timer'] -= dt
-            if p['timer'] > 0:
-                for e in enemies:
-                    if not e.alive: continue
-                    if math.hypot(e.x - p['x'], e.y - p['y']) <= p['r']:
-                        cur = getattr(e, '_sb_slow', 0.0)
-                        new2 = min(cur + p['slow_pct'] * dt, p['slow_max'])
-                        e._sb_slow = new2
-                        e._sb_timer = p['slow_dur']
-                        if not hasattr(e, '_sb_orig_speed'):
-                            e._sb_orig_speed = e.speed
-                        resistance = getattr(e, 'SLOW_RESISTANCE', 1.0)
-                        e.speed = e._sb_orig_speed * (1.0 - new2 * resistance)
-                new_puddles.append(p)
-        self._puddles = new_puddles
-
     def draw(self, surf):
-        # Draw puddles
-        for p in self._puddles:
-            frac = p['timer'] / 2.0
-            pr = int(p['r'])
-            ps = pygame.Surface((pr * 2 + 2, pr * 2 + 2), pygame.SRCALPHA)
-            a = int(frac * 80)
-            pygame.draw.circle(ps, (140, 200, 255, a), (pr + 1, pr + 1), pr)
-            pygame.draw.circle(ps, (180, 230, 255, a + 20), (pr + 1, pr + 1), pr, 2)
-            surf.blit(ps, (int(p['x']) - pr - 1, int(p['y']) - pr - 1))
-
         cx, cy = int(self.px), int(self.py)
         pygame.draw.circle(surf, C_SNOWBALLER_DARK, (cx, cy), 27)
         pygame.draw.circle(surf, C_SNOWBALLER,      (cx, cy), 21)
         pygame.draw.circle(surf, (220, 245, 255),   (cx, cy), 21, 2)
-
-        # Snowflake symbol (simple 4-spoke)
         for i in range(4):
             a = math.radians(i * 45)
             sx2 = cx + int(math.cos(a) * 14); sy2 = cy + int(math.sin(a) * 14)
             pygame.draw.line(surf, (255, 255, 255), (cx, cy), (sx2, sy2), 2)
-
-        # Center dot
         pygame.draw.circle(surf, (255, 255, 255), (cx, cy), 3)
-
-        # Aim direction indicator
         ca, sa = math.cos(self._aim_angle), math.sin(self._aim_angle)
         pygame.draw.line(surf, (160, 220, 255),
                          (cx + int(ca * 8), cy + int(sa * 8)),
                          (cx + int(ca * 26), cy + int(sa * 26)), 3)
-
-        if self.hidden_detection:
-            pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
-
+        if self._explosive:
+            pygame.draw.circle(surf, (255, 200, 50), (cx - 18, cy - 18), 5)
+        # Draw explosion flashes
+        for f in self._flashes:
+            frac = max(0.0, f["t"] / 0.22)
+            fr2 = max(1, int(f["r"] * (1.0 + (1-frac) * 0.5)))
+            fa  = max(0, min(255, int(frac * 160)))
+            fa3 = max(0, min(255, fa // 3))
+            fs2 = pygame.Surface((fr2*2+4, fr2*2+4), pygame.SRCALPHA)
+            pygame.draw.circle(fs2, (180, 230, 255, fa3), (fr2+2, fr2+2), fr2)
+            pygame.draw.circle(fs2, (220, 245, 255, fa),  (fr2+2, fr2+2), fr2, 3)
+            surf.blit(fs2, (int(f["x"])-fr2-2, int(f["y"])-fr2-2))
         for b in self._balls: b.draw(surf)
-
         for i in range(self.level):
             pygame.draw.circle(surf, C_SNOWBALLER, (cx - 10 + i * 7, cy + 36), 3)
 
     def draw_range(self, surf):
+        try:
+            import game_core as _gc
+            colored = _gc.SETTINGS.get("colored_range", False)
+        except Exception:
+            colored = False
+        col = C_SNOWBALLER if colored else (255, 255, 255)
         r = int(self.range_tiles * TILE)
         s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
-        pygame.draw.circle(s, (180, 230, 255, 22), (r, r), r)
-        pygame.draw.circle(s, (180, 230, 255, 60), (r, r), r, 2)
+        pygame.draw.circle(s, (*col, 22), (r, r), r)
+        pygame.draw.circle(s, (*col, 60), (r, r), r, 2)
         surf.blit(s, (int(self.px) - r, int(self.py) - r))
 
     def get_info(self):
-        return {
+        info = {
             "Damage":   self.damage,
             "Firerate": f"{self.firerate:.3f}",
             "Range":    self.range_tiles,
-            "Splash":   f"{self._splash_r} tiles",
-            "Slow":     f"+{int(self._slow_pct*100)}%, max {int(self._slow_max*100)}% / {self._slow_dur:.0f}s",
-            "Puddle":   "YES" if self.level >= 3 else "lv3+",
-            "HidDet":   "YES" if self.hidden_detection else "no",
+            "Slow":     f"+{int(self._slow_pct*100)}% max {int(self._slow_max*100)}% / {self._slow_dur:.0f}s",
         }
+        if self._explosive:
+            info["Splash"] = f"{self._splash_r:.1f} tiles"
+            info["DefBypass"] = "YES"
+        if self._freeze_thresh > 0:
+            info["Freeze"] = f"@{int(self._freeze_thresh*100)}% slow → {self._freeze_time:.0f}s"
+        if self.hidden_detection:
+            info["FlyDet"] = "Flying Detection"
+        return info
+
+
+# ── SnowballerOld — original version kept for Sandbox ──────────────────────────
+SNOWBALLER_OLD_LEVELS = [
+    (8,  1.200, 6.0, None, 2.5, 0.20, 0.40, 3.0, False),
+    (10, 1.100, 6.5,  350, 2.5, 0.25, 0.45, 3.5, False),
+    (14, 1.000, 7.0,  700, 3.0, 0.30, 0.50, 4.0, False),
+    (18, 0.900, 7.5, 2000, 3.5, 0.30, 0.55, 5.0, True),
+    (24, 0.750, 8.0, 6000, 4.0, 0.35, 0.60, 6.0, True),
+]
+
+class SnowballerOldBall:
+    def __init__(self, ox, oy, target, damage, splash_r, slow_pct, slow_max,
+                 slow_dur, leave_puddle, all_enemies_ref):
+        self.x = float(ox); self.y = float(oy)
+        self._target = target
+        dx = target.x - ox; dy = target.y - oy
+        d = math.hypot(dx, dy) or 1
+        self.vx = dx/d; self.vy = dy/d
+        self.speed = _SB_BALL_SPEED
+        self.damage = damage; self.splash_r = splash_r * TILE
+        self.slow_pct = slow_pct; self.slow_max = slow_max
+        self.slow_dur = slow_dur; self.leave_puddle = leave_puddle
+        self._enemies = all_enemies_ref; self.alive = True
+        self._dist_left = 1200.0; self._trail = []; self.puddle = None
+
+    def _apply_slow(self, e):
+        cur = getattr(e, '_sb_slow', 0.0)
+        new = min(cur + self.slow_pct, self.slow_max)
+        e._sb_slow = new; e._sb_timer = self.slow_dur
+        if not hasattr(e, '_sb_orig_speed'): e._sb_orig_speed = e.speed
+        resistance = getattr(e, 'SLOW_RESISTANCE', 1.0)
+        e.speed = e._sb_orig_speed * (1.0 - new * resistance)
+
+    def _explode(self):
+        from game_core import dist as _dist
+        for e in self._enemies:
+            if not e.alive: continue
+            if _dist((e.x,e.y),(self.x,self.y)) <= self.splash_r:
+                e.take_damage(self.damage); self._apply_slow(e)
+        if self.leave_puddle:
+            self.puddle = {"x":self.x,"y":self.y,"r":self.splash_r,"timer":2.0,
+                           "slow_pct":self.slow_pct,"slow_max":self.slow_max,"slow_dur":self.slow_dur}
+
+    def update(self, dt):
+        if not self.alive: return
+        self._trail.append((self.x,self.y,0.0))
+        self._trail = [(x,y,a+dt) for x,y,a in self._trail if a<0.25]
+        if self._target and self._target.alive:
+            dx=self._target.x-self.x; dy=self._target.y-self.y
+            d=math.hypot(dx,dy) or 1; self.vx=dx/d; self.vy=dy/d
+            if d<14: self._explode(); self.alive=False; return
+        else:
+            for e in self._enemies:
+                if e.alive and math.hypot(e.x-self.x,e.y-self.y)<18:
+                    self._explode(); self.alive=False; return
+        step=self.speed*dt; self.x+=self.vx*step; self.y+=self.vy*step
+        self._dist_left-=step
+        if self._dist_left<=0: self._explode(); self.alive=False
+
+    def draw(self, surf):
+        if not self.alive: return
+        for tx,ty,age in self._trail:
+            a=max(0,int(160*(1-age/0.25))); ts=pygame.Surface((12,12),pygame.SRCALPHA)
+            pygame.draw.circle(ts,(200,240,255,a),(6,6),5); surf.blit(ts,(int(tx)-6,int(ty)-6))
+        cx,cy=int(self.x),int(self.y)
+        pygame.draw.circle(surf,(120,180,255),(cx,cy),8)
+        pygame.draw.circle(surf,(220,245,255),(cx,cy),5)
+        pygame.draw.circle(surf,(255,255,255),(cx-2,cy-2),2)
+
+class SnowballerOld(Unit):
+    PLACE_COST = 400; COLOR = C_SNOWBALLER; NAME = "SnowballerOld"; hidden_detection = False
+    def __init__(self, px, py):
+        super().__init__(px, py); self._balls=[]; self._puddles=[]; self._aim_angle=0.0; self._apply_level()
+    def _apply_level(self):
+        row=SNOWBALLER_OLD_LEVELS[self.level]
+        (self.damage,self.firerate,self.range_tiles,_,
+         self._splash_r,self._slow_pct,self._slow_max,self._slow_dur,self.hidden_detection)=row
+    def upgrade_cost(self):
+        nxt=self.level+1
+        if nxt>=len(SNOWBALLER_OLD_LEVELS): return None
+        return SNOWBALLER_OLD_LEVELS[nxt][3]
+    def upgrade(self):
+        nxt=self.level+1
+        if nxt<len(SNOWBALLER_OLD_LEVELS): self.level=nxt; self._apply_level()
+    def update(self, dt, enemies, effects, money):
+        if self.cd_left>0: self.cd_left-=dt
+        targets=self._get_targets(enemies,1)
+        if self.cd_left<=0 and targets:
+            t=targets[0]; self._aim_angle=math.atan2(t.y-self.py,t.x-self.px)
+            self.cd_left=self.firerate; self.total_damage+=self.damage
+            leave_puddle=(self.level>=3)
+            ball=SnowballerOldBall(self.px,self.py,t,self.damage,self._splash_r,
+                                   self._slow_pct,self._slow_max,self._slow_dur,leave_puddle,enemies)
+            self._balls.append(ball)
+        for b in self._balls: b.update(dt)
+        for b in self._balls:
+            if not b.alive and hasattr(b,'puddle') and b.puddle:
+                self._puddles.append(b.puddle); b.puddle=None
+        self._balls=[b for b in self._balls if b.alive]
+        for e in enemies:
+            if not e.alive: continue
+            t2=getattr(e,'_sb_timer',0.0)
+            if t2>0:
+                e._sb_timer=t2-dt
+                if e._sb_timer<=0:
+                    e._sb_slow=0.0
+                    if hasattr(e,'_sb_orig_speed'): e.speed=e._sb_orig_speed; del e._sb_orig_speed
+        new_puddles=[]
+        for p in self._puddles:
+            p['timer']-=dt
+            if p['timer']>0:
+                for e in enemies:
+                    if not e.alive: continue
+                    if math.hypot(e.x-p['x'],e.y-p['y'])<=p['r']:
+                        cur=getattr(e,'_sb_slow',0.0); new2=min(cur+p['slow_pct']*dt,p['slow_max'])
+                        e._sb_slow=new2; e._sb_timer=p['slow_dur']
+                        if not hasattr(e,'_sb_orig_speed'): e._sb_orig_speed=e.speed
+                        e.speed=e._sb_orig_speed*(1.0-new2*getattr(e,'SLOW_RESISTANCE',1.0))
+                new_puddles.append(p)
+        self._puddles=new_puddles
+    def draw(self, surf):
+        for p in self._puddles:
+            frac=p['timer']/2.0; pr=int(p['r'])
+            ps=pygame.Surface((pr*2+2,pr*2+2),pygame.SRCALPHA); a=int(frac*80)
+            pygame.draw.circle(ps,(140,200,255,a),(pr+1,pr+1),pr)
+            pygame.draw.circle(ps,(180,230,255,a+20),(pr+1,pr+1),pr,2)
+            surf.blit(ps,(int(p['x'])-pr-1,int(p['y'])-pr-1))
+        cx,cy=int(self.px),int(self.py)
+        pygame.draw.circle(surf,C_SNOWBALLER_DARK,(cx,cy),27)
+        pygame.draw.circle(surf,C_SNOWBALLER,(cx,cy),21)
+        pygame.draw.circle(surf,(220,245,255),(cx,cy),21,2)
+        for i in range(4):
+            a=math.radians(i*45); sx2=cx+int(math.cos(a)*14); sy2=cy+int(math.sin(a)*14)
+            pygame.draw.line(surf,(255,255,255),(cx,cy),(sx2,sy2),2)
+        pygame.draw.circle(surf,(255,255,255),(cx,cy),3)
+        ca,sa=math.cos(self._aim_angle),math.sin(self._aim_angle)
+        pygame.draw.line(surf,(160,220,255),(cx+int(ca*8),cy+int(sa*8)),(cx+int(ca*26),cy+int(sa*26)),3)
+        if self.hidden_detection: pygame.draw.circle(surf,(100,255,100),(cx+21,cy-21),6)
+        for b in self._balls: b.draw(surf)
+        for i in range(self.level): pygame.draw.circle(surf,C_SNOWBALLER,(cx-10+i*7,cy+36),3)
+    def draw_range(self, surf):
+        r=int(self.range_tiles*TILE); s=pygame.Surface((r*2,r*2),pygame.SRCALPHA)
+        pygame.draw.circle(s,(180,230,255,22),(r,r),r); pygame.draw.circle(s,(180,230,255,60),(r,r),r,2)
+        surf.blit(s,(int(self.px)-r,int(self.py)-r))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3975,6 +4082,9 @@ class CommandoGrenade:
         self._dist_left -= step
         if self._dist_left <= 0:
             self._explode(); self.alive = False
+        # Store explosion flash for drawing
+        if not self.alive and self.explosive and self.splash_r > 0:
+            self._flash = {"r": self.splash_r, "x": self.x, "y": self.y, "t": 0.18}
 
     def draw(self, surf):
         if not self.alive: return

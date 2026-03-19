@@ -183,7 +183,7 @@ UNIT_LIMITS = {
     "Hallow Punk":    10,
     "Spotlight Tech": 1,
     "Commander":      3,
-    "Snowballer":     5,
+    "Snowballer":     3,
     "Commando":       4,
 }
 
@@ -324,3 +324,4 @@ class BloodSlashEffect:
             surf.blit(ps,(int(p[0])-4,int(p[1])-4))
 
 # ── Enemy base ─────────────────────────────────────────────────────────────────
+SETTINGS = {"colored_range": False}

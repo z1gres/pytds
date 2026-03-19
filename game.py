@@ -79,6 +79,7 @@ from enemies import (
     PossessedArmorInner, PossessedArmor, FallenNecromancer, CorruptedFallen,
     FallenJester, NecroticSkeleton, FallenBreaker, FallenRusher, FallenHonorGuard,
     FallenShield, FallenHero, FallenKing,
+    TrueFallenKing,
     WAVE_DATA, FALLEN_WAVE_DATA, FALLEN_MAX_WAVES,
     BREAKER_POOL, FALLEN_BREAKER_POOL,
     WaveManager,
@@ -120,9 +121,11 @@ from units import (
     SpotlightTech, SPOTLIGHTTECH_LEVELS,
     C_SPOTLIGHT, C_SPOTLIGHT_DARK,
     C_FREEZER, C_FREEZER_DARK,
-    Commander, COMMANDER_LEVELS,
+    Commander, COMMANDER_LEVELS, COMMANDER_LEVEL_NAMES,
     C_COMMANDER, C_COMMANDER_DARK,
     Snowballer, SNOWBALLER_LEVELS,
+    SnowballerOld, SNOWBALLER_OLD_LEVELS,
+    SNOWBALLER_LEVEL_NAMES,
     C_SNOWBALLER, C_SNOWBALLER_DARK,
     Commando, COMMANDO_LEVELS,
     C_COMMANDO, C_COMMANDO_DARK,
@@ -452,8 +455,12 @@ class AdminPanel:
                 ("Slasher",Slasher,C_SLASHER),
                 ("GoldCowboy",GoldenCowboy,C_GCOWBOY),
                 ("HallowPunk",HallowPunk,C_HALLOWPUNK),
+                ("Freezer",Freezer,C_FREEZER),
+                ("Snowballer",Snowballer,C_SNOWBALLER),
+                ("SbOld",SnowballerOld,C_SNOWBALLER),
+                ("Commander",Commander,C_COMMANDER),
+                ("Commando",Commando,C_COMMANDO),
                 ("Spotlight",SpotlightTech,C_SPOTLIGHT),
-                ("ST Old",SpotlightTech,C_SPOTLIGHT),
             ]
             active_cls=set(s for s in (ui_ref.SLOT_TYPES if ui_ref else []) if s)
             for i,(name,cls,col) in enumerate(unit_list):
@@ -545,7 +552,7 @@ class AdminPanel:
         # Scrollbar for scrollable tabs
         if self.tab in ("enemy","units"):
             _sb_cols=5
-            n_items=len(ADMIN_ENEMY_LIST) if self.tab=="enemy" else 17
+            n_items=len(ADMIN_ENEMY_LIST) if self.tab=="enemy" else len(unit_list)
             rows=((n_items+_sb_cols-1)//_sb_cols)
             total_h=rows*(ch+gap)
             if total_h>content_h:
@@ -865,6 +872,9 @@ class UI:
         elif cls==GoldenCowboy: levels=GCOWBOY_LEVELS; cost_idx=3
         elif cls==HallowPunk: levels=HALLOWPUNK_LEVELS; cost_idx=3
         elif cls==SpotlightTech: levels=SPOTLIGHTTECH_LEVELS; cost_idx=3
+        elif cls==Snowballer: levels=SNOWBALLER_LEVELS; cost_idx=3
+        elif cls==Commander: levels=COMMANDER_LEVELS; cost_idx=3
+        elif cls==Commando: levels=COMMANDO_LEVELS; cost_idx=3
         else: levels=[]; cost_idx=3
         for i in range(1,unit.level+1):
             if i<len(levels) and levels[i][cost_idx]: total+=levels[i][cost_idx]
@@ -974,6 +984,62 @@ class UI:
             if bdmg>0: result["Burn"]=f"{bdmg}/tick {bt:.0f}s"
             if exp and not unit._expose_hidden: result["Expose"]="Hidden Expose"
             if conf>0: result["Confuse"]=f"@{conf} dmg"
+            return result
+        elif cls==Snowballer:
+            if nxt>=len(SNOWBALLER_LEVELS): return None
+            d,fr,r,_,sp,sm,sd,ft,fs,expl,sr,db,hd=SNOWBALLER_LEVELS[nxt]
+            result={"Damage":d,"Firerate":fr,"Range":r,
+                    "Slow":f"{int(sp*100)}% max {int(sm*100)}% / {sd:.0f}s"}
+            if expl: result["Splash"]=f"{sr} tiles"; result["DefBypass"]="YES"
+            if ft>0: result["Freeze"]=f"@{int(ft*100)}% → {fs:.0f}s"
+            if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
+            return result
+            if nxt>=len(SNOWBALLER_LEVELS): return None
+            d,fr,r,_,sp,sm,sd,ft,fs,expl,sr,db=SNOWBALLER_LEVELS[nxt]
+            result={"Damage":d,"Firerate":fr,"Range":r,
+                    "Slow":f"{int(sp*100)}% max {int(sm*100)}% / {sd:.0f}s"}
+            if expl: result["Splash"]=f"{sr} tiles"; result["DefBypass"]="YES"
+            if ft>0: result["Freeze"]=f"@{int(ft*100)}% → {fs:.0f}s"
+            return result
+            if nxt>=len(SNOWBALLER_LEVELS): return None
+            d,fr,r,_,sp,sm,sd,ft,fs,fly,expl,sr,mh,db=SNOWBALLER_LEVELS[nxt]
+            result={"Damage":d,"Firerate":fr,"Range":r,
+                    "Slow":f"{int(sp*100)}% max {int(sm*100)}% / {sd:.0f}s"}
+            if expl: result["Splash"]=f"{sr} tiles"; result["DefBypass"]="YES"
+            if ft>0: result["Freeze"]=f"@{int(ft*100)}% → {fs:.0f}s"
+            if fly and not unit.hidden_detection: result["HidDet"]="Flying Det"
+            return result
+            if nxt>=len(SNOWBALLER_LEVELS): return None
+            d,fr,r,_,sr,sp,sm,sd,hd=SNOWBALLER_LEVELS[nxt]
+            result={"Damage":d,"Firerate":fr,"Range":r,
+                    "Splash":f"{sr} tiles","Slow":f"{int(sp*100)}%/{sd:.0f}s max {int(sm*100)}%"}
+            if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
+            return result
+        elif cls==Commander:
+            if nxt>=len(COMMANDER_LEVELS): return None
+            d,fr,r,_,bp,cta,hid=COMMANDER_LEVELS[nxt]
+            result={"Damage":d,"Firerate":fr,"Range":r,"Buff":f"+{int(bp*100)}% faster"}
+            if cta>0: result["CtaBuff"]=f"+{int(cta*100)}% CTA"
+            if hid and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
+            return result
+            if nxt>=len(COMMANDER_LEVELS): return None
+            d,fr,r,_,bp,cta,hid,lead,fly=COMMANDER_LEVELS[nxt]
+            result={"Damage":d,"Firerate":fr,"Range":r,"Buff":f"+{int(bp*100)}% faster"}
+            if cta>0: result["CtaBuff"]=f"+{int(cta*100)}% CTA"
+            if hid and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
+            return result
+            if nxt>=len(COMMANDER_LEVELS): return None
+            d,fr,r,_,br,bm,hd=COMMANDER_LEVELS[nxt]
+            result={"Damage":d,"Firerate":fr,"Range":r,
+                    "BuffRange":f"{br} tiles","BuffMult":f"x{bm:.2f} firerate"}
+            if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
+            return result
+        elif cls==Commando:
+            if nxt>=len(COMMANDO_LEVELS): return None
+            d,fr,r,_,burst,bcd,pierce,hd=COMMANDO_LEVELS[nxt]
+            result={"Damage":d,"Firerate":fr,"Range":r,
+                    "Burst":f"{burst} shots / {bcd:.1f}s cd","Pierce":pierce}
+            if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
             return result
         return None
 
@@ -1151,7 +1217,7 @@ class UI:
 
             cls=type(u)
             nxt=self._get_next_stats(u)
-            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS}
+            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS}
             lvl_list=levels_map.get(cls,[])
             total_lvls=len(lvl_list)
 
@@ -1410,6 +1476,60 @@ class UI:
                     stats.append(("Confuse", conf_str, None))
                 elif nxt and nxt.get("Confuse"):
                     stats.append(("Confuse", None, nxt["Confuse"]))
+            elif cls==Snowballer:
+                hd_now=u.hidden_detection
+                hd_next=bool(nxt and nxt.get("HidDet") and not hd_now)
+                stats=[]
+                if hd_now: stats.append(("HidDet","Hidden Detection",None))
+                stats+=[
+                    ("Damage",   u.damage,              nxt.get("Damage")   if nxt else None),
+                    ("Firerate", f"{u.firerate:.3f}",    f"{nxt['Firerate']:.3f}" if nxt else None),
+                    ("Range",    u.range_tiles,           nxt.get("Range")   if nxt else None),
+                    ("Slow",     f"{int(u._slow_pct*100)}% max {int(u._slow_max*100)}% / {u._slow_dur:.0f}s",
+                                  nxt.get("Slow") if nxt else None),
+                ]
+                if u._explosive:
+                    stats.append(("Splash", f"{u._splash_r:.1f} tiles", None))
+                    stats.append(("DefBypass","YES",None))
+                elif nxt and nxt.get("Splash"):
+                    stats.append(("Splash",None,nxt["Splash"]))
+                    stats.append(("DefBypass",None,"YES"))
+                if u._freeze_thresh>0:
+                    stats.append(("Freeze",f"@{int(u._freeze_thresh*100)}% → {u._freeze_time:.0f}s",None))
+                elif nxt and nxt.get("Freeze"):
+                    stats.append(("Freeze",None,nxt["Freeze"]))
+                if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
+            elif cls==Commander:
+                hd_next=bool(nxt and nxt.get("HidDet") and not u.hidden_detection)
+                stats=[]
+                if u.hidden_detection: stats.append(("HidDet","Hidden Detection",None))
+                stats+=[
+                    ("Damage",   u.damage,              nxt.get("Damage")   if nxt else None),
+                    ("Firerate", f"{u.firerate:.3f}",    f"{nxt['Firerate']:.3f}" if nxt else None),
+                    ("Range",    u.range_tiles,           nxt.get("Range")   if nxt else None),
+                    ("Buff",     f"+{int(u.buff_pct*100)}% faster", nxt.get("Buff") if nxt else None),
+                ]
+                if u.cta_buff_pct>0:
+                    stats.append(("CtaBuff",f"+{int(u.cta_buff_pct*100)}% CTA",nxt.get("CtaBuff") if nxt else None))
+                elif nxt and nxt.get("CtaBuff"):
+                    stats.append(("CtaBuff",None,nxt["CtaBuff"]))
+                if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
+            elif cls==Commando:
+                hd_now=u.hidden_detection
+                hd_next=bool(nxt and nxt.get("HidDet") and not hd_now)
+                stats=[]
+                if hd_now: stats.append(("HidDet","Hidden Detection",None))
+                stats+=[
+                    ("Damage",   u.damage,              nxt.get("Damage")   if nxt else None),
+                    ("Firerate", f"{u.firerate:.3f}",    f"{nxt['Firerate']:.3f}" if nxt else None),
+                    ("Range",    u.range_tiles,           nxt.get("Range")   if nxt else None),
+                    ("Burst",    f"{u._burst} shots / {u._burst_cd:.1f}s cd",
+                                  nxt.get("Burst") if nxt else None),
+                    ("Pierce",   u._pierce,              nxt.get("Pierce")   if nxt else None),
+                ]
+                if u.level>=2: stats.append(("Grenade","AoE 3-tile splash",None))
+                elif nxt and u.level==1: stats.append(("Grenade",None,"AoE 3-tile splash"))
+                if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
             else:
                 stats=[(k,v,None) for k,v in u.get_info().items()]
 
@@ -1544,6 +1664,17 @@ class UI:
                     else:
                         pygame.draw.rect(surf,(60,58,80),(bx_seg,dot_y,seg_w,bar_h),1,border_radius=4)
 
+            # === UPGRADE NAME (if unit has named levels) ===
+            _upg_names_map = {Snowballer: SNOWBALLER_LEVEL_NAMES, Commander: COMMANDER_LEVEL_NAMES}
+            _upg_names = _upg_names_map.get(cls)
+            if _upg_names and cost:
+                _next_name = _upg_names[u.level+1] if u.level+1 < len(_upg_names) else None
+                if _next_name:
+                    _nn_s = pygame.font.SysFont("segoeui", 14, bold=True).render(f"▲ {_next_name} ▲", True, (120, 200, 255))
+                    _nn_r = pygame.Rect(mx_m+6, dot_y+12, mw-12, 20)
+                    pygame.draw.rect(surf, (20, 40, 80), _nn_r, border_radius=4)
+                    surf.blit(_nn_s, _nn_s.get_rect(center=_nn_r.center))
+                    ch_y = dot_y + 38
             # === CHANGING STATS ===
             changing=[(s,v,n) for s,v,n in stats if n is not None and (v is None or str(n)!=str(v))]
             ch_y=dot_y+20
@@ -1767,13 +1898,6 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
     s_card = pygame.Surface((w, h), pygame.SRCALPHA)
     pygame.draw.rect(s_card, (*base_col, 220), (0, 0, w, h), border_radius=18)
 
-    if rd["shimmer"] and t > 0:
-        shimmer_col = rd["shimmer"]
-        phase = math.sin(t * 2.5) * 0.5 + 0.5
-        for i in range(3):
-            stripe_x = int((math.sin(t * 1.5 + i * 2.1) * 0.5 + 0.5) * w)
-            pygame.draw.line(s_card, (*shimmer_col, int(40 * phase)), (stripe_x, 0), (stripe_x + 20, h), 14)
-
     border_col = rd["border"]
     if selected:
         border_col = (255, 220, 50)
@@ -1835,7 +1959,7 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
                 "Frost Blaster": 800, "Sledger": 950, "Gladiator": 500,
                 "Toxic Gunner": 525, "Slasher": 1700, "Golden Cowboy": 550,
                 "Hallow Punk": 300, "Spotlight Tech": 3250,
-                "Snowballer": 400, "Commander": 2500, "Commando": 900}
+                "Snowballer": 400, "Commander": 650, "Commando": 900}
     cost = cost_map.get(unit_name)
     if cost:
         ico_m = load_icon("money_ico", 18)
@@ -1870,9 +1994,11 @@ class MapSelectMenu:
         self.action = None
 
     def run(self):
+        print("Game.run() started")
         clock = pygame.time.Clock()
         self.action = None
         while self.action is None:
+            
             dt = clock.tick(60) / 1000.0
             self.t += dt
             for ev in pygame.event.get():
@@ -2501,6 +2627,131 @@ class AchievementsScreen:
         cs3 = cf3.render(f"{done_ach}/{total_ach} разблокировано", True,
                          C_GOLD if done_ach == total_ach else (140, 145, 170))
         surf.blit(cs3, cs3.get_rect(bottomright=(SCREEN_W - 16, SCREEN_H - 10)))
+
+
+# ── Global settings ──────────────────────────────────────────────────────────
+SETTINGS = {
+    "music_volume": 0.7,
+    "music_muted": False,
+    "colored_range": False,
+}
+
+def _apply_audio_settings():
+    try:
+        vol = 0.0 if SETTINGS["music_muted"] else SETTINGS["music_volume"]
+        pygame.mixer.music.set_volume(vol)
+    except Exception: pass
+
+_SETTINGS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "settings.json")
+
+def load_settings():
+    global SETTINGS
+    if os.path.exists(_SETTINGS_FILE):
+        try:
+            import json as _j
+            data = _j.load(open(_SETTINGS_FILE))
+            for k in SETTINGS:
+                if k in data: SETTINGS[k] = data[k]
+        except Exception: pass
+
+def save_settings():
+    try:
+        import json as _j
+        _j.dump(SETTINGS, open(_SETTINGS_FILE,"w"))
+    except Exception: pass
+
+load_settings()
+
+# ── Patch Unit.draw_range for colored range rings ─────────────────────────────
+def _patched_draw_range(self, surf):
+    r = int(self.range_tiles * TILE)
+    if r <= 0: return
+    col = self.COLOR if SETTINGS.get("colored_range", False) else (255, 255, 255)
+    s = pygame.Surface((r*2, r*2), pygame.SRCALPHA)
+    pygame.draw.circle(s, (*col, 22), (r, r), r)
+    pygame.draw.circle(s, (*col, 60), (r, r), r, 2)
+    surf.blit(s, (int(self.px)-r, int(self.py)-r))
+Unit.draw_range = _patched_draw_range
+
+
+class SettingsScreen:
+    def __init__(self, screen):
+        self.screen = screen; self.t = 0.0; self.running = True
+        cx = SCREEN_W // 2
+        self.btn_back = pygame.Rect(cx - 130, SCREEN_H - 90, 260, 50)
+        self._drag_vol = False
+
+    def run(self):
+        clock = pygame.time.Clock()
+        while self.running:
+            dt = clock.tick(60) / 1000.0; self.t += dt
+            for ev in pygame.event.get():
+                if ev.type == pygame.QUIT: pygame.quit(); sys.exit()
+                if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE: self.running = False
+                if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1: self._handle_click(ev.pos)
+                if ev.type == pygame.MOUSEBUTTONUP and ev.button == 1: self._drag_vol = False
+                if ev.type == pygame.MOUSEMOTION and self._drag_vol: self._set_vol_from_x(ev.pos[0])
+            self._draw(); pygame.display.flip()
+        save_settings()
+
+    def _vol_bar_rect(self): return pygame.Rect(SCREEN_W//2 - 200, 320, 400, 18)
+
+    def _set_vol_from_x(self, mx):
+        bar = self._vol_bar_rect()
+        SETTINGS["music_volume"] = round(max(0.0, min(1.0, (mx-bar.x)/bar.w)), 2)
+        if not SETTINGS["music_muted"]: _apply_audio_settings()
+
+    def _handle_click(self, pos):
+        cx = SCREEN_W // 2
+        if self.btn_back.collidepoint(pos): self.running = False; return
+        if pygame.Rect(cx-110, 380, 220, 44).collidepoint(pos):
+            SETTINGS["music_muted"] = not SETTINGS["music_muted"]; _apply_audio_settings(); return
+        if pygame.Rect(cx-110, 450, 220, 44).collidepoint(pos):
+            SETTINGS["colored_range"] = not SETTINGS["colored_range"]; return
+        bar = self._vol_bar_rect()
+        if pygame.Rect(bar.x, bar.y-10, bar.w, bar.h+20).collidepoint(pos):
+            self._drag_vol = True; self._set_vol_from_x(pos[0])
+
+    def _draw_toggle(self, surf, rect, label, active):
+        pygame.draw.rect(surf, (50,160,80) if active else (60,60,80), rect, border_radius=10)
+        pygame.draw.rect(surf, (80,220,100) if active else (90,90,120), rect, 2, border_radius=10)
+        f = pygame.font.SysFont("segoeui", 20, bold=True)
+        s = f.render(f"{label}: {'ВКЛ' if active else 'ВЫКЛ'}", True, (255,255,255))
+        surf.blit(s, s.get_rect(center=rect.center))
+
+    def _draw(self):
+        surf = self.screen; surf.fill(C_BG); cx = SCREEN_W // 2
+        random.seed(44)
+        for _ in range(160):
+            sx=random.randint(0,SCREEN_W); sy=random.randint(0,SCREEN_H)
+            br=int(abs(math.sin(self.t+sx*0.012))*150+50)
+            pygame.draw.circle(surf,(br,br,br),(sx,sy),1)
+        random.seed()
+        pygame.draw.rect(surf, C_PANEL, (0,0,SCREEN_W,70))
+        pygame.draw.line(surf, C_BORDER, (0,70),(SCREEN_W,70),2)
+        hs = pygame.font.SysFont("segoeui",36,bold=True).render("НАСТРОЙКИ",True,(180,200,255))
+        surf.blit(hs, hs.get_rect(center=(cx,35)))
+        vl = pygame.font.SysFont("segoeui",22,bold=True).render("Громкость музыки",True,(200,210,240))
+        surf.blit(vl, vl.get_rect(center=(cx,285)))
+        bar = self._vol_bar_rect()
+        pygame.draw.rect(surf,(40,45,65),bar,border_radius=8)
+        fw = int(bar.w*SETTINGS["music_volume"])
+        if fw > 0:
+            pygame.draw.rect(surf,(60,160,255) if not SETTINGS["music_muted"] else (80,80,80),
+                             pygame.Rect(bar.x,bar.y,fw,bar.h),border_radius=8)
+        pygame.draw.rect(surf,C_BORDER,bar,2,border_radius=8)
+        kx = bar.x + fw
+        pygame.draw.circle(surf,(200,220,255),(kx,bar.centery),12)
+        pygame.draw.circle(surf,C_BORDER,(kx,bar.centery),12,2)
+        ps = pygame.font.SysFont("consolas",16,bold=True).render(f"{int(SETTINGS['music_volume']*100)}%",True,C_GOLD)
+        surf.blit(ps, ps.get_rect(center=(cx,bar.bottom+18)))
+        self._draw_toggle(surf, pygame.Rect(cx-110,380,220,44), "Мут", SETTINGS["music_muted"])
+        self._draw_toggle(surf, pygame.Rect(cx-110,450,220,44), "Цветной рейндж", SETTINGS["colored_range"])
+        mx,my=pygame.mouse.get_pos(); hov=self.btn_back.collidepoint(mx,my)
+        pygame.draw.rect(surf,(80,50,50) if hov else (50,35,35),self.btn_back,border_radius=10)
+        pygame.draw.rect(surf,C_BORDER,self.btn_back,2,border_radius=10)
+        bs = pygame.font.SysFont("segoeui",24,bold=True).render("← НАЗАД",True,C_WHITE)
+        surf.blit(bs, bs.get_rect(center=self.btn_back.center))
 
 
 # ── Main Menu ───────────────────────────────────────────────────────────────────
@@ -3149,6 +3400,25 @@ class Game:
             game_core.CURRENT_MAP = "frosty"
 
 
+    def _give_wave_coins(self, wave_num):
+        if self.mode not in ("easy","fallen","frosty"): return
+        if wave_num <= self._last_coin_wave: return
+        waves_done = wave_num - self._last_coin_wave
+        self._last_coin_wave = wave_num
+        self._wave_coin_accum += waves_done * 0.5
+        whole = int(self._wave_coin_accum)
+        if whole > 0:
+            self._wave_coin_accum -= whole
+            self._end_coin_reward += whole
+            self.save_data["coins"] = self.save_data.get("coins",0) + whole
+            write_save(self.save_data)
+
+    def _apply_stun(self, unit, duration):
+        unit._stun_timer = max(getattr(unit,"_stun_timer",0), duration)
+
+    def _broadcast(self, data):
+        pass
+
     def draw_map(self, offset=(0,0)):
         surf=self.screen; surf.fill(C_BG)
         ox,oy=offset
@@ -3283,583 +3553,661 @@ class Game:
 
     def run(self):
         while self.running:
-            dt=min(self.clock.tick(FPS)/1000.0,0.05)
-            dt*=getattr(self.ui.admin_panel,'_game_speed',1.0)
+            dt = min(self.clock.tick(FPS) / 1000.0, 0.05)
+            dt *= getattr(self.ui.admin_panel, '_game_speed', 1.0)
 
             for ev in pygame.event.get():
-                if ev.type==pygame.QUIT:
+                if ev.type == pygame.QUIT:
                     try: pygame.mixer.music.stop()
                     except: pass
-                    self.running=False; return
-
-                # Music loop: restart from 8.25s when track ends
-                if ev.type==pygame.USEREVENT+1:
+                    self.running = False; return
+                if ev.type == pygame.USEREVENT + 1:
                     if not self.game_over and not self.win:
+                        try: pygame.mixer.music.play(0, start=8.7)
+                        except: pass
+                if ev.type == pygame.MOUSEWHEEL and self.mode == "sandbox":
+                    if self.ui.admin_panel.visible:
+                        self.ui.admin_panel.handle_scroll(ev.y); continue
+                if self.console.visible:
+                    if ev.type == pygame.KEYDOWN:
+                        if ev.key == pygame.K_F1: self.console.toggle()
+                        else: self.console.handle_key(ev, self)
+                    continue
+                if self.paused:
+                    if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                        action = self.pause_menu.handle_click(ev.pos)
+                        if action == "resume": self.paused = False
+                        elif action == "menu":
+                            self.paused = False; self.running = False
+                            self.return_to_menu = True
+                            try: pygame.mixer.music.stop()
+                            except: pass
+                    if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+                        self.paused = False
+                    continue
+                if ev.type == pygame.KEYDOWN:
+                    if ev.key == pygame.K_ESCAPE:
+                        if not self.paused: self.paused = True
+                    if ev.key == pygame.K_F1: self.console.toggle()
+                    if ev.key == pygame.K_e and self.ui.open_unit:
+                        u = self.ui.open_unit; cost = u.upgrade_cost()
+                        if cost and self.money >= cost: u.upgrade(); self.money -= cost
+                        elif cost: self.ui.show_msg("Not enough money!")
+                        else: self.ui.show_msg("Max level!")
+                    if ev.key == pygame.K_x and self.ui.open_unit:
+                        u = self.ui.open_unit
+                        self.money += self.ui._sell_value(u)
+                        self.units.remove(u); self.ui.open_unit = None
+                    slot_keys = {pygame.K_1:0,pygame.K_2:1,pygame.K_3:2,pygame.K_4:3,pygame.K_5:4}
+                    if ev.key in slot_keys and not self.console.visible:
+                        idx = slot_keys[ev.key]; UType = self.ui.SLOT_TYPES[idx]
+                        if UType is None: self.ui.show_msg("Coming soon!")
+                        elif self.money < UType.PLACE_COST: self.ui.show_msg("Not enough money!")
+                        else:
+                            mx2, my2 = pygame.mouse.get_pos()
+                            self.ui.selected_slot = idx; self.ui.drag_unit = UType(mx2, my2)
+                if self.game_over or self.win:
+                    if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                        if self._end_btn.collidepoint(ev.pos):
+                            self.running = False; self.return_to_menu = True
+                            try: pygame.mixer.music.stop()
+                            except: pass
+                elif not self.game_over:
+                    if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                        delta = self.ui.handle_click(ev.pos, self.units, self.money,
+                                                     self.effects, self.enemies,
+                                                     self.wave_mgr.wave, self.save_data, self.mode)
+                        self.money += delta
+                        if self._hixw5yt_frozen:
+                            for e in self.enemies:
+                                if e.alive and dist((e.x,e.y),ev.pos) <= e.radius+8:
+                                    e.alive = False; self._hixw5yt_frozen = False
+                                    if self._hixw5yt_owner:
+                                        self._hixw5yt_owner._hixw5yt_active = False
+                                        self._hixw5yt_owner = None
+                                    break
+                        if self._pokaxw5yt_frozen:
+                            for e in self.enemies:
+                                if e.alive and dist((e.x,e.y),ev.pos) <= e.radius+8:
+                                    e.alive = False; self._pokaxw5yt_frozen = False
+                                    if self._pokaxw5yt_owner:
+                                        self._pokaxw5yt_owner._pokaxw5yt_active = False
+                                        self._pokaxw5yt_owner = None
+                                    break
+                    if ev.type == pygame.MOUSEBUTTONUP and ev.button == 1:
+                        delta = self.ui.handle_release(ev.pos, self.units, self.money)
+                        self.money += delta
+
+            self._elapsed += dt
+            prev_wave = self.wave_mgr.wave
+            if not self.paused:
+                if not getattr(self,'natural_spawn_stopped',False):
+                    _pre_count = len(self.enemies)
+                    self.wave_mgr.update(dt,self.enemies)
+                    # Frosty mode: assign each newly spawned enemy a lane path
+                    if self.mode == "frosty" and len(self.enemies) > _pre_count:
+                        for ne in self.enemies[_pre_count:]:
+                            lane = self._frosty_lane % 4
+                            fp = get_frosty_path(lane)
+                            ne._frosty_path = fp
+                            ne.x = float(fp[0][0])
+                            ne.y = float(fp[0][1])
+                            ne._wp_index = 1
+                            self._frosty_lane += 1
+                if self.wave_mgr.wave!=prev_wave:
+                    self._wave_leaked=False
+                    # Wave just advanced — immediately pay coins for the completed wave
+                    self._give_wave_coins(prev_wave)
+    
+                for n in [e for e in self.enemies if isinstance(e,Necromancer) and e.alive]:
+                    if n.should_summon():
+                        for _ in range(5):
+                            s2=Enemy(self.wave_mgr.wave); s2.free_kill=True
+                            s2.x=n.x; s2.y=n.y; s2._wp_index=getattr(n,'_wp_index',1)
+                            self.enemies.append(s2)
+    
+                # FallenNecromancer summons skeletons
+                for n in [e for e in self.enemies if isinstance(e,FallenNecromancer) and e.alive]:
+                    if n.should_summon():
+                        for _ in range(4):
+                            s2=SkeletonEnemy(self.wave_mgr.wave); s2.free_kill=True
+                            s2.x=n.x; s2.y=n.y; s2._wp_index=getattr(n,'_wp_index',1)
+                            if hasattr(n,'_frosty_path'): s2._frosty_path=n._frosty_path
+                            self.enemies.append(s2)
+    
+                # FrostNecromancer summons frosty enemies
+                for n in [e for e in self.enemies if isinstance(e,FrostNecromancer) and e.alive]:
+                    if n.should_summon():
+                        pool = (FrostUndead, FrostInvader, MegaFrostMystery)
+                        for _ in range(5):
+                            Sp = random.choice(pool)
+                            s2 = Sp(self.wave_mgr.wave); s2.free_kill=True
+                            s2.x=n.x; s2.y=n.y; s2._wp_index=getattr(n,'_wp_index',1)
+                            if hasattr(n,'_frosty_path'): s2._frosty_path=n._frosty_path
+                            self.enemies.append(s2)
+    
+                # FrostHero: Curse Wave stun (TFK-like)
+                for fh in [e for e in self.enemies if isinstance(e,FrostHero) and e.alive]:
+                    if fh._curse_active and fh._curse_ring_r<300:
+                        for u in self.units:
+                            if math.hypot(u.px-fh.x, u.py-fh.y) <= 300:
+                                self._apply_stun(u, 3.0)
+    
+                # FrostSpirit abilities
+                for fs in [e for e in self.enemies if isinstance(e,FrostSpirit) and e.alive]:
+                    # 1) forward ice column: freeze towers/units in column for 4s
+                    if getattr(fs, "_ice_column_timer", 999) <= 0:
+                        fs._ice_column_timer = random.uniform(10,15)
+                        path = getattr(fs, "_frosty_path", None) or get_map_path()
+                        ti = min(getattr(fs, "_wp_index", 1), len(path)-1)
+                        tx,ty = path[ti]
+                        dx,dy = (tx-fs.x),(ty-fs.y)
+                        d = math.hypot(dx,dy) or 1.0
+                        ux,uy = dx/d, dy/d
+                        width = 120.0
+                        length = 560.0
+                        for u in self.units:
+                            vx,vy = (u.px-fs.x),(u.py-fs.y)
+                            proj = vx*ux + vy*uy
+                            if proj < 0 or proj > length: continue
+                            perp = abs(vx*uy - vy*ux)
+                            if perp <= width*0.5:
+                                self._apply_stun(u, 4.0)
+                    # 2) icicles: 50 impacts, stun 5s (towers/units)
+                    if getattr(fs, "_icicles_timer", 999) <= 0:
+                        fs._icicles_timer = random.uniform(20,25)
+                        if self.units:
+                            for _ in range(50):
+                                tgt = random.choice(self.units)
+                                self._apply_stun(tgt, 5.0)
+                    # 3) summon pack: 5 enemies with weighted type + per-type delays
+                    if getattr(fs, "_summon_pack_timer", 999) <= 0:
+                        fs._summon_pack_timer = 30.0
+                        fp = getattr(fs, "_frosty_path", None)
+                        wp = getattr(fs, "_wp_index", 1)
+                        t_acc = 0.0
+                        for _ in range(5):
+                            r = random.random()
+                            if r < 0.30:
+                                cls = FrostAcolyte; delay = 1.5
+                            elif r < 0.70:
+                                cls = FrostHunter; delay = 0.75
+                            else:
+                                cls = FrostInvader; delay = 0.25
+                            t_acc += delay
+                            self._scheduled_spawns.append({
+                                "t": t_acc,
+                                "cls": cls,
+                                "x": fs.x,
+                                "y": fs.y,
+                                "wp": wp,
+                                "fp": fp,
+                                "from_wave": True,
+                                "free_kill": True,
+                            })
+    
+                # FrostMage: snowball stun a random unit every 7–15s
+                for fm in [e for e in self.enemies if isinstance(e,FrostMage) and e.alive]:
+                    if getattr(fm, "_snowball_timer", 999) <= 0 and self.units:
+                        tgt=random.choice(self.units)
+                        self._apply_stun(tgt, 2.5)
+                        fm._snowball_timer=random.uniform(7,15)
+    
+                # FallenKing: hero summon + sword lunge stun
+                for k in [e for e in self.enemies if isinstance(e,FallenKing) and e.alive]:
+                    if k.should_summon_hero():
+                        path = getattr(k,'_frosty_path',None) or get_map_path()
+                        # Spawn hero slightly behind king on the path (negative offset)
+                        hero=FallenHero(self.wave_mgr.wave)
+                        hero.x = k.x - random.uniform(30, 80)
+                        hero.y = float(path[min(k._wp_index, len(path)-1)-1][1]) if k._wp_index > 0 else k.y
+                        hero._wp_index = max(1, k._wp_index - 1)
+                        if hasattr(k,'_frosty_path'): hero._frosty_path=k._frosty_path
+                        hero.free_kill=True
+                        self.enemies.append(hero)
+                    # 'armed' state: pick nearest unit and start lunge
+                    if k._sword_state=='armed' and self.units:
+                        best=min(self.units, key=lambda u: math.hypot(u.px-k.x, u.py-k.y))
+                        k._sword_target_unit=best
+                        k._sword_tx=best.px; k._sword_ty=best.py
+                        k._sword_state='leaving'
+                        k._sword_hit=False
+                    # 'striking' state: deal stun once
+                    if k._sword_state=='striking' and not k._sword_hit:
+                        k._sword_hit=True
+                        if k._sword_target_unit and k._sword_target_unit in self.units:
+                            self._apply_stun(k._sword_target_unit, 5.0)
+                    # override freeze immunity
+                    k._frost_frozen=False; k.frozen=False
+    
+                # Wave 40 in fallen mode: music → flash → FallenKing
+                if self.mode=="fallen" and self.wave_mgr.wave==40 and not self._fallen_king_spawned:
+                    if self._fallen_king_music_timer is None:
+                        _music_path=os.path.join(os.path.dirname(os.path.abspath(__file__)),"assets","sound","fallenking.mp3")
                         try:
-                            pygame.mixer.music.play(0, start=8.7)
+                            pygame.mixer.music.load(_music_path)
+                            pygame.mixer.music.play(0)
+                            pygame.mixer.music.set_endevent(pygame.USEREVENT + 1)
                         except Exception:
                             pass
-
-
-        prev_wave=self.wave_mgr.wave
-        if not getattr(self,'natural_spawn_stopped',False):
-            _pre_count = len(self.enemies)
-            self.wave_mgr.update(dt,self.enemies)
-            # Frosty mode: assign each newly spawned enemy a lane path
-            if self.mode == "frosty" and len(self.enemies) > _pre_count:
-                for ne in self.enemies[_pre_count:]:
-                    lane = self._frosty_lane % 4
-                    fp = get_frosty_path(lane)
-                    ne._frosty_path = fp
-                    ne.x = float(fp[0][0])
-                    ne.y = float(fp[0][1])
-                    ne._wp_index = 1
-                    self._frosty_lane += 1
-        if self.wave_mgr.wave!=prev_wave:
-            self._wave_leaked=False
-            # Wave just advanced — immediately pay coins for the completed wave
-            self._give_wave_coins(prev_wave)
-
-        for n in [e for e in self.enemies if isinstance(e,Necromancer) and e.alive]:
-            if n.should_summon():
-                for _ in range(5):
-                    s2=Enemy(self.wave_mgr.wave); s2.free_kill=True
-                    s2.x=n.x; s2.y=n.y; s2._wp_index=getattr(n,'_wp_index',1)
-                    self.enemies.append(s2)
-
-        # FallenNecromancer summons skeletons
-        for n in [e for e in self.enemies if isinstance(e,FallenNecromancer) and e.alive]:
-            if n.should_summon():
-                for _ in range(4):
-                    s2=SkeletonEnemy(self.wave_mgr.wave); s2.free_kill=True
-                    s2.x=n.x; s2.y=n.y; s2._wp_index=getattr(n,'_wp_index',1)
-                    if hasattr(n,'_frosty_path'): s2._frosty_path=n._frosty_path
-                    self.enemies.append(s2)
-
-        # FrostNecromancer summons frosty enemies
-        for n in [e for e in self.enemies if isinstance(e,FrostNecromancer) and e.alive]:
-            if n.should_summon():
-                pool = (FrostUndead, FrostInvader, MegaFrostMystery)
-                for _ in range(5):
-                    Sp = random.choice(pool)
-                    s2 = Sp(self.wave_mgr.wave); s2.free_kill=True
-                    s2.x=n.x; s2.y=n.y; s2._wp_index=getattr(n,'_wp_index',1)
-                    if hasattr(n,'_frosty_path'): s2._frosty_path=n._frosty_path
-                    self.enemies.append(s2)
-
-        # FrostHero: Curse Wave stun (TFK-like)
-        for fh in [e for e in self.enemies if isinstance(e,FrostHero) and e.alive]:
-            if fh._curse_active and fh._curse_ring_r<300:
-                for u in self.units:
-                    if math.hypot(u.px-fh.x, u.py-fh.y) <= 300:
-                        self._apply_stun(u, 3.0)
-
-        # FrostSpirit abilities
-        for fs in [e for e in self.enemies if isinstance(e,FrostSpirit) and e.alive]:
-            # 1) forward ice column: freeze towers/units in column for 4s
-            if getattr(fs, "_ice_column_timer", 999) <= 0:
-                fs._ice_column_timer = random.uniform(10,15)
-                path = getattr(fs, "_frosty_path", None) or get_map_path()
-                ti = min(getattr(fs, "_wp_index", 1), len(path)-1)
-                tx,ty = path[ti]
-                dx,dy = (tx-fs.x),(ty-fs.y)
-                d = math.hypot(dx,dy) or 1.0
-                ux,uy = dx/d, dy/d
-                width = 120.0
-                length = 560.0
-                for u in self.units:
-                    vx,vy = (u.px-fs.x),(u.py-fs.y)
-                    proj = vx*ux + vy*uy
-                    if proj < 0 or proj > length: continue
-                    perp = abs(vx*uy - vy*ux)
-                    if perp <= width*0.5:
-                        self._apply_stun(u, 4.0)
-            # 2) icicles: 50 impacts, stun 5s (towers/units)
-            if getattr(fs, "_icicles_timer", 999) <= 0:
-                fs._icicles_timer = random.uniform(20,25)
-                if self.units:
-                    for _ in range(50):
-                        tgt = random.choice(self.units)
-                        self._apply_stun(tgt, 5.0)
-            # 3) summon pack: 5 enemies with weighted type + per-type delays
-            if getattr(fs, "_summon_pack_timer", 999) <= 0:
-                fs._summon_pack_timer = 30.0
-                fp = getattr(fs, "_frosty_path", None)
-                wp = getattr(fs, "_wp_index", 1)
-                t_acc = 0.0
-                for _ in range(5):
-                    r = random.random()
-                    if r < 0.30:
-                        cls = FrostAcolyte; delay = 1.5
-                    elif r < 0.70:
-                        cls = FrostHunter; delay = 0.75
+                        self._fallen_king_music_timer=8.025
+                        self._ceremony_phase='waiting'
+                        self._ceremony_timer=0.0
+                        self._ceremony_flash_alpha=0
+                        self._ceremony_flash_color=(255,255,255)
                     else:
-                        cls = FrostInvader; delay = 0.25
-                    t_acc += delay
-                    self._scheduled_spawns.append({
-                        "t": t_acc,
-                        "cls": cls,
-                        "x": fs.x,
-                        "y": fs.y,
-                        "wp": wp,
-                        "fp": fp,
-                        "from_wave": True,
-                        "free_kill": True,
-                    })
-
-        # FrostMage: snowball stun a random unit every 7–15s
-        for fm in [e for e in self.enemies if isinstance(e,FrostMage) and e.alive]:
-            if getattr(fm, "_snowball_timer", 999) <= 0 and self.units:
-                tgt=random.choice(self.units)
-                self._apply_stun(tgt, 2.5)
-                fm._snowball_timer=random.uniform(7,15)
-
-        # FallenKing: hero summon + sword lunge stun
-        for k in [e for e in self.enemies if isinstance(e,FallenKing) and e.alive]:
-            if k.should_summon_hero():
-                path = getattr(k,'_frosty_path',None) or get_map_path()
-                # Spawn hero slightly behind king on the path (negative offset)
-                hero=FallenHero(self.wave_mgr.wave)
-                hero.x = k.x - random.uniform(30, 80)
-                hero.y = float(path[min(k._wp_index, len(path)-1)-1][1]) if k._wp_index > 0 else k.y
-                hero._wp_index = max(1, k._wp_index - 1)
-                if hasattr(k,'_frosty_path'): hero._frosty_path=k._frosty_path
-                hero.free_kill=True
-                self.enemies.append(hero)
-            # 'armed' state: pick nearest unit and start lunge
-            if k._sword_state=='armed' and self.units:
-                best=min(self.units, key=lambda u: math.hypot(u.px-k.x, u.py-k.y))
-                k._sword_target_unit=best
-                k._sword_tx=best.px; k._sword_ty=best.py
-                k._sword_state='leaving'
-                k._sword_hit=False
-            # 'striking' state: deal stun once
-            if k._sword_state=='striking' and not k._sword_hit:
-                k._sword_hit=True
-                if k._sword_target_unit and k._sword_target_unit in self.units:
-                    self._apply_stun(k._sword_target_unit, 5.0)
-            # override freeze immunity
-            k._frost_frozen=False; k.frozen=False
-
-        # Wave 40 in fallen mode: music → flash → FallenKing
-        if self.mode=="fallen" and self.wave_mgr.wave==40 and not self._fallen_king_spawned:
-            if self._fallen_king_music_timer is None:
-                _music_path=os.path.join(os.path.dirname(os.path.abspath(__file__)),"assets","sound","fallenking.mp3")
-                try:
-                    pygame.mixer.music.load(_music_path)
-                    pygame.mixer.music.play(0)
-                    pygame.mixer.music.set_endevent(pygame.USEREVENT + 1)
-                except Exception:
-                    pass
-                self._fallen_king_music_timer=8.025
-                self._ceremony_phase='waiting'
-                self._ceremony_timer=0.0
-                self._ceremony_flash_alpha=0
-                self._ceremony_flash_color=(255,255,255)
-            else:
-                self._fallen_king_music_timer-=dt
-                self._ceremony_timer+=dt
-
-                # Flash starts 1 second before boss (at music_timer == 1.0)
-                time_to_spawn=self._fallen_king_music_timer
-
-                if time_to_spawn<=1.0 and self._ceremony_phase=='waiting':
-                    self._ceremony_phase='flash_in'
-                    self._ceremony_timer=0.0
-
-                if self._ceremony_phase=='flash_in':
-                    # 0.2s to reach full white
-                    self._ceremony_flash_color=(255,255,255)
-                    self._ceremony_flash_alpha=min(255,int(self._ceremony_timer/0.2*255))
-                    if self._ceremony_timer>=0.2:
-                        self._ceremony_phase='flash_hold'
-
-                elif self._ceremony_phase=='flash_hold':
-                    # Hold full white, transition to purple as boss approaches
-                    # Purple starts at 0.4s remaining
-                    if time_to_spawn<=0.4:
-                        purple_t=1.0-(time_to_spawn/0.4)
-                        r=int(255*(1-purple_t)+180*purple_t)
-                        g=int(255*(1-purple_t)+0*purple_t)
-                        b=int(255*(1-purple_t)+255*purple_t)
-                        self._ceremony_flash_color=(r,g,b)
-                    self._ceremony_flash_alpha=255
-
-                # Spawn boss + instantly kill flash
-                if self._fallen_king_music_timer<=0:
-                    self._fallen_king_spawned=True
-                    self._fallen_king_shake=1.2
-                    fk=FallenKing(40); fk.x=-60.0; fk._from_wave=True
-                    self.enemies.append(fk)
-                    self._ceremony_flash_alpha=0
-                    self._ceremony_phase='done'
-
-        # Wave 40 in frosty mode: play frostspirit.mp3 → spawn Frost Spirit after 28s
-        if self.mode=="frosty" and self.wave_mgr.wave==40 and not self._frost_spirit_spawned:
-            if self._frost_spirit_music_timer is None:
-                _music_path=os.path.join(os.path.dirname(os.path.abspath(__file__)),"assets","sound","frostspirit.mp3")
-                try:
-                    pygame.mixer.music.load(_music_path)
-                    pygame.mixer.music.play(0)
-                except Exception:
-                    pass
-                self._frost_spirit_music_timer = 27.0
-            else:
-                self._frost_spirit_music_timer -= dt
-                if self._frost_spirit_music_timer <= 0:
-                    self._frost_spirit_spawned = True
-                    fs = FrostSpirit(40)
-                    fs._from_wave = True
-                    from game_core import get_frosty_path as _gfp
-                    fp = _gfp(0)  # top lane for FrostSpirit
-                    fs._frosty_path = fp
-                    fs.x = float(fp[0][0]); fs.y = float(fp[0][1]); fs._wp_index = 1
-                    self.enemies.append(fs)
-
-        # Process scheduled delayed spawns (Frost Spirit summon pack)
-        if self._scheduled_spawns:
-            new_sched=[]
-            for item in self._scheduled_spawns:
-                item["t"] -= dt
-                if item["t"] > 0:
-                    new_sched.append(item); continue
-                cls=item["cls"]
-                baby=cls(self.wave_mgr.wave)
-                baby.x=item["x"]; baby.y=item["y"]
-                baby._wp_index=item.get("wp",1)
-                fp=item.get("fp")
-                if fp is not None: baby._frosty_path=fp
-                if item.get("from_wave", False): baby._from_wave=True
-                if item.get("free_kill", False): baby.free_kill=True
-                self.enemies.append(baby)
-            self._scheduled_spawns = new_sched
-
-        # flash_out no longer needed — flash dies instantly on spawn
-
-        # hixw5yt: check if any Xw5ytUnit just activated the ability
-        if not self._hixw5yt_frozen:
-            for u in self.units:
-                if isinstance(u, Xw5ytUnit) and u._hixw5yt_active:
-                    self._hixw5yt_frozen = True
-                    self._hixw5yt_owner = u
-                    break
-
-        # pokaxw5yt: check if any Xw5ytUnit just activated ability2
-        if not self._pokaxw5yt_frozen:
-            for u in self.units:
-                if isinstance(u, Xw5ytUnit) and u._pokaxw5yt_active:
-                    self._pokaxw5yt_frozen = True
-                    self._pokaxw5yt_owner = u
-                    break
-
-        dead_reached=[]
-        for e in self.enemies:
-            if not e.alive: continue
-            if self._hixw5yt_frozen: continue  # time stopped
-            # Reversed enemy: walks backward and deals collision damage
-            if getattr(e,'_reversed',False):
-                e.x -= e.speed * dt * 1.5
-                e._bob += dt * 4
-                if e.x < -60:
-                    e.alive = False; continue
-                # Collide with other enemies
-                for other in self.enemies:
-                    if other is e or not other.alive: continue
-                    if getattr(other,'_reversed',False): continue
-                    if dist((e.x,e.y),(other.x,other.y)) < e.radius + other.radius + 2:
-                        dmg = min(e.hp, other.hp)
-                        other.take_damage(dmg)
-                        e.hp -= dmg
-                        if not other.alive and not getattr(other,'_reward_paid',False) and not getattr(other,'free_kill',False):
-                            other._reward_paid=True
-                            if self.mode != "easy":
-                                self.money+=other.KILL_REWARD
-                                self.effects.append(FloatingText(other.x,other.y-other.radius-10,f"+{other.KILL_REWARD}"))
-                        if e.hp <= 0:
-                            e.alive = False; break
-                continue
-
-            if e.update(dt):
-                if isinstance(e,FastBoss):
-                    e.alive=False
-                elif getattr(e,'_confused',False):
-                    pass  # confused enemy walked backward — don't count as leaked
-                else:
-                    dead_reached.append(e)
-
-        for e in dead_reached:
-            self.player_hp=max(0,self.player_hp-max(1,int(e.hp))); e.alive=False
-            e._reward_paid=True  # reached end — no kill reward
-        if dead_reached: self._wave_leaked=True
-        if self.player_hp<=0 and dead_reached:
-            self.game_over=True
-            # ── Achievement: Жертва Короля ─ lose to FallenKing at wave 40 in Fallen
-            if self.mode=="fallen" and self.wave_mgr.wave==40:
-                if any(isinstance(e,FallenKing)
-                       for e in dead_reached):
-                    self.ach_mgr.try_grant("king_victim")
-            try:
-                pygame.mixer.music.set_endevent(0)
-                pygame.mixer.music.stop()
-            except: pass
-
-        # Kill rewards: give money + floating text for freshly killed enemies
-        for e in self.enemies:
-            if not e.alive and not getattr(e,'_reward_paid',False) and not getattr(e,'free_kill',False):
-                e._reward_paid=True
-                reward=e.KILL_REWARD
-                if reward>0 and self.mode != "easy":
-                    self.money+=reward
-                    self.effects.append(FloatingText(e.x, e.y-e.radius-10, f"+{reward}"))
-
-        # Frost Spirit: reward per 2.5% hp lost (12_500 each step)
-        if self.mode != "easy":
-            for fs in [e for e in self.enemies if isinstance(e, FrostSpirit) and e.alive and not getattr(e, "free_kill", False)]:
-                maxhp = max(1.0, float(fs.maxhp))
-                lost = max(0.0, min(1.0, 1.0 - float(fs.hp)/maxhp))
-                steps = int(lost / 0.025)
-                paid = int(getattr(fs, "_reward_steps_paid", 0))
-                if steps > paid:
-                    delta = steps - paid
-                    fs._reward_steps_paid = steps
-                    amt = 12500 * delta
-                    self.money += amt
-                    self.effects.append(FloatingText(fs.x, fs.y-fs.radius-18, f"+{amt}"))
-
-        _x5k = getattr(self,"_x5000_dmg",False)
-        for u in self.units:
-            # Stun: frozen by FallenKing sword
-            if getattr(u,'_stun_timer',0)>0:
-                u._stun_timer-=dt
-                if u._stun_timer<=0: u._stun_timer=0
-                continue  # skip update while stunned
-            # Freeze during ceremony or hixw5yt
-            if self._ceremony_phase not in (None,'done'):
-                continue
-            if self._hixw5yt_frozen:
-                continue
-            # Give xw5yt chiter ability access to unit list
-            if isinstance(u, Xw5ytUnit) and u.ability3:
-                u.ability3.owner._game_units_ref = self.units
-            # Handle chiter boost expiry
-            boost=getattr(u,'_chiter_boost',0)
-            if boost>0:
-                u._chiter_boost=boost-dt
-                if u._chiter_boost<=0:
-                    u._chiter_boost=0
-                    u.firerate=getattr(u,'_chiter_old_fr',u.firerate)
-            if _x5k:
-                _orig_dmg = u.damage
-                u.damage = u.damage * 5000
-            u.update(dt,self.enemies,self.effects,self.money)
-            if _x5k:
-                u.damage = _orig_dmg
-        # Collect Lifestealer blood money
-        for u in self.units:
-            if isinstance(u,Lifestealer):
-                pm=getattr(u,'_pending_money',0)
-                if pm>0: self.money+=pm; u._pending_money=0
-
-        # Commander: apply firerate buff to nearby units
-        for u in self.units:
-            if isinstance(u, Commander):
-                u.update_buff(self.units)
-
-        # Collect GoldenCowboy cash shot income
-        for u in self.units:
-            if isinstance(u,GoldenCowboy):
-                earned=u.collect_income()
-                if earned>0:
-                    self.money+=earned
-                    self.effects.append(FloatingText(u.px,u.py-30,f"+${earned}",(255,220,60)))
-
-        # Kill rewards (second pass — catches kills from unit attacks this tick)
-        for e in self.enemies:
-            if not e.alive and not getattr(e,'_reward_paid',False) and not getattr(e,'free_kill',False):
-                e._reward_paid=True
-                reward=e.KILL_REWARD
-                if reward>0 and self.mode != "easy":
-                    self.money+=reward
-                    self.effects.append(FloatingText(e.x, e.y-e.radius-10, f"+{reward}"))
-
-        new_enemies=[]
-        for e in self.enemies:
-            if not e.alive and isinstance(e,BreakerEnemy) and not getattr(e,'_spawned',False):
-                e._spawned=True
-                Sp=random.choice(BREAKER_POOL); baby=Sp(self.wave_mgr.wave)
-                baby.x=e.x; baby.y=e.y; baby._wp_index=getattr(e,'_wp_index',1)
-                if hasattr(e,'_frosty_path'): baby._frosty_path=e._frosty_path
-                baby.free_kill=True; new_enemies.append(baby)
-            # FrostMystery: spawns 1 random enemy (SnowyEnemy or FrozenEnemy)
-            # MegaFrostMystery: spawns 2 random enemies
-            if (not e.alive and isinstance(e,(FrostMystery, MegaFrostMystery)) and not getattr(e,'_spawned',False)):
-                e._spawned=True
-                mult = 2 if isinstance(e, MegaFrostMystery) else 1
-                for _ in range(mult):
-                    cls = random.choice([SnowyEnemy, FrozenEnemy])
-                    baby = cls(self.wave_mgr.wave)
-                    baby.x=e.x; baby.y=e.y; baby._wp_index=getattr(e,'_wp_index',1)
-                    if hasattr(e,'_frosty_path'): baby._frosty_path=e._frosty_path
-                    baby.free_kill=True; new_enemies.append(baby)
-            # FallenBreaker spawns 1 fallen variant
-            if not e.alive and isinstance(e,FallenBreaker) and not getattr(e,'_spawned',False):
-                e._spawned=True
-                Sp=random.choice(FALLEN_BREAKER_POOL); baby=Sp(self.wave_mgr.wave)
-                baby.x=e.x; baby.y=e.y; baby._wp_index=getattr(e,'_wp_index',1)
-                if hasattr(e,'_frosty_path'): baby._frosty_path=e._frosty_path
-                baby.free_kill=True; new_enemies.append(baby)
-            # PossessedArmor spawns inner ghost on death
-            if not e.alive and isinstance(e,PossessedArmor) and not e._spawned_inner:
-                e._spawned_inner=True
-                inner=PossessedArmorInner(self.wave_mgr.wave)
-                inner.x=e.x; inner.y=e.y; inner._wp_index=getattr(e,'_wp_index',1)
-                if hasattr(e,'_frosty_path'): inner._frosty_path=e._frosty_path
-                new_enemies.append(inner)
-
-        self.enemies=[e for e in self.enemies if e.alive or isinstance(e,(BreakerEnemy,FallenBreaker,PossessedArmor,FrostMystery))]+new_enemies
-
-        gds=[e for e in self.enemies if isinstance(e,GraveDigger) and e.alive]
-        self._boss_enemy=gds[0] if gds else (
-            self._boss_enemy if self._boss_enemy and self._boss_enemy.alive else None)
-
-        # Track first wave-spawned appearances of fallen bosses for boss bars
-        if self.mode=="fallen":
-            _fallen_bar_classes=(FallenGiant,FallenJester,FallenSquire,FallenKing,FallenShield,FallenHonorGuard)
-            for e in self.enemies:
-                if not e.alive: continue
-                if not getattr(e,'_from_wave',False): continue
-                cls=type(e)
-                if cls in _fallen_bar_classes and cls not in self._fallen_boss_bars:
-                    self._fallen_boss_bars[cls]=e
-            # Always keep FallenKing bar updated to current alive instance
-                fk_alive=[e for e in self.enemies if isinstance(e,FallenKing) and e.alive]
-                if fk_alive:
-                    self._fallen_boss_bars[FallenKing]=fk_alive[0]
-
-        # Frosty boss bars: only on FIRST wave-spawned appearance (no sandbox spawns)
-        if self.mode=="frosty":
-            _frosty_bar_classes=(
-                SnowMinion, FrostHunter, FrostAcolyte,
-                FrostUndead, FrostInvader, FrostRavager,
-                Yeti, FrostMage, FrostHero,
-            )
-            for e in self.enemies:
-                if not e.alive: continue
-                if not getattr(e,'_from_wave',False): continue
-                cls=type(e)
-                if cls in _frosty_bar_classes and cls not in self._frosty_bossbar_seen:
-                    self._frosty_bossbar_seen.add(cls)
-                    self._fallen_boss_bars[cls]=e
-
-        # Frost Spirit: boss bar always (including sandbox)
-        fs_alive = [e for e in self.enemies if isinstance(e, FrostSpirit) and e.alive]
-        if fs_alive:
-            self._fallen_boss_bars[FrostSpirit] = fs_alive[0]
-
-        # tf_test: always track 1M miniboss and TFK in boss bars regardless of mode
-
-        if (self.wave_mgr.state=="waiting"
-                and not any(e.alive for e in self.enemies) and not self.wave_mgr._lmoney_paid):
-            lm=self.wave_mgr.wave_lmoney(); bm=self.wave_mgr.wave_bmoney()
-            if self.mode == "frosty":
-                if lm: lm += 150
-                if bm: bm += 150
-            # Farm income — only count OWN farms (not peer farms)
-            own_farms = [u for u in self.units if isinstance(u, Farm)]
-            farm_income = sum(u.income for u in own_farms)
-            if farm_income>0:
-                self.money+=farm_income
-                self.ui.show_msg(f"+{farm_income} Farm income",2.5)
-            if self._wave_leaked:
-                if lm: self.money+=lm; self.ui.show_msg(f"+{lm} Wave bonus",2.5)
-            else:
-                msgs=[]
-                if lm: self.money+=lm; msgs.append(f"+{lm} Wave bonus")
-                if bm: self.money+=bm; msgs.append(f"+{bm} Wave clear")
-                if msgs: self.ui.show_msg("  |  ".join(msgs),3.0)
-            # (per-wave profile coins handled by the wave-advance hook above)
-            self.wave_mgr._lmoney_paid=True; self.wave_mgr._bonus_paid=True
-            # MP: send wave bonuses to client (NOT farm — client counts own farms itself)
-            if getattr(self, 'is_host', False):
-                client_bonus = (lm or 0) + (bm or 0)
-                if client_bonus > 0:
-                    self._broadcast({"type": "wave_bonus", "amount": client_bonus,
-                                     "leaked": self._wave_leaked})
-                # Tell client to collect their own farm income
-                self._broadcast({"type": "farm_income"})
-
-        fk_pending = (self.mode=="fallen" and self.wave_mgr.wave==40 and
-                      (not self._fallen_king_spawned or
-                       any(isinstance(e,FallenKing) and e.alive for e in self.enemies)))
-        # True Fallen trigger: fallen mode + killed FallenKing + under 15 min
-        tf_can_trigger = (
-            self.mode=="fallen"
-            and self._fallen_king_spawned
-            and not any(isinstance(e,FallenKing) and e.alive for e in self.enemies)
-            and self._elapsed < 900.0
-            and not getattr(self,"_tf_triggered_auto",False)
-        )
-        if tf_can_trigger and self.wave_mgr.state=="done" and not any(e.alive for e in self.enemies):
-            self._tf_triggered_auto = True
-            # Spawn the special 10k FK that triggers the tf_test animation
-            fk_tf = FallenKing(1)
-            fk_tf.hp = 10000; fk_tf.maxhp = 10000; fk_tf.x = -30.0
-            self.enemies.append(fk_tf)
-        if self.wave_mgr.state=="done" and not any(e.alive for e in self.enemies) and not fk_pending :
-            if not self.win:
-                # ── Ensure all waves paid (covers state=done skipping the waiting block) ──
-                self._give_wave_coins(self.wave_mgr.wave)
-                # Flush leftover fractional accumulator (e.g. 0.5 from Fallen odd waves)
-                if self.mode in ("easy", "fallen", "frosty") and self._wave_coin_accum >= 0.5:
-                    self._end_coin_reward += 1
-                    self.save_data["coins"] = self.save_data.get("coins", 0) + 1
-                    self._wave_coin_accum = 0.0
-                write_save(self.save_data)
-                # ── Grant achievements on win ──
-                if self.mode == "fallen":
-                    self.ach_mgr.try_grant("fallen_angel")
-                elif self.mode == "frosty":
-                    # Reward: unlock Frostcelerator
-                    if not self.save_data.get("frostcelerator_unlocked"):
-                        self.save_data["frostcelerator_unlocked"] = True
-                        if "Frostcelerator" not in self.save_data.get("owned_units", []):
-                            self.save_data.setdefault("owned_units", []).append("Frostcelerator")
+                        self._fallen_king_music_timer-=dt
+                        self._ceremony_timer+=dt
+    
+                        # Flash starts 1 second before boss (at music_timer == 1.0)
+                        time_to_spawn=self._fallen_king_music_timer
+    
+                        if time_to_spawn<=1.0 and self._ceremony_phase=='waiting':
+                            self._ceremony_phase='flash_in'
+                            self._ceremony_timer=0.0
+    
+                        if self._ceremony_phase=='flash_in':
+                            # 0.2s to reach full white
+                            self._ceremony_flash_color=(255,255,255)
+                            self._ceremony_flash_alpha=min(255,int(self._ceremony_timer/0.2*255))
+                            if self._ceremony_timer>=0.2:
+                                self._ceremony_phase='flash_hold'
+    
+                        elif self._ceremony_phase=='flash_hold':
+                            # Hold full white, transition to purple as boss approaches
+                            # Purple starts at 0.4s remaining
+                            if time_to_spawn<=0.4:
+                                purple_t=1.0-(time_to_spawn/0.4)
+                                r=int(255*(1-purple_t)+180*purple_t)
+                                g=int(255*(1-purple_t)+0*purple_t)
+                                b=int(255*(1-purple_t)+255*purple_t)
+                                self._ceremony_flash_color=(r,g,b)
+                            self._ceremony_flash_alpha=255
+    
+                        # Spawn boss + instantly kill flash
+                        if self._fallen_king_music_timer<=0:
+                            self._fallen_king_spawned=True
+                            self._fallen_king_shake=1.2
+                            fk=FallenKing(40); fk.x=-60.0; fk._from_wave=True
+                            self.enemies.append(fk)
+                            self._ceremony_flash_alpha=0
+                            self._ceremony_phase='done'
+    
+                # Wave 40 in frosty mode: play frostspirit.mp3 → spawn Frost Spirit after 28s
+                if self.mode=="frosty" and self.wave_mgr.wave==40 and not self._frost_spirit_spawned:
+                    if self._frost_spirit_music_timer is None:
+                        _music_path=os.path.join(os.path.dirname(os.path.abspath(__file__)),"assets","sound","frostspirit.mp3")
+                        try:
+                            pygame.mixer.music.load(_music_path)
+                            pygame.mixer.music.play(0)
+                        except Exception:
+                            pass
+                        self._frost_spirit_music_timer = 27.0
+                    else:
+                        self._frost_spirit_music_timer -= dt
+                        if self._frost_spirit_music_timer <= 0:
+                            self._frost_spirit_spawned = True
+                            fs = FrostSpirit(40)
+                            fs._from_wave = True
+                            from game_core import get_frosty_path as _gfp
+                            fp = _gfp(0)  # top lane for FrostSpirit
+                            fs._frosty_path = fp
+                            fs.x = float(fp[0][0]); fs.y = float(fp[0][1]); fs._wp_index = 1
+                            self.enemies.append(fs)
+    
+                # Process scheduled delayed spawns (Frost Spirit summon pack)
+                if self._scheduled_spawns:
+                    new_sched=[]
+                    for item in self._scheduled_spawns:
+                        item["t"] -= dt
+                        if item["t"] > 0:
+                            new_sched.append(item); continue
+                        cls=item["cls"]
+                        baby=cls(self.wave_mgr.wave)
+                        baby.x=item["x"]; baby.y=item["y"]
+                        baby._wp_index=item.get("wp",1)
+                        fp=item.get("fp")
+                        if fp is not None: baby._frosty_path=fp
+                        if item.get("from_wave", False): baby._from_wave=True
+                        if item.get("free_kill", False): baby.free_kill=True
+                        self.enemies.append(baby)
+                    self._scheduled_spawns = new_sched
+    
+                # flash_out no longer needed — flash dies instantly on spawn
+    
+                # hixw5yt: check if any Xw5ytUnit just activated the ability
+                if not self._hixw5yt_frozen:
+                    for u in self.units:
+                        if isinstance(u, Xw5ytUnit) and u._hixw5yt_active:
+                            self._hixw5yt_frozen = True
+                            self._hixw5yt_owner = u
+                            break
+    
+                # pokaxw5yt: check if any Xw5ytUnit just activated ability2
+                if not self._pokaxw5yt_frozen:
+                    for u in self.units:
+                        if isinstance(u, Xw5ytUnit) and u._pokaxw5yt_active:
+                            self._pokaxw5yt_frozen = True
+                            self._pokaxw5yt_owner = u
+                            break
+    
+                dead_reached=[]
+                for e in self.enemies:
+                    if not e.alive: continue
+                    if self._hixw5yt_frozen: continue  # time stopped
+                    # Reversed enemy: walks backward and deals collision damage
+                    if getattr(e,'_reversed',False):
+                        e.x -= e.speed * dt * 1.5
+                        e._bob += dt * 4
+                        if e.x < -60:
+                            e.alive = False; continue
+                        # Collide with other enemies
+                        for other in self.enemies:
+                            if other is e or not other.alive: continue
+                            if getattr(other,'_reversed',False): continue
+                            if dist((e.x,e.y),(other.x,other.y)) < e.radius + other.radius + 2:
+                                dmg = min(e.hp, other.hp)
+                                other.take_damage(dmg)
+                                e.hp -= dmg
+                                if not other.alive and not getattr(other,'_reward_paid',False) and not getattr(other,'free_kill',False):
+                                    other._reward_paid=True
+                                    if self.mode != "easy":
+                                        self.money+=other.KILL_REWARD
+                                        self.effects.append(FloatingText(other.x,other.y-other.radius-10,f"+{other.KILL_REWARD}"))
+                                if e.hp <= 0:
+                                    e.alive = False; break
+                        continue
+    
+                    if e.update(dt):
+                        if isinstance(e,FastBoss):
+                            e.alive=False
+                        elif getattr(e,'_confused',False):
+                            pass  # confused enemy walked backward — don't count as leaked
+                        else:
+                            dead_reached.append(e)
+    
+                for e in dead_reached:
+                    self.player_hp=max(0,self.player_hp-max(1,int(e.hp))); e.alive=False
+                    e._reward_paid=True  # reached end — no kill reward
+                if dead_reached: self._wave_leaked=True
+                if self.player_hp<=0 and dead_reached:
+                    self.game_over=True
+                    # ── Achievement: Жертва Короля ─ lose to FallenKing at wave 40 in Fallen
+                    if self.mode=="fallen" and self.wave_mgr.wave==40:
+                        if any(isinstance(e,FallenKing)
+                               for e in dead_reached):
+                            self.ach_mgr.try_grant("king_victim")
+                    try:
+                        pygame.mixer.music.set_endevent(0)
+                        pygame.mixer.music.stop()
+                    except: pass
+    
+                # Kill rewards: give money + floating text for freshly killed enemies
+                for e in self.enemies:
+                    if not e.alive and not getattr(e,'_reward_paid',False) and not getattr(e,'free_kill',False):
+                        e._reward_paid=True
+                        reward=e.KILL_REWARD
+                        if reward>0 and self.mode != "easy":
+                            self.money+=reward
+                            self.effects.append(FloatingText(e.x, e.y-e.radius-10, f"+{reward}"))
+    
+                # Frost Spirit: reward per 2.5% hp lost (12_500 each step)
+                if self.mode != "easy":
+                    for fs in [e for e in self.enemies if isinstance(e, FrostSpirit) and e.alive and not getattr(e, "free_kill", False)]:
+                        maxhp = max(1.0, float(fs.maxhp))
+                        lost = max(0.0, min(1.0, 1.0 - float(fs.hp)/maxhp))
+                        steps = int(lost / 0.025)
+                        paid = int(getattr(fs, "_reward_steps_paid", 0))
+                        if steps > paid:
+                            delta = steps - paid
+                            fs._reward_steps_paid = steps
+                            amt = 12500 * delta
+                            self.money += amt
+                            self.effects.append(FloatingText(fs.x, fs.y-fs.radius-18, f"+{amt}"))
+    
+                _x5k = getattr(self,"_x5000_dmg",False)
+                for u in self.units:
+                    # Stun: frozen by FallenKing sword
+                    if getattr(u,'_stun_timer',0)>0:
+                        u._stun_timer-=dt
+                        if u._stun_timer<=0: u._stun_timer=0
+                        continue  # skip update while stunned
+                    # Freeze during ceremony or hixw5yt
+                    if self._ceremony_phase not in (None,'done'):
+                        continue
+                    if self._hixw5yt_frozen:
+                        continue
+                    # Give xw5yt chiter ability access to unit list
+                    if isinstance(u, Xw5ytUnit) and u.ability3:
+                        u.ability3.owner._game_units_ref = self.units
+                    # Handle chiter boost expiry
+                    boost=getattr(u,'_chiter_boost',0)
+                    if boost>0:
+                        u._chiter_boost=boost-dt
+                        if u._chiter_boost<=0:
+                            u._chiter_boost=0
+                            u.firerate=getattr(u,'_chiter_old_fr',u.firerate)
+                    if _x5k:
+                        _orig_dmg = u.damage
+                        u.damage = u.damage * 5000
+                    u.update(dt,self.enemies,self.effects,self.money)
+                    if _x5k:
+                        u.damage = _orig_dmg
+                # Collect Lifestealer blood money
+                for u in self.units:
+                    if isinstance(u,Lifestealer):
+                        pm=getattr(u,'_pending_money',0)
+                        if pm>0: self.money+=pm; u._pending_money=0
+    
+                # Commander: apply firerate buff to nearby units
+                for u in self.units:
+                    if isinstance(u, Commander):
+                        u.update_buff(self.units)
+    
+                # Collect GoldenCowboy cash shot income
+                for u in self.units:
+                    if isinstance(u,GoldenCowboy):
+                        earned=u.collect_income()
+                        if earned>0:
+                            self.money+=earned
+                            self.effects.append(FloatingText(u.px,u.py-30,f"+${earned}",(255,220,60)))
+    
+                # Kill rewards (second pass — catches kills from unit attacks this tick)
+                for e in self.enemies:
+                    if not e.alive and not getattr(e,'_reward_paid',False) and not getattr(e,'free_kill',False):
+                        e._reward_paid=True
+                        reward=e.KILL_REWARD
+                        if reward>0 and self.mode != "easy":
+                            self.money+=reward
+                            self.effects.append(FloatingText(e.x, e.y-e.radius-10, f"+{reward}"))
+    
+                new_enemies=[]
+                for e in self.enemies:
+                    if not e.alive and isinstance(e,BreakerEnemy) and not getattr(e,'_spawned',False):
+                        e._spawned=True
+                        Sp=random.choice(BREAKER_POOL); baby=Sp(self.wave_mgr.wave)
+                        baby.x=e.x; baby.y=e.y; baby._wp_index=getattr(e,'_wp_index',1)
+                        if hasattr(e,'_frosty_path'): baby._frosty_path=e._frosty_path
+                        baby.free_kill=True; new_enemies.append(baby)
+                    # FrostMystery: spawns 1 random enemy (SnowyEnemy or FrozenEnemy)
+                    # MegaFrostMystery: spawns 2 random enemies
+                    if (not e.alive and isinstance(e,(FrostMystery, MegaFrostMystery)) and not getattr(e,'_spawned',False)):
+                        e._spawned=True
+                        mult = 2 if isinstance(e, MegaFrostMystery) else 1
+                        for _ in range(mult):
+                            cls = random.choice([SnowyEnemy, FrozenEnemy])
+                            baby = cls(self.wave_mgr.wave)
+                            baby.x=e.x; baby.y=e.y; baby._wp_index=getattr(e,'_wp_index',1)
+                            if hasattr(e,'_frosty_path'): baby._frosty_path=e._frosty_path
+                            baby.free_kill=True; new_enemies.append(baby)
+                    # FallenBreaker spawns 1 fallen variant
+                    if not e.alive and isinstance(e,FallenBreaker) and not getattr(e,'_spawned',False):
+                        e._spawned=True
+                        Sp=random.choice(FALLEN_BREAKER_POOL); baby=Sp(self.wave_mgr.wave)
+                        baby.x=e.x; baby.y=e.y; baby._wp_index=getattr(e,'_wp_index',1)
+                        if hasattr(e,'_frosty_path'): baby._frosty_path=e._frosty_path
+                        baby.free_kill=True; new_enemies.append(baby)
+                    # PossessedArmor spawns inner ghost on death
+                    if not e.alive and isinstance(e,PossessedArmor) and not e._spawned_inner:
+                        e._spawned_inner=True
+                        inner=PossessedArmorInner(self.wave_mgr.wave)
+                        inner.x=e.x; inner.y=e.y; inner._wp_index=getattr(e,'_wp_index',1)
+                        if hasattr(e,'_frosty_path'): inner._frosty_path=e._frosty_path
+                        new_enemies.append(inner)
+    
+                self.enemies=[e for e in self.enemies if e.alive or isinstance(e,(BreakerEnemy,FallenBreaker,PossessedArmor,FrostMystery))]+new_enemies
+    
+                gds=[e for e in self.enemies if isinstance(e,GraveDigger) and e.alive]
+                self._boss_enemy=gds[0] if gds else (
+                    self._boss_enemy if self._boss_enemy and self._boss_enemy.alive else None)
+    
+                # Track first wave-spawned appearances of fallen bosses for boss bars
+                if self.mode=="fallen":
+                    _fallen_bar_classes=(FallenGiant,FallenJester,FallenSquire,FallenKing,FallenShield,FallenHonorGuard)
+                    for e in self.enemies:
+                        if not e.alive: continue
+                        if not getattr(e,'_from_wave',False): continue
+                        cls=type(e)
+                        if cls in _fallen_bar_classes and cls not in self._fallen_boss_bars:
+                            self._fallen_boss_bars[cls]=e
+                    # Always keep FallenKing bar updated to current alive instance
+                        fk_alive=[e for e in self.enemies if isinstance(e,FallenKing) and e.alive]
+                        if fk_alive:
+                            self._fallen_boss_bars[FallenKing]=fk_alive[0]
+    
+                # Frosty boss bars: only on FIRST wave-spawned appearance (no sandbox spawns)
+                if self.mode=="frosty":
+                    _frosty_bar_classes=(
+                        SnowMinion, FrostHunter, FrostAcolyte,
+                        FrostUndead, FrostInvader, FrostRavager,
+                        Yeti, FrostMage, FrostHero,
+                    )
+                    for e in self.enemies:
+                        if not e.alive: continue
+                        if not getattr(e,'_from_wave',False): continue
+                        cls=type(e)
+                        if cls in _frosty_bar_classes and cls not in self._frosty_bossbar_seen:
+                            self._frosty_bossbar_seen.add(cls)
+                            self._fallen_boss_bars[cls]=e
+    
+                # Frost Spirit: boss bar always (including sandbox)
+                fs_alive = [e for e in self.enemies if isinstance(e, FrostSpirit) and e.alive]
+                if fs_alive:
+                    self._fallen_boss_bars[FrostSpirit] = fs_alive[0]
+    
+                # tf_test: always track 1M miniboss and TFK in boss bars regardless of mode
+    
+                if (self.wave_mgr.state=="waiting"
+                        and not any(e.alive for e in self.enemies) and not self.wave_mgr._lmoney_paid):
+                    lm=self.wave_mgr.wave_lmoney(); bm=self.wave_mgr.wave_bmoney()
+                    if self.mode == "frosty":
+                        if lm: lm += 150
+                        if bm: bm += 150
+                    # Farm income — only count OWN farms (not peer farms)
+                    own_farms = [u for u in self.units if isinstance(u, Farm)]
+                    farm_income = sum(u.income for u in own_farms)
+                    if farm_income>0:
+                        self.money+=farm_income
+                        self.ui.show_msg(f"+{farm_income} Farm income",2.5)
+                    if self._wave_leaked:
+                        if lm: self.money+=lm; self.ui.show_msg(f"+{lm} Wave bonus",2.5)
+                    else:
+                        msgs=[]
+                        if lm: self.money+=lm; msgs.append(f"+{lm} Wave bonus")
+                        if bm: self.money+=bm; msgs.append(f"+{bm} Wave clear")
+                        if msgs: self.ui.show_msg("  |  ".join(msgs),3.0)
+                    # (per-wave profile coins handled by the wave-advance hook above)
+                    self.wave_mgr._lmoney_paid=True; self.wave_mgr._bonus_paid=True
+                    # MP: send wave bonuses to client (NOT farm — client counts own farms itself)
+                    if getattr(self, 'is_host', False):
+                        client_bonus = (lm or 0) + (bm or 0)
+                        if client_bonus > 0:
+                            self._broadcast({"type": "wave_bonus", "amount": client_bonus,
+                                             "leaked": self._wave_leaked})
+                        # Tell client to collect their own farm income
+                        self._broadcast({"type": "farm_income"})
+    
+                fk_pending = (self.mode=="fallen" and self.wave_mgr.wave==40 and
+                              (not self._fallen_king_spawned or
+                               any(isinstance(e,FallenKing) and e.alive for e in self.enemies)))
+                # True Fallen trigger: fallen mode + killed FallenKing + under 15 min
+                tf_can_trigger = (
+                    self.mode=="fallen"
+                    and self._fallen_king_spawned
+                    and not any(isinstance(e,FallenKing) and e.alive for e in self.enemies)
+                    and self._elapsed < 900.0
+                    and not getattr(self,"_tf_triggered_auto",False)
+                )
+                if tf_can_trigger and self.wave_mgr.state=="done" and not any(e.alive for e in self.enemies):
+                    self._tf_triggered_auto = True
+                    # Spawn the special 10k FK that triggers the tf_test animation
+                    fk_tf = FallenKing(1)
+                    fk_tf.hp = 10000; fk_tf.maxhp = 10000; fk_tf.x = -30.0
+                    self.enemies.append(fk_tf)
+                if self.wave_mgr.state=="done" and not any(e.alive for e in self.enemies) and not fk_pending :
+                    if not self.win:
+                        # ── Ensure all waves paid (covers state=done skipping the waiting block) ──
+                        self._give_wave_coins(self.wave_mgr.wave)
+                        # Flush leftover fractional accumulator (e.g. 0.5 from Fallen odd waves)
+                        if self.mode in ("easy", "fallen", "frosty") and self._wave_coin_accum >= 0.5:
+                            self._end_coin_reward += 1
+                            self.save_data["coins"] = self.save_data.get("coins", 0) + 1
+                            self._wave_coin_accum = 0.0
                         write_save(self.save_data)
-                        self.ui.show_msg("❄ Frostcelerator Unlocked!", 5.0)
-                    # Also unlock Spotlight Tech
-                    if "Spotlight Tech" not in self.save_data.get("owned_units", []):
-                        self.save_data.setdefault("owned_units", []).append("Spotlight Tech")
-                        write_save(self.save_data)
-                        self.ui.show_msg("🔦 Spotlight Tech Unlocked!", 5.0)
-                elif self.mode == "easy":
-                    self.ach_mgr.try_grant("first_path")
-                    if getattr(self, "_easy_boss_let_through", False):
-                        self.ach_mgr.try_grant("free_pass")
-
-            self.win=True
-            try:
-                pygame.mixer.music.set_endevent(0)
-                pygame.mixer.music.stop()
-            except: pass
-
-        # ── Achievement: Богач ─ > 5000 coins at once ──
-        if not self.game_over and not self.win:
-            self.ach_mgr.try_grant("rich") if self.money > 5000 else None
-
-        # ── Achievement: free_pass ─ GraveDigger (easy final boss) leaks with hp < player_hp ──
-        if self.mode == "easy" and not self.game_over:
-            for e in dead_reached:
-                if isinstance(e, GraveDigger):
-                    if e.hp < self.player_hp:
-                        self._easy_boss_let_through = True
-
-
-        self.ach_mgr.update(dt)
-
-        self.effects=[ef for ef in self.effects if ef.update(dt)]
-        self.ui.update(dt)
-        if self._fallen_king_shake>0:
-            self._fallen_king_shake=max(0, self._fallen_king_shake-dt)
+                        # ── Grant achievements on win ──
+                        if self.mode == "fallen":
+                            self.ach_mgr.try_grant("fallen_angel")
+                        elif self.mode == "frosty":
+                            # Reward: unlock Frostcelerator
+                            if not self.save_data.get("frostcelerator_unlocked"):
+                                self.save_data["frostcelerator_unlocked"] = True
+                                if "Frostcelerator" not in self.save_data.get("owned_units", []):
+                                    self.save_data.setdefault("owned_units", []).append("Frostcelerator")
+                                write_save(self.save_data)
+                                self.ui.show_msg("❄ Frostcelerator Unlocked!", 5.0)
+                            # Also unlock Spotlight Tech
+                            if "Spotlight Tech" not in self.save_data.get("owned_units", []):
+                                self.save_data.setdefault("owned_units", []).append("Spotlight Tech")
+                                write_save(self.save_data)
+                                self.ui.show_msg("🔦 Spotlight Tech Unlocked!", 5.0)
+                        elif self.mode == "easy":
+                            self.ach_mgr.try_grant("first_path")
+                            if getattr(self, "_easy_boss_let_through", False):
+                                self.ach_mgr.try_grant("free_pass")
+    
+                    self.win=True
+                    try:
+                        pygame.mixer.music.set_endevent(0)
+                        pygame.mixer.music.stop()
+                    except: pass
+    
+                # ── Achievement: Богач ─ > 5000 coins at once ──
+                if not self.game_over and not self.win:
+                    self.ach_mgr.try_grant("rich") if self.money > 5000 else None
+    
+                # ── Achievement: free_pass ─ GraveDigger (easy final boss) leaks with hp < player_hp ──
+                if self.mode == "easy" and not self.game_over:
+                    for e in dead_reached:
+                        if isinstance(e, GraveDigger):
+                            if e.hp < self.player_hp:
+                                self._easy_boss_let_through = True
+    
+    
+                self.ach_mgr.update(dt)
+    
+                self.effects=[ef for ef in self.effects if ef.update(dt)]
+                self.ui.update(dt)
+                if self._fallen_king_shake>0:
+                    self._fallen_king_shake=max(0, self._fallen_king_shake-dt)
+    
+            if self.paused:
+                self.draw()
+                self.pause_menu.draw()
+            else:
+                self.draw()
+            if self.game_over or self.win:
+                self._draw_end_screen()
+            pygame.display.flip()
 
     def draw(self):
         fk_shake=(0,0)
@@ -4302,7 +4650,8 @@ class MainMenu(_OrigMainMenu):
         self.btn_loadout     = pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*1, btn_w, btn_h)
         self.btn_mp          = pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*2, btn_w, btn_h)
         self.btn_achievements= pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*3, btn_w, btn_h)
-        self.btn_quit        = pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*4, btn_w, btn_h)
+        self.btn_settings    = pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*4, btn_w, btn_h)
+        self.btn_quit        = pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*5, btn_w, btn_h)
 
     def run(self):
         clock = pygame.time.Clock()
@@ -4330,6 +4679,7 @@ class MainMenu(_OrigMainMenu):
                     if self.btn_loadout.collidepoint(pos):      self.action = "loadout"
                     if self.btn_mp.collidepoint(pos):           self.action = "multiplayer"
                     if self.btn_achievements.collidepoint(pos): self.action = "achievements"
+                    if self.btn_settings.collidepoint(pos):    self.action = "settings"
                     if self.btn_quit.collidepoint(pos):         self.action = "quit"
             self._draw()
             pygame.display.flip()
@@ -4409,6 +4759,7 @@ class MainMenu(_OrigMainMenu):
         draw_fancy_btn(self.btn_loadout,     "LOADOUT",      self.btn_loadout.collidepoint(mx, my),     (120, 80, 220))
         draw_fancy_btn(self.btn_mp,          "MULTIPLAYER",   self.btn_mp.collidepoint(mx, my),          (40, 180, 100))
         draw_fancy_btn(self.btn_achievements,"ACHIEVEMENTS",   self.btn_achievements.collidepoint(mx, my),(200, 160, 20))
+        draw_fancy_btn(self.btn_settings,    "SETTINGS",      self.btn_settings.collidepoint(mx, my),    (60, 130, 180))
         draw_fancy_btn(self.btn_quit,        "QUIT",          self.btn_quit.collidepoint(mx, my),        (180, 50, 50))
 
         # ── Coin counter (top right) ───────────────────────────────────────────
@@ -4459,19 +4810,27 @@ _CHANGELOG = [
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    print("START")
     screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
     pygame.display.set_caption("Tower Defense")
     save_data = load_save()
+    print("save_data loaded:", list(save_data.keys()))
 
     while True:
+        print("Creating MainMenu...")
         menu = MainMenu(screen, save_data)
+        print("Running MainMenu...")
         action = menu.run()
+        print("action:", action)
 
         if action == "quit":
             pygame.quit(); sys.exit()
 
         elif action == "achievements":
             AchievementsScreen(screen).run()
+
+        elif action == "settings":
+            SettingsScreen(screen).run()
 
         elif action == "loadout":
             ls = LoadoutScreen(screen, save_data)
@@ -4483,11 +4842,16 @@ if __name__ == "__main__":
             elif action == "play_fallen": mode = "fallen"
             elif action == "play_frosty": mode = "frosty"
             else: mode = "easy"
-            game = Game(save_data, mode=mode)
-            game.run()
+            print("Starting game mode:", mode)
+            try:
+                game = Game(save_data, mode=mode)
+                print("Game created, running...")
+                game.run()
+                print("Game ended, return_to_menu:", game.return_to_menu)
+            except Exception as e:
+                import traceback; traceback.print_exc()
+                input("Press Enter to continue...")
             save_data = load_save()
-            if not game.return_to_menu:
-                pygame.quit(); sys.exit()
 
         elif action == "multiplayer":
             save_data = _run_multiplayer(screen, save_data)
