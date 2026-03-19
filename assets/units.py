@@ -77,7 +77,7 @@ class Unit:
         for e in enemies:
             if not e.alive: continue
             if getattr(e,'_reversed',False): continue
-            if e.IS_HIDDEN and not self.hidden_detection: continue
+            if e.IS_HIDDEN and not self.hidden_detection and not getattr(e,"_exposed",False): continue
             if dist((e.x,e.y),(self.px,self.py))<=r: pool.append(e)
         if not pool: return []
         mode=getattr(self,'target_mode','First')
@@ -3021,3 +3021,311 @@ class HallowPunk(Unit):
         if self._burn_dmg > 0:
             info["Burn"] = f"{self._burn_dmg}/tick {self._burn_time:.0f}s"
         return info
+
+
+# ── Spotlight Tech ─────────────────────────────────────────────────────────────
+C_SPOTLIGHT      = (255, 230, 80)
+C_SPOTLIGHT_DARK = (80,  65,  10)
+
+# Tuple layout:
+#  (damage, firerate, range_tiles, upgrade_cost,
+#   beam_radius,       # AOE radius of the spotlight cone in tiles
+#   burn_dmg,          # burn damage per tick (0 = no burn)
+#   burn_time,         # burn duration
+#   burn_tick,         # seconds between burn ticks
+#   expose_hidden,     # bool: enemies in beam get Exposed (hidden → targetable)
+#   confusion_thresh)  # accumulated dmg before confusing enemies (0 = no confusion)
+#
+# Distance falloff: enemies within beam_radius get damage scaled by distance:
+#   < 33% of radius  → 100%
+#   33-66% of radius → 60%
+#   > 66% of radius  → 35%
+#
+# Beam slowly rotates toward target at 90 deg/sec (sweep mechanic)
+# Confusion: reverses enemy movement for 2s
+
+SPOTLIGHTTECH_LEVELS = [
+    # lv0 – place $4000  (flying + hidden det from lv0)
+    (2,  3.008, 20.0, None,  5.0, 0, 0.0, 0.5, False, 0),
+    # lv1 – +$500
+    (2,  3.008, 20.0,  500,  5.0, 2, 3.0, 0.5, False, 0),
+    # lv2 – +$1000  (expose hidden)
+    (4,  3.008, 20.0, 1000,  6.0, 2, 3.0, 0.5, True,  0),
+    # lv3 – +$3500
+    (8,  3.008, 25.0, 3500,  6.0, 6, 5.0, 0.5, True,  0),
+    # lv4 – +$8000  (confusion after 1800 dmg)
+    (15, 3.008, 30.0, 8000,  6.0,10, 5.0, 0.5, True,  1800),
+]
+
+_SPOTLIGHT_BEAM_ROT_SPEED = 3.0   # radians per second (sweep speed)
+_SPOTLIGHT_CONFUSE_DUR    = 2.0   # seconds enemies are confused
+
+
+class SpotlightTech(Unit):
+    PLACE_COST       = 4000
+    COLOR            = C_SPOTLIGHT
+    NAME             = "Spotlight Tech"
+    hidden_detection = True   # has hidden detection at all levels
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._beam_angle   = 0.0    # current beam direction (radians)
+        self._target_angle = 0.0    # angle toward current target
+        self._anim_t       = 0.0
+        self._conf_accum   = 0.0    # accumulated damage for confusion trigger
+        self._last_enemies = []
+        self._apply_level()
+
+    def _apply_level(self):
+        row = SPOTLIGHTTECH_LEVELS[self.level]
+        (self.damage, self.firerate, self.range_tiles, _,
+         self._beam_r, self._burn_dmg, self._burn_time, self._burn_tick,
+         self._expose_hidden, self._conf_thresh) = row
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(SPOTLIGHTTECH_LEVELS): return None
+        return SPOTLIGHTTECH_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(SPOTLIGHTTECH_LEVELS):
+            self.level = nxt; self._apply_level()
+
+    def _get_falloff(self, d, beam_r_px):
+        frac = d / beam_r_px
+        if   frac < 0.33: return 1.00
+        elif frac < 0.66: return 0.60
+        else:             return 0.35
+
+    def _confuse_enemies(self, enemies):
+        """Reverse all enemies currently in beam for confusion duration."""
+        bx = self.px + math.cos(self._beam_angle) * self.range_tiles * TILE * 0.5
+        by = self.py + math.sin(self._beam_angle) * self.range_tiles * TILE * 0.5
+        beam_r_px = self._beam_r * TILE
+        for e in enemies:
+            if not e.alive: continue
+            if dist((e.x, e.y), (bx, by)) <= beam_r_px:
+                e._confused      = True
+                e._confused_timer = _SPOTLIGHT_CONFUSE_DUR
+
+    def _tick_burn(self, enemies, dt):
+        for e in enemies:
+            if not e.alive: continue
+            ft = getattr(e, '_st_fire_timer', 0.0)
+            if ft <= 0: continue
+            e._st_fire_timer = max(0.0, ft - dt)
+            e._st_fire_tick  = getattr(e, '_st_fire_tick', 0.0) + dt
+            if e._st_fire_tick >= self._burn_tick:
+                e._st_fire_tick -= self._burn_tick
+                e.take_damage(self._burn_dmg)
+                self.total_damage += self._burn_dmg
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t += dt
+        if self.cd_left > 0: self.cd_left -= dt
+        if self._burn_dmg > 0:
+            self._tick_burn(enemies, dt)
+
+        # Tick confusion on enemies
+        for e in enemies:
+            if not e.alive: continue
+            ct = getattr(e, '_confused_timer', 0.0)
+            if ct > 0:
+                e._confused_timer = ct - dt
+                if e._confused_timer <= 0:
+                    e._confused = False
+                    e._confused_timer = 0.0
+
+        # Pick target — farthest in range (First mode = rightmost)
+        self._last_enemies = enemies
+        targets = self._get_targets(enemies, 1)
+        if not targets: return
+
+        t = targets[0]
+        self._target_angle = math.atan2(t.y - self.py, t.x - self.px)
+
+        # Rotate beam toward target at fixed speed
+        diff = math.atan2(math.sin(self._target_angle - self._beam_angle),
+                          math.cos(self._target_angle - self._beam_angle))
+        max_rot = _SPOTLIGHT_BEAM_ROT_SPEED * dt
+        if abs(diff) <= max_rot:
+            self._beam_angle = self._target_angle
+        else:
+            self._beam_angle += math.copysign(max_rot, diff)
+
+        # Attack on cooldown — hit all enemies within beam cone
+        if self.cd_left <= 0:
+            self.cd_left = self.firerate
+            range_px   = self.range_tiles * TILE
+            beam_half  = math.radians(25)  # ±25° cone half-angle
+
+            for e in enemies:
+                if not e.alive: continue
+                if e.IS_HIDDEN and not self._expose_hidden and not self.hidden_detection:
+                    continue
+                dx2 = e.x - self.px; dy2 = e.y - self.py
+                d   = math.hypot(dx2, dy2)
+                if d > range_px or d < 1: continue
+                # Angle check — is enemy inside the cone?
+                angle_to = math.atan2(dy2, dx2)
+                angle_diff = abs(math.atan2(math.sin(angle_to - self._beam_angle),
+                                            math.cos(angle_to - self._beam_angle)))
+                if angle_diff > beam_half: continue
+
+                # Falloff by distance
+                frac = d / range_px
+                if   frac < 0.33: falloff = 1.00
+                elif frac < 0.66: falloff = 0.70
+                else:             falloff = 0.45
+
+                dmg = self.damage * falloff
+                e.take_damage(dmg)
+                self.total_damage += dmg
+                self._conf_accum  += dmg
+
+                # Expose hidden (lv2+)
+                if self._expose_hidden and e.IS_HIDDEN:
+                    e._exposed       = True
+                    e._exposed_timer = self.firerate + 0.5
+
+                # Apply burn (lv1+)
+                if self._burn_dmg > 0:
+                    e._st_fire_timer = self._burn_time
+                    e._st_fire_tick  = 0.0
+
+            # Confusion trigger (lv4)
+            if self._conf_thresh > 0 and self._conf_accum >= self._conf_thresh:
+                self._conf_accum = 0.0
+                self._confuse_enemies(enemies)
+
+        # Tick exposed timers
+        for e in enemies:
+            if not e.alive: continue
+            et = getattr(e, '_exposed_timer', 0.0)
+            if et > 0:
+                e._exposed_timer = et - dt
+                if e._exposed_timer <= 0:
+                    e._exposed = False
+                    e._exposed_timer = 0.0
+
+    def draw(self, surf):
+        t  = self._anim_t
+        cx, cy = int(self.px), int(self.py)
+        a  = self._beam_angle
+        ca, sa = math.cos(a), math.sin(a)
+        pa, pb = -sa, ca   # perpendicular
+
+        # ── Beam cone (draw FIRST so tower body is on top) ──
+        beam_len  = self.range_tiles * TILE
+        cone_half = math.radians(25)   # ±25° cone
+        cone_s    = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+
+        # Filled triangle cone — wide at tip fades
+        n_steps = 20
+        for i in range(n_steps):
+            frac   = i / (n_steps - 1)   # 0 = center, 1 = edge
+            spread = math.sin(frac * math.pi * 0.5)  # ease in
+            # Two rays symmetric around center
+            for sign in (1, -1):
+                ray_a  = a + sign * cone_half * spread
+                ray_len = beam_len * (1.0 - frac * 0.15)
+                ex2 = cx + int(math.cos(ray_a) * ray_len)
+                ey2 = cy + int(math.sin(ray_a) * ray_len)
+                # Alpha: bright in center, fade to edges and to distance
+                alpha = max(0, int((1.0 - spread) * 110 + 15))
+                pygame.draw.line(cone_s, (255, 245, 120, alpha),
+                                 (cx, cy), (ex2, ey2), 2)
+
+        # Bright center ray
+        ex_c = cx + int(ca * beam_len)
+        ey_c = cy + int(sa * beam_len)
+        pygame.draw.line(cone_s, (255, 255, 200, 130), (cx, cy), (ex_c, ey_c), 3)
+        pygame.draw.line(cone_s, (255, 255, 255, 60),  (cx, cy), (ex_c, ey_c), 1)
+
+        surf.blit(cone_s, (0, 0))
+
+        # ── Glow circles under enemies in beam (TDS style) ──
+        # Draw for enemies currently in the cone
+        range_px  = self.range_tiles * TILE
+        beam_half = math.radians(25)
+        for e in getattr(self, '_last_enemies', []):
+            if not e.alive: continue
+            dx2 = e.x - self.px; dy2 = e.y - self.py
+            d   = math.hypot(dx2, dy2)
+            if d > range_px or d < 1: continue
+            angle_to   = math.atan2(dy2, dx2)
+            angle_diff = abs(math.atan2(math.sin(angle_to - self._beam_angle),
+                                        math.cos(angle_to - self._beam_angle)))
+            if angle_diff > beam_half: continue
+            # Golden circle under the enemy
+            ex3 = int(e.x); ey3 = int(e.y)
+            gs = pygame.Surface((80, 80), pygame.SRCALPHA)
+            pulse = int(abs(math.sin(t * 5)) * 40 + 140)
+            # Outer soft glow
+            pygame.draw.circle(gs, (255, 230, 80, 60),  (40, 40), e.radius + 14)
+            # Inner bright ring
+            pygame.draw.circle(gs, (255, 245, 120, pulse), (40, 40), e.radius + 6, 3)
+            # Tight inner ring
+            pygame.draw.circle(gs, (255, 255, 180, 200),   (40, 40), e.radius + 2, 2)
+            surf.blit(gs, (ex3 - 40, ey3 - 40))
+
+        # ── Tower body ──
+        pygame.draw.circle(surf, C_SPOTLIGHT_DARK, (cx, cy), 27)
+        pygame.draw.circle(surf, C_SPOTLIGHT,      (cx, cy), 21)
+        pygame.draw.circle(surf, (255, 250, 180),  (cx, cy), 21, 2)
+
+        # Rotating spotlight head (trapezoid housing)
+        head_cx = cx + int(ca * 14); head_cy = cy + int(sa * 14)
+        pts = [
+            (int(head_cx + pa * 8  - ca * 6), int(head_cy + pb * 8  - sa * 6)),
+            (int(head_cx - pa * 8  - ca * 6), int(head_cy - pb * 8  - sa * 6)),
+            (int(head_cx - pa * 4  + ca * 9), int(head_cy - pb * 4  + sa * 9)),
+            (int(head_cx + pa * 4  + ca * 9), int(head_cy + pb * 4  + sa * 9)),
+        ]
+        pygame.draw.polygon(surf, (180, 140, 20), pts)
+        pygame.draw.polygon(surf, C_SPOTLIGHT, pts, 2)
+
+        # Lens — bright circle at front of housing
+        lx = cx + int(ca * 20); ly = cy + int(sa * 20)
+        ls = pygame.Surface((20, 20), pygame.SRCALPHA)
+        p2 = int(abs(math.sin(t * 4)) * 40 + 180)
+        pygame.draw.circle(ls, (255, 250, 150, p2), (10, 10), 8)
+        pygame.draw.circle(ls, (255, 255, 220, 255),  (10, 10), 4)
+        surf.blit(ls, (lx - 10, ly - 10))
+
+        # Confusion charge bar (lv4)
+        if self._conf_thresh > 0:
+            frac_c = min(1.0, self._conf_accum / self._conf_thresh)
+            bw = 40; bx2 = cx - bw // 2; by2 = cy - 42
+            pygame.draw.rect(surf, (40, 30, 10),   (bx2, by2, bw, 5), border_radius=2)
+            pygame.draw.rect(surf, (255, 200, 30), (bx2, by2, int(bw * frac_c), 5), border_radius=2)
+
+        # Level pips
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_SPOTLIGHT, (cx - 10 + i * 6, cy + 36), 3)
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (255, 255, 255, 22), (r, r), r)
+        pygame.draw.circle(s, (255, 255, 255, 60), (r, r), r, 2)
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+        # Beam radius indicator
+        br = int(self._beam_r * TILE)
+        bs = pygame.Surface((br * 2, br * 2), pygame.SRCALPHA)
+        pygame.draw.circle(bs, (255, 230, 60, 25), (br, br), br)
+        pygame.draw.circle(bs, (255, 230, 60, 70), (br, br), br, 2)
+        surf.blit(bs, (int(self.px) - br, int(self.py) - br))
+
+    def get_info(self):
+        conf_str = f"{int(self._conf_accum)}/{self._conf_thresh}" if self._conf_thresh else "—"
+        return {
+            "Damage":   self.damage,
+            "Firerate": f"{self.firerate:.3f}",
+            "Range":    self.range_tiles,
+            "BeamR":    f"{self._beam_r} tiles",
+            "Burn":     f"{self._burn_dmg}/tick" if self._burn_dmg else "—",
+            "Expose":   "YES" if self._expose_hidden else "lv2+",
+            "Confuse":  conf_str,
+        }

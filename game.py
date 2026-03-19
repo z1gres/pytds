@@ -117,6 +117,8 @@ from units import (
     C_GCOWBOY, C_GCOWBOY_DARK,
     HallowPunk, HallowPunkRocket, HALLOWPUNK_LEVELS,
     C_HALLOWPUNK, C_HALLOWPUNK_DARK,
+    SpotlightTech, SPOTLIGHTTECH_LEVELS,
+    C_SPOTLIGHT, C_SPOTLIGHT_DARK,
     C_FREEZER, C_FREEZER_DARK,
     SPAWN_MAP, CONSOLE_HELP,
     C_LIFESTEALER, C_LIFESTEALER_DARK,
@@ -472,6 +474,7 @@ class AdminPanel:
                 ("Slasher",Slasher,C_SLASHER),
                 ("GoldCowboy",GoldenCowboy,C_GCOWBOY),
                 ("HallowPunk",HallowPunk,C_HALLOWPUNK),
+                ("Spotlight",SpotlightTech,C_SPOTLIGHT),
             ]
             active_cls=set(s for s in (ui_ref.SLOT_TYPES if ui_ref else []) if s)
             for i,(name,cls,col) in enumerate(unit_list):
@@ -563,7 +566,7 @@ class AdminPanel:
         # Scrollbar for scrollable tabs
         if self.tab in ("enemy","units"):
             _sb_cols=5
-            n_items=len(ADMIN_ENEMY_LIST) if self.tab=="enemy" else 15
+            n_items=len(ADMIN_ENEMY_LIST) if self.tab=="enemy" else 16
             rows=((n_items+_sb_cols-1)//_sb_cols)
             total_h=rows*(ch+gap)
             if total_h>content_h:
@@ -827,6 +830,27 @@ class UI:
             pygame.draw.line(surf,(160,60,160),(cx+int(ca2*5),cy+int(sa2*5)),(cx+int(ca2*20),cy+int(sa2*20)),7)
             pygame.draw.line(surf,(220,120,220),(cx+int(ca2*5),cy+int(sa2*5)),(cx+int(ca2*20),cy+int(sa2*20)),4)
             pygame.draw.circle(surf,(240,160,240),(cx+int(ca2*20),cy+int(sa2*20)),5)
+        elif isinstance(u,SpotlightTech):
+            t2=pygame.time.get_ticks()*0.001
+            pygame.draw.circle(surf,C_SPOTLIGHT_DARK,(cx,cy),28)
+            pygame.draw.circle(surf,C_SPOTLIGHT,(cx,cy),22)
+            pygame.draw.circle(surf,(255,250,180),(cx,cy),22,2)
+            # Beam fan
+            a2=u._beam_angle
+            ca2,sa2=math.cos(a2),math.sin(a2)
+            for i in range(5):
+                frac=(i/4-0.5)*0.6
+                ex2=cx+int((ca2*22+(-sa2)*frac*20)); ey2=cy+int((sa2*22+ca2*frac*20))
+                alpha2=max(0,120-abs(i-2)*35)
+                beam_s=pygame.Surface((4,4),pygame.SRCALPHA)
+                pygame.draw.circle(beam_s,(255,240,80,alpha2),(2,2),2)
+                surf.blit(beam_s,(ex2-2,ey2-2))
+            # Lens glow
+            lx2=cx+int(ca2*15); ly2=cy+int(sa2*15)
+            gs2=pygame.Surface((16,16),pygame.SRCALPHA)
+            gp=int(abs(math.sin(t2*4))*80+120)
+            pygame.draw.circle(gs2,(255,245,100,gp),(8,8),7)
+            surf.blit(gs2,(lx2-8,ly2-8))
         elif isinstance(u,Farm):
             pygame.draw.circle(surf,C_FARM_DARK,(cx,cy),28)
             pygame.draw.circle(surf,C_FARM,(cx,cy),22)
@@ -861,6 +885,7 @@ class UI:
         elif cls==Slasher: levels=SLASHER_LEVELS; cost_idx=3
         elif cls==GoldenCowboy: levels=GCOWBOY_LEVELS; cost_idx=3
         elif cls==HallowPunk: levels=HALLOWPUNK_LEVELS; cost_idx=3
+        elif cls==SpotlightTech: levels=SPOTLIGHTTECH_LEVELS; cost_idx=3
         else: levels=[]; cost_idx=3
         for i in range(1,unit.level+1):
             if i<len(levels) and levels[i][cost_idx]: total+=levels[i][cost_idx]
@@ -962,6 +987,14 @@ class UI:
             result={"Damage":d,"Firerate":fr,"Range":r,
                     "Splash":f"{sr} tiles","Knockback":f"{kb}px"}
             if bdmg>0: result["Burn"]=f"{bdmg}/tick {bt:.0f}s"
+            return result
+        elif cls==SpotlightTech:
+            if nxt>=len(SPOTLIGHTTECH_LEVELS): return None
+            d,fr,r,_,br,bdmg,bt,btk,exp,conf=SPOTLIGHTTECH_LEVELS[nxt]
+            result={"Damage":d,"Firerate":fr,"Range":r,"BeamR":f"{br} tiles"}
+            if bdmg>0: result["Burn"]=f"{bdmg}/tick"
+            if exp and not unit._expose_hidden: result["Expose"]="Hidden Expose"
+            if conf>0: result["Confuse"]=f"@{conf} dmg"
             return result
         return None
 
@@ -1141,7 +1174,7 @@ class UI:
 
             cls=type(u)
             nxt=self._get_next_stats(u)
-            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS}
+            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS}
             lvl_list=levels_map.get(cls,[])
             total_lvls=len(lvl_list)
 
@@ -1385,6 +1418,21 @@ class UI:
                                    nxt.get("Burn") if nxt else None))
                 elif nxt and nxt.get("Burn"):
                     stats.append(("Burn",None,nxt["Burn"]))
+            elif cls==SpotlightTech:
+                stats=[
+                    ("Damage",   u.damage,             nxt.get("Damage")   if nxt else None),
+                    ("Firerate", f"{u.firerate:.3f}",   f"{nxt['Firerate']:.3f}" if nxt else None),
+                    ("Range",    u.range_tiles,          nxt.get("Range")   if nxt else None),
+                    ("BeamR",    f"{u._beam_r} tiles",   nxt.get("BeamR")   if nxt else None),
+                    ("Burn",     f"{u._burn_dmg}/tick" if u._burn_dmg else "—",
+                                  nxt.get("Burn") if nxt else None),
+                    ("Expose",   "YES" if u._expose_hidden else "lv2+", None),
+                ]
+                if u._conf_thresh>0:
+                    conf_str=f"{int(u._conf_accum)}/{u._conf_thresh}"
+                    stats.append(("Confuse", conf_str, None))
+                elif nxt and nxt.get("Confuse"):
+                    stats.append(("Confuse", None, nxt["Confuse"]))
             else:
                 stats=[(k,v,None) for k,v in u.get_info().items()]
 
@@ -1400,7 +1448,8 @@ class UI:
                          "StunBlock":(255,220,80),
                          "Poison":(100,220,80),"Crit":(255,160,40),"Bleed":(200,40,40),
                          "CashShot":(255,220,60),"SpinTime":(200,180,100),
-                         "Burn":(255,130,30),"Knockback":(200,160,255),"Splash":(220,100,220)}
+                         "Burn":(255,130,30),"Knockback":(200,160,255),"Splash":(220,100,220),
+                         "BeamR":(255,240,80),"Expose":(100,255,200),"Confuse":(200,100,255)}
 
             # === TOP HALF: portrait left + STATS right ===
             # For Frostcelerator: stun bar at very top of card
@@ -1789,6 +1838,7 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
             "Slasher": C_SLASHER,
             "Golden Cowboy": C_GCOWBOY,
             "Hallow Punk": C_HALLOWPUNK,
+            "Spotlight Tech": C_SPOTLIGHT,
         }
         unit_col = _col_map.get(unit_name, C_ASSASSIN)
         pygame.draw.circle(surf, (30, 20, 50), (icon_cx, icon_cy), 36)
@@ -1804,7 +1854,7 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
                 "Lifestealer": 400, "Archer": 400, "Red Ball": 1000, "Farm": 250,
                 "Frost Blaster": 800, "Sledger": 950, "Gladiator": 500,
                 "Toxic Gunner": 525, "Slasher": 1700, "Golden Cowboy": 550,
-                "Hallow Punk": 300}
+                "Hallow Punk": 300, "Spotlight Tech": 4000}
     cost = cost_map.get(unit_name)
     if cost:
         ico_m = load_icon("money_ico", 18)
@@ -2579,6 +2629,7 @@ ALL_UNITS_POOL = [
     {"name": "Slasher",        "rarity": "epic"},
     {"name": "Golden Cowboy",  "rarity": "epic"},
     {"name": "Hallow Punk",    "rarity": "rare"},
+    {"name": "Spotlight Tech", "rarity": "epic"},
 ]
 
 # Coin cost to unlock units (None = not purchasable / exclusive)
@@ -2598,6 +2649,7 @@ UNIT_SHOP_PRICES = {
     "Slasher":        3000,
     "Golden Cowboy":  3500,
     "Hallow Punk":    600,
+    "Spotlight Tech": 5000,
 }
 
 class LoadoutScreen:
@@ -3114,7 +3166,8 @@ class Game:
                         "Sledger": Sledger, "Gladiator": Gladiator,
                         "Toxic Gunner": ToxicGunner, "Slasher": Slasher,
                         "Golden Cowboy": GoldenCowboy,
-                        "Hallow Punk": HallowPunk}
+                        "Hallow Punk": HallowPunk,
+                        "Spotlight Tech": SpotlightTech}
         _loadout = self.save_data.get("loadout", ["Assassin", "Accelerator", None, None, None])
         while len(_loadout) < 5: _loadout.append(None)
         self.ui.SLOT_TYPES = [_name_to_cls.get(n) if n else None for n in _loadout]
@@ -3982,6 +4035,8 @@ class Game:
             if e.update(dt):
                 if isinstance(e,FastBoss):
                     e.alive=False
+                elif getattr(e,'_confused',False):
+                    pass  # confused enemy walked backward — don't count as leaked
                 else:
                     dead_reached.append(e)
 
@@ -4245,6 +4300,11 @@ class Game:
                             self.save_data.setdefault("owned_units", []).append("Frostcelerator")
                         write_save(self.save_data)
                         self.ui.show_msg("❄ Frostcelerator Unlocked!", 5.0)
+                    # Also unlock Spotlight Tech
+                    if "Spotlight Tech" not in self.save_data.get("owned_units", []):
+                        self.save_data.setdefault("owned_units", []).append("Spotlight Tech")
+                        write_save(self.save_data)
+                        self.ui.show_msg("🔦 Spotlight Tech Unlocked!", 5.0)
                 elif self.mode == "easy":
                     self.ach_mgr.try_grant("first_path")
                     if getattr(self, "_easy_boss_let_through", False):
@@ -4432,6 +4492,35 @@ class Game:
                 px4 = cx2 + int(math.cos(a2) * (e.radius + 6))
                 py4 = cy2 + int(math.sin(a2) * (e.radius + 6))
                 pygame.draw.circle(self.screen, (220, 40, 40), (px4, py4), 2)
+
+        # Draw Spotlight Tech — Expose (yellow) and Confusion (purple) overlays
+        _sp_t = pygame.time.get_ticks() * 0.001
+        for e in self.enemies:
+            if not e.alive: continue
+            cx2, cy2 = int(e.x), int(e.y)
+            # Expose overlay — yellow glow
+            if getattr(e, '_exposed', False):
+                es2 = pygame.Surface((60, 60), pygame.SRCALPHA)
+                pulse2 = int(abs(math.sin(_sp_t * 5)) * 60 + 80)
+                pygame.draw.circle(es2, (255, 240, 60, pulse2), (30, 30), e.radius + 6)
+                pygame.draw.circle(es2, (255, 255, 120, 80), (30, 30), e.radius + 2, 2)
+                self.screen.blit(es2, (cx2 - 30, cy2 - 30))
+            # Confusion overlay — purple spinning ?
+            if getattr(e, '_confused', False):
+                cs3 = pygame.Surface((70, 70), pygame.SRCALPHA)
+                ct2 = getattr(e, '_confused_timer', 0.0)
+                ca3 = int(min(1.0, ct2 / 0.5) * 160) + 40
+                pygame.draw.circle(cs3, (180, 60, 255, ca3), (35, 35), e.radius + 8)
+                self.screen.blit(cs3, (cx2 - 35, cy2 - 35))
+                # Spinning ? marks
+                qf2 = pygame.font.SysFont("consolas", 14, bold=True)
+                for i in range(3):
+                    qa = math.radians(_sp_t * 200 + i * 120)
+                    qx = cx2 + int(math.cos(qa) * (e.radius + 10))
+                    qy = cy2 + int(math.sin(qa) * (e.radius + 10))
+                    qs2 = qf2.render("?", True, (220, 100, 255))
+                    qs2.set_alpha(ca3)
+                    self.screen.blit(qs2, qs2.get_rect(center=(qx, qy)))
 
         # Draw glitch effects on pokaxw5yt-stunned enemies
         _gt=pygame.time.get_ticks()*0.001

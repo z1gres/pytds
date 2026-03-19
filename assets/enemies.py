@@ -35,6 +35,19 @@ class Enemy:
         if self.frozen: self._bob+=dt*4; return False
         self._bob+=dt*4
         path = getattr(self, '_frosty_path', None) or get_map_path()
+
+        # Confusion: walk backward (toward previous waypoint)
+        if getattr(self, '_confused', False):
+            prev_wp = max(0, self._wp_index - 2)
+            if prev_wp < len(path):
+                tx, ty = path[prev_wp]
+                dx = tx - self.x; dy = ty - self.y
+                d = math.hypot(dx, dy)
+                if d > 1:
+                    step = self.speed * dt
+                    self.x += dx/d * step; self.y += dy/d * step
+            return False
+
         if self._wp_index >= len(path):
             self.alive=False; return True
         tx, ty = path[self._wp_index]

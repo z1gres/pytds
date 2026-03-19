@@ -181,6 +181,7 @@ UNIT_LIMITS = {
     "Slasher":        3,
     "Golden Cowboy":  6,
     "Hallow Punk":    10,
+    "Spotlight Tech": 1,
 }
 
 def load_save():
