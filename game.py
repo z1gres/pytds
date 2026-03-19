@@ -2831,6 +2831,10 @@ class LoadoutScreen:
         left_bg.fill((12, 15, 24, 180))
         surf.blit(left_bg, (0, TOP))
 
+        # "Your loadout" label above slots
+        slot_rects = self._slot_rects(left_w)
+        lbl_y = slot_rects[0].top - 28
+
         _col_map_slot = {
             "Assassin": C_ASSASSIN,        "Lifestealer": C_LIFESTEALER,
             "Archer":   C_ARCHER,          "Red Ball":    C_REDBALL,
