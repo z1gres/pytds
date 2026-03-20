@@ -2156,10 +2156,6 @@ class FrostyWarningScreen:
 
         # Warning lines
         lines = [
-            ("Frosty — невероятно сложный режим.", (220, 200, 200)),
-            ("Он может быть практически невозможным", (200, 180, 180)),
-            ("без правильных юнитов и афаыаф543цне435упкыцк.", (200, 180, 180)),
-            ("", None),
             ("Продолжить?", (160, 200, 255)),
         ]
         lf = pygame.font.SysFont("segoeui", 28)
@@ -3048,6 +3044,9 @@ class LoadoutScreen:
                         for k in range(5):
                             if self.loadout[k] == uname and k != si:
                                 self.loadout[k] = None; break
+                        if uname == "Commander":
+                            self._show_msg("Sandbox only!")
+                            self.selected = None; return
                         self.loadout[si] = uname
                         self.selected = None
                 elif self.loadout[si] is not None:
@@ -3311,7 +3310,7 @@ class Game:
             self.player_hp=150; self.player_maxhp=150
         elif mode=="frosty":
             self.wave_mgr=WaveManager(wave_data=FROSTY_WAVE_DATA, max_waves=FROSTY_MAX_WAVES)
-            self.player_hp=250; self.player_maxhp=250
+            self.player_hp=300; self.player_maxhp=300
             self._frosty_lane=0   # cycles 0-3: which of 4 entry paths next enemy gets
         else:
             self.wave_mgr=WaveManager()
@@ -3627,32 +3626,24 @@ class Game:
                     if ev.key == pygame.K_x and self.ui.open_unit:
                         u = self.ui.open_unit
                         self.money += self.ui._sell_value(u)
-                        if u in self.units: self.units.remove(u)
-                        self.ui.open_unit = None
                     if ev.key == pygame.K_f:
-                        # Activate ability of open_unit, or first ready unit's ability
+                        # Activate ability of open_unit, or first ready ability
                         activated = False
                         target = self.ui.open_unit
                         if target is None:
-                            # Find first unit with any ready ability (check ab2, ab1, ab3)
+                            # Find first unit with ready ability
                             for _u in self.units:
-                                ab2_c = getattr(_u, 'ability2', None)
-                                if ab2_c and ab2_c.ready():
-                                    target = _u; break
                                 if _u.ability and _u.ability.ready():
                                     target = _u; break
-                                ab3_c = getattr(_u, 'ability3', None)
-                                if ab3_c and ab3_c.ready():
-                                    target = _u; break
                         if target:
-                            ab2 = getattr(target, 'ability2', None)
-                            if not activated and ab2 and ab2.ready():
-                                ab2.activate(self.enemies, self.effects); activated = True
-                            if not activated and target.ability and target.ability.ready():
-                                target.ability.activate(self.enemies, self.effects); activated = True
-                            ab3 = getattr(target, 'ability3', None)
-                            if not activated and ab3 and ab3.ready():
-                                ab3.activate(self.enemies, self.effects)
+                            if target.ability and target.ability.ready():
+                                target.ability.activate(self.enemies, self.effects)
+                                activated = True
+                            elif not activated:
+                                ab2 = getattr(target, 'ability2', None)
+                                if ab2 and ab2.ready():
+                                    ab2.activate(self.enemies, self.effects)
+                        self.units.remove(u); self.ui.open_unit = None
                     slot_keys = {pygame.K_1:0,pygame.K_2:1,pygame.K_3:2,pygame.K_4:3,pygame.K_5:4}
                     if ev.key in slot_keys and not self.console.visible:
                         idx = slot_keys[ev.key]; UType = self.ui.SLOT_TYPES[idx]
@@ -4855,7 +4846,22 @@ class MainMenu(_OrigMainMenu):
 
 # ── Changelog widget (drawn in MainMenu._draw) ────────────────────────────────
 _CHANGELOG = [
-    ("ghhhhhhhg", (200, 180, 255), True),
+    ("CHANGELOG", (200, 180, 255), True),
+    ("• Полный РЕБАЛАНС Фрости режима до играбельности", (160, 220, 255), False),
+    ("• Ребаланс Snowballer", (200, 200, 200), False),
+    ("  (старая версия доступна в sandbox)", (160, 160, 160), False),
+    ("• Командир убран до реворка из-за очень", (255, 120, 100), False),
+    ("  большого количества багов и недоработок", (255, 120, 100), False),
+    ("  (доступен в sandbox)", (200, 100, 80), False),
+    ("• Frostcelerator бафф", (160, 220, 255), False),
+    ("", (200, 200, 200), False),
+    ("В следующем обновлении:", (255, 230, 80), True),
+    ("• Реворк командо", (200, 200, 200), False),
+    ("• Ребаланс халов панк", (200, 200, 200), False),
+    ("• У каждой волны свой таймер до перехода", (200, 200, 200), False),
+    ("  на следующую, больше не будет зависеть", (200, 200, 200), False),
+    ("  переход от убиты ли враги", (200, 200, 200), False),
+    ("• Возможность скипать волны от таймера", (200, 200, 200), False),
 ]
 
 # ── Entry point ───────────────────────────────────────────────────────────────

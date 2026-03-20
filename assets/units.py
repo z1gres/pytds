@@ -209,7 +209,7 @@ FROST_LEVELS = [
 ]
 
 class Frostcelerator(Unit):
-    PLACE_COST=3500; COLOR=C_FROST; NAME="Frostcelerator"; hidden_detection=True
+    PLACE_COST=2750; COLOR=C_FROST; NAME="Frostcelerator"; hidden_detection=True
     FREEZE_BUILD  = 5.0   # seconds of hits to freeze
     FREEZE_DUR    = 2.5   # seconds frozen
     SLOW_FACTOR   = 0.75  # enemy moves at 75% speed (25% slow)
@@ -1991,6 +1991,10 @@ class Gladiator(Unit):
                 self.cd_left = self.firerate
                 self._last_swing_t = self._swing_t
                 self._swing(enemies)
+                arc_half = math.radians(_GLAD_ARC_DEG / 2)
+                for _si in range(5):
+                    _a = math.degrees(self._aim_angle - arc_half + arc_half * 2 * _si / 4)
+                    effects.append(SwordEffect(self.px, self.py, _a))
 
     # ── draw ───────────────────────────────────────────────────────────────
     def draw(self, surf):
@@ -2050,21 +2054,6 @@ class Gladiator(Unit):
         pygame.draw.circle(surf, (255, 255, 220), (int(bx2), int(by2)), 3)
 
         # Swing arc trail — only shown briefly after a real swing
-        time_since_swing = self._swing_t - self._last_swing_t
-        if 0 < time_since_swing < 0.18:
-            arc_s = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
-            alpha = int(140 * (1 - time_since_swing / 0.18))
-            arc_r = int(self.range_tiles * TILE)
-            arc_half_r = math.radians(_GLAD_ARC_DEG / 2)
-            steps = 16
-            for i in range(steps):
-                a = self._aim_angle - arc_half_r + (arc_half_r * 2 * i / steps)
-                x1 = cx + int(math.cos(a) * 10)
-                y1 = cy + int(math.sin(a) * 10)
-                x2 = cx + int(math.cos(a) * arc_r)
-                y2 = cy + int(math.sin(a) * arc_r)
-                pygame.draw.line(arc_s, (255, 210, 80, alpha), (x1, y1), (x2, y2), 2)
-            surf.blit(arc_s, (0, 0))
 
         # Hidden detection dot
         if self.hidden_detection:

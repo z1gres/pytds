@@ -36,17 +36,6 @@ class Enemy:
         self._bob+=dt*4
         path = getattr(self, '_frosty_path', None) or get_map_path()
 
-        # Confusion: walk backward (toward previous waypoint)
-        if getattr(self, '_confused', False):
-            prev_wp = max(0, self._wp_index - 2)
-            if prev_wp < len(path):
-                tx, ty = path[prev_wp]
-                dx = tx - self.x; dy = ty - self.y
-                d = math.hypot(dx, dy)
-                if d > 1:
-                    step = self.speed * dt
-                    self.x += dx/d * step; self.y += dy/d * step
-            return False
 
         if self._wp_index >= len(path):
             self.alive=False; return True
@@ -1270,10 +1259,10 @@ class Permafrost(Enemy):
         if hovered: self._hover_label(surf)
 
 class FrostHunter(Enemy):
-    DISPLAY_NAME="Frost Hunter"; BASE_HP=2000; BASE_SPEED=28; KILL_REWARD=2800
+    DISPLAY_NAME="Frost Hunter"; BASE_HP=1800; BASE_SPEED=28; KILL_REWARD=2800
     def __init__(self, wave=1):
         super().__init__(wave)
-        self.hp=2000; self.maxhp=2000; self.speed=self.BASE_SPEED+(wave-1); self.radius=32
+        self.hp=1800; self.maxhp=1800; self.speed=self.BASE_SPEED+(wave-1); self.radius=32
         self._rot=0.0
     def update(self, dt):
         self._rot+=dt*60; return super().update(dt)
@@ -1300,7 +1289,7 @@ class UnstableIce(Enemy):
     DISPLAY_NAME="Unstable Ice"; BASE_HP=400; BASE_SPEED=140; KILL_REWARD=1000
     def __init__(self, wave=1):
         super().__init__(wave)
-        self.hp=400; self.maxhp=400; self.speed=self.BASE_SPEED+(wave-1)*4; self.radius=16
+        self.hp=400; self.maxhp=400; self.speed=self.BASE_SPEED; self.radius=16
         self._rot=0.0
     def update(self, dt):
         self._rot+=dt*300; return super().update(dt)
@@ -1392,7 +1381,7 @@ class FrostUndead(Enemy):
     def __init__(self, wave=1):
         super().__init__(wave)
         self.hp=800; self.maxhp=800
-        self.speed=self.BASE_SPEED+(wave-1)*5
+        self.speed=self.BASE_SPEED
         self.radius=20
         self._rot=0.0
     def update(self, dt):
@@ -1560,10 +1549,10 @@ class TricksterElf(Enemy):
         if hovered: self._hover_label(surf)
 
 class Yeti(Enemy):
-    DISPLAY_NAME="Yeti"; BASE_HP=12000; BASE_SPEED=28; KILL_REWARD=10000
+    DISPLAY_NAME="Yeti"; BASE_HP=10000; BASE_SPEED=28; KILL_REWARD=10000
     def __init__(self, wave=1):
         super().__init__(wave)
-        self.hp=12000; self.maxhp=12000
+        self.hp=10000; self.maxhp=10000
         self.speed=self.BASE_SPEED+(wave-1)*5
         self.radius=34
         self._rot=0.0
@@ -1627,10 +1616,10 @@ class FrostMage(Enemy):
         if hovered: self._hover_label(surf)
 
 class FrostHero(Enemy):
-    DISPLAY_NAME="Frost Hero"; BASE_HP=40000; BASE_SPEED=28; KILL_REWARD=30000
+    DISPLAY_NAME="Frost Hero"; BASE_HP=25000; BASE_SPEED=28; KILL_REWARD=30000
     def __init__(self, wave=1):
         super().__init__(wave)
-        self.hp=40000; self.maxhp=40000
+        self.hp=25000; self.maxhp=25000
         self.speed=self.BASE_SPEED+(wave-1)
         self.radius=40
         self._rot=0.0
@@ -1731,10 +1720,10 @@ class FrostNecromancer(Enemy):
         if hovered: self._hover_label(surf)
 
 class FrostSpirit(Enemy):
-    DISPLAY_NAME="Frost Spirit"; BASE_HP=500000; BASE_SPEED=26; KILL_REWARD=0
+    DISPLAY_NAME="Frost Spirit"; BASE_HP=200000; BASE_SPEED=26; KILL_REWARD=0
     def __init__(self, wave=1):
         super().__init__(1)
-        self.hp=500000; self.maxhp=500000
+        self.hp=200000; self.maxhp=200000
         # slightly slower than TankEnemy (28)
         self.speed=self.BASE_SPEED
         self.radius=56
@@ -1813,12 +1802,12 @@ FROSTY_WAVE_DATA = [
     ([(UnstableIce,3),(FrostAcolyte,2),(TricksterElf,2),(FrostHunter,4),(FrostRavager,1)],       1875, 364),                  # 34
     ([(FrostRavager,1),(UnstableIce,4),(FrostHero,1),(FrostHunter,3),(FrostRavager,1)],          2000, 380),                  # 35
     ([(DeepFreeze,3),(MegaFrostMystery,5),(FrostMage,2),(Yeti,1),(FrostUndead,6)],               2100, 400),                  # 36
-    ([(Yeti,1),(DeepFreeze,4),(MegaFrostMystery,8),(FrostUndead,8),(FrostHunter,10)],            2200, 450),                  # 37
-    ([(FrostRavager,2),(FrostHero,1),(FrostNecromancer,2),(TricksterElf,3),(FrostWraith,4)],    2300, 500),                  # 38
-    ([(FrostHero,2),(DeepFreeze,4),(FrostHunter,8)],                                             5000,  0),                   # 39
-    ([(FrostInvader,4),(FrostRavager,2),(FrostMage,4),(FrostHunter,9),(UnstableIce,10),
-      (FrostUndead,12),(MegaFrostMystery,28),(Yeti,1),(FrostHero,3),(DeepFreeze,4),
-      (FrostNecromancer,1)],                                                              0,     0),                   # 40
+    ([(Yeti,1),(DeepFreeze,2),(MegaFrostMystery,6),(FrostUndead,6),(FrostHunter,5)],             2200, 450),                  # 37
+    ([(FrostRavager,1),(FrostHero,1),(FrostNecromancer,1),(TricksterElf,2),(FrostWraith,2)],    2300, 500),                  # 38
+    ([(FrostHero,2),(DeepFreeze,2),(FrostHunter,4)],                                             5000,  0),                   # 39
+    ([(FrostInvader,3),(FrostRavager,1),(FrostMage,3),(FrostHunter,5),(UnstableIce,7),
+      (FrostUndead,8),(MegaFrostMystery,10),(Yeti,1),(FrostHero,2),(DeepFreeze,2),
+      (FrostNecromancer,1),(FrostSpirit,1)],                                                0,     0),                   # 40
 ]
 
 FALLEN_BREAKER_POOL=[FallenEnemy, FallenDreg, FallenSoul, FallenHazmat]

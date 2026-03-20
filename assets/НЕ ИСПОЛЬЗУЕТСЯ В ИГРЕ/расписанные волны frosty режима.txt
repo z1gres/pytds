@@ -273,40 +273,40 @@ bmoney 400
 
 wave 37:
 1 yeti
-4 deep freeze
-8 mega frost mystery
-8 frost undead
-10 frost hunter
+2 deep freeze
+6 mega frost mystery
+6 frost undead
+5 frost hunter
 lmoney 2200
 bmoney 450
 
 wave 38:
-2 frost ravager
+1 frost ravager
 1 frost hero
-2 frost necromancer
-3 trickster elf
-4 frost wraith
+1 frost necromancer
+2 trickster elf
+2 frost wraith
 lmoney 2300
 bmoney 500
 
 wave 39:
 2 frost hero
-4 deep freeze
-8 frost hunter
+2 deep freeze
+4 frost hunter
 lmoney 5000
 bmoney -
 
 wave 40:
-4 frost invader
-2 frost ravager
-4 frost mage
-9 frost hunter
-10 unstable ice
-12 frost undead
-28 mega frost mystery
+3 frost invader
+1 frost ravager
+3 frost mage
+5 frost hunter
+7 unstable ice
+8 frost undead
+10 mega frost mystery
 1 yeti
-3 frost hero
-4 deep freeze
+2 frost hero
+2 deep freeze
 1 frost necromancer
 1 frost spirit
 
