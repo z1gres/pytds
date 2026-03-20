@@ -3627,24 +3627,32 @@ class Game:
                     if ev.key == pygame.K_x and self.ui.open_unit:
                         u = self.ui.open_unit
                         self.money += self.ui._sell_value(u)
+                        if u in self.units: self.units.remove(u)
+                        self.ui.open_unit = None
                     if ev.key == pygame.K_f:
-                        # Activate ability of open_unit, or first ready ability
+                        # Activate ability of open_unit, or first ready unit's ability
                         activated = False
                         target = self.ui.open_unit
                         if target is None:
-                            # Find first unit with ready ability
+                            # Find first unit with any ready ability (check ab2, ab1, ab3)
                             for _u in self.units:
+                                ab2_c = getattr(_u, 'ability2', None)
+                                if ab2_c and ab2_c.ready():
+                                    target = _u; break
                                 if _u.ability and _u.ability.ready():
                                     target = _u; break
+                                ab3_c = getattr(_u, 'ability3', None)
+                                if ab3_c and ab3_c.ready():
+                                    target = _u; break
                         if target:
-                            if target.ability and target.ability.ready():
-                                target.ability.activate(self.enemies, self.effects)
-                                activated = True
-                            elif not activated:
-                                ab2 = getattr(target, 'ability2', None)
-                                if ab2 and ab2.ready():
-                                    ab2.activate(self.enemies, self.effects)
-                        self.units.remove(u); self.ui.open_unit = None
+                            ab2 = getattr(target, 'ability2', None)
+                            if not activated and ab2 and ab2.ready():
+                                ab2.activate(self.enemies, self.effects); activated = True
+                            if not activated and target.ability and target.ability.ready():
+                                target.ability.activate(self.enemies, self.effects); activated = True
+                            ab3 = getattr(target, 'ability3', None)
+                            if not activated and ab3 and ab3.ready():
+                                ab3.activate(self.enemies, self.effects)
                     slot_keys = {pygame.K_1:0,pygame.K_2:1,pygame.K_3:2,pygame.K_4:3,pygame.K_5:4}
                     if ev.key in slot_keys and not self.console.visible:
                         idx = slot_keys[ev.key]; UType = self.ui.SLOT_TYPES[idx]
@@ -4847,17 +4855,7 @@ class MainMenu(_OrigMainMenu):
 
 # ── Changelog widget (drawn in MainMenu._draw) ────────────────────────────────
 _CHANGELOG = [
-    ("CHANGELOG", (200, 180, 255), True),
-    ("• Spotlight Tech REWORK", (255, 230, 80), False),
-    ("• Новый интерфейс лодаута", (200, 200, 200), False),
-    ("• 3 НОВЫХ Юнита:", (200, 200, 200), False),
-    ("  - Snowballer, commander, commando", (200, 200, 200), False),
-    ("• Frosty нерфы:", (160, 220, 255), False),
-    ("  - MegaFrostMystery: 140→55 speed", (180, 210, 240), False),
-    ("  - Yeti: 66→28 speed", (180, 210, 240), False),
-    ("• True Fallen УДАЛЁН", (255, 100, 100), False),
-    ("• я УСТАЛ писать этот ЧЕНДЖЛОГ", (255, 100, 100), False),
-    ("• если что я гуишку лодаута переделывать буду", (255, 100, 100), False),
+    ("ghhhhhhhg", (200, 180, 255), True),
 ]
 
 # ── Entry point ───────────────────────────────────────────────────────────────
