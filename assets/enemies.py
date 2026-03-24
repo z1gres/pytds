@@ -315,7 +315,7 @@ class OtchimusPrime(Enemy):
     DISPLAY_NAME="optimus prime 3000 super scary"; BASE_HP=40000; BASE_SPEED=15
     def __init__(self):
         super().__init__(1)
-        self.hp=40000; self.maxhp=40000; self.speed=self.BASE_SPEED; self.radius=43
+        self.hp=25000; self.maxhp=25000; self.speed=self.BASE_SPEED; self.radius=43
         self._rot=0.0; self._summon_timer=20.0
         self.phase2_armor=False
     def take_damage(self, dmg, bypass_armor=False):
@@ -1663,7 +1663,7 @@ class DeepFreeze(Enemy):
     DISPLAY_NAME="Deep Freeze"; BASE_HP=12000; BASE_SPEED=55; KILL_REWARD=10000
     def __init__(self, wave=1):
         super().__init__(wave)
-        self.hp=12000; self.maxhp=12000
+        self.hp=10000; self.maxhp=10000
         self.speed=self.BASE_SPEED+(wave-1)*2
         self.radius=30
         self._rot=0.0
@@ -1797,7 +1797,7 @@ FROSTY_WAVE_DATA = [
     ([(FrostWraith,5),(ColdMist,6),(FrostAcolyte,3),(TricksterElf,2)],                           1634, 334),                  # 29
     ([(FrostInvader,2),(FrostMystery,4),(FrostUndead,3),(Yeti,1)],                               1684, 336),                  # 30
     ([(FrostUndead,1),(MegaFrostMystery,14),(UnstableIce,3),(FrostWraith,6)],                    1734, 341),                  # 31
-    ([(FrostInvader,3),(FrostWraith,10),(MegaFrostMystery,5),(FrostMage,1)],                     1795, 349),                  # 32
+    ([(FrostInvader,3),(FrostWraith,5),(MegaFrostMystery,3),(FrostMage,1)],                     1795, 349),                  # 32
     ([(Yeti,2),(FrostHunter,6)],                                                                 1813, 359),                  # 33
     ([(UnstableIce,3),(FrostAcolyte,2),(TricksterElf,2),(FrostHunter,4),(FrostRavager,1)],       1875, 364),                  # 34
     ([(FrostRavager,1),(UnstableIce,4),(FrostHero,1),(FrostHunter,3),(FrostRavager,1)],          2000, 380),                  # 35
@@ -1809,6 +1809,45 @@ FROSTY_WAVE_DATA = [
       (FrostUndead,8),(MegaFrostMystery,10),(Yeti,1),(FrostHero,2),(DeepFreeze,2),
       (FrostNecromancer,1),(FrostSpirit,1)],                                                0,     0),                   # 40
 ]
+
+# ── Boss Rush wave data (20 волн) ─────────────────────────────────────────────
+# Концепция: каждые ~2 волны появляется босс(ы), плюс мясо для нагрузки.
+# Стартовые деньги: 800. Деньги как в Fallen.
+BOSS_RUSH_WAVE_DATA = [
+    None,                                                                                                                      # 0
+    # Разминка — лёгкие враги
+    ([(Enemy,8),(ScoutEnemy,5)],                                                              204, 40),                        # 1
+    # Первый мини-босс
+    ([(TankEnemy,6),(NormalBoss,1),(Enemy,10)],                                               250, 50),                        # 2
+    ([(BreakerEnemy,8),(ScoutEnemy,8),(HiddenEnemy,6)],                                       298, 59),                        # 3
+    # Necromancer дебютирует
+    ([(TankEnemy,8),(Necromancer,1),(Enemy,10)],                                              347, 69),                        # 4
+    ([(BreakerEnemy,10),(HiddenEnemy,8),(NormalBoss,2)],                                      400, 80),                        # 5
+    # Slow Boss
+    ([(TankEnemy,10),(SlowBoss,1),(NormalBoss,2),(ScoutEnemy,10)],                            446, 94),                        # 6
+    ([(BreakerEnemy,12),(HiddenBoss,1),(HiddenEnemy,10)],                                     496, 99),                        # 7
+    # Fallen враги начинаются
+    ([(FallenDreg,5),(FallenSquire,1),(Necromancer,2),(NormalBoss,2)],                        546, 109),                       # 8
+    ([(FallenSoul,6),(FallenEnemy,8),(SlowBoss,2)],                                           596, 119),                       # 9
+    # GraveDigger — финальник Easy
+    ([(FallenGiant,1),(FallenDreg,8),(FallenHazmat,5),(GraveDigger,1)],                       647, 129),                       # 10
+    ([(FallenSquire,3),(FallenNecromancer,1),(FallenEnemy,6),(NecroticSkeleton,2)],           698, 139),                       # 11
+    ([(FallenGiant,2),(FallenHazmat,8),(CorruptedFallen,4),(SlowBoss,2)],                     759, 156),                       # 12
+    ([(FallenJester,1),(FallenRusher,6),(FallenBreaker,8),(FallenHazmat,6)],                  800, 160),                       # 13
+    # FallenShield + Honor Guard
+    ([(FallenShield,1),(FallenHero,3),(FallenGiant,2),(FallenNecromancer,1)],                 851, 170),                       # 14
+    ([(FallenHonorGuard,1),(FallenGiant,3),(FallenRusher,8),(CorruptedFallen,6)],             954, 190),                       # 15
+    # Frost боссы входят
+    ([(FrostHunter,2),(FrostRavager,1),(FallenHero,4),(FallenGiant,2)],                      1109, 221),                       # 16
+    ([(Yeti,1),(FrostMage,1),(FallenHonorGuard,1),(FallenNecromancer,2),(FallenGiant,3)],    1317, 273),                       # 17
+    # Финальный забег — всё вместе
+    ([(FrostHero,2),(FrostNecromancer,1),(FallenHonorGuard,1),(FallenShield,1),(Yeti,1),(FallenGiant,4)], 2000, 380),          # 18
+    ([(FrostRavager,2),(FrostHero,2),(FallenHonorGuard,2),(FallenGiant,5),(FrostMage,2)],    2300, 500),                       # 19
+    # Финал — все финальники вместе
+    ([(GraveDigger,1),(FallenHonorGuard,1),(FrostHero,3),(FrostNecromancer,1),(FrostRavager,2),(FallenGiant,5)], 5000, 0),     # 20
+]
+BOSS_RUSH_MAX_WAVES = 20
+
 
 FALLEN_BREAKER_POOL=[FallenEnemy, FallenDreg, FallenSoul, FallenHazmat]
 
@@ -1903,7 +1942,7 @@ class WaveManager:
         random.shuffle(q); return q
 
     def update(self, dt, enemies):
-        alive_count=sum(1 for e in enemies if e.alive)
+        alive_count=sum(1 for e in enemies if e.alive and not getattr(e,"free_kill",False))
         if self.state=="prep":
             self.prep_timer-=dt
             if self.prep_timer<=0: self._start_wave()
@@ -1958,7 +1997,7 @@ class WaveManager:
         random.shuffle(q); return q
 
     def update(self, dt, enemies):
-        alive_count=sum(1 for e in enemies if e.alive)
+        alive_count=sum(1 for e in enemies if e.alive and not getattr(e,"free_kill",False))
         if self.state=="prep":
             self.prep_timer-=dt
             if self.prep_timer<=0: self._start_wave()

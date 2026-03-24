@@ -232,8 +232,8 @@ bmoney 341
 
 wave 32:
 3 frost invader
-10 frost wraith
-5 mega frost mystery
+5 frost wraith
+3 mega frost mystery
 1 frost mage
 lmoney 1795
 bmoney 349

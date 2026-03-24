@@ -209,15 +209,28 @@ FROST_LEVELS = [
 ]
 
 class Frostcelerator(Unit):
-    PLACE_COST=2750; COLOR=C_FROST; NAME="Frostcelerator"; hidden_detection=True
+    PLACE_COST=3500; COLOR=C_FROST; NAME="Frostcelerator"; hidden_detection=True
     FREEZE_BUILD  = 5.0   # seconds of hits to freeze
     FREEZE_DUR    = 2.5   # seconds frozen
     SLOW_FACTOR   = 0.75  # enemy moves at 75% speed (25% slow)
+
+    _TRI_ORBIT = 36
 
     def __init__(self, px, py):
         super().__init__(px,py)
         self._laser_targets=[]; self._laser_t=0.0
         self._shared_dmg=0.0  # total damage dealt by this tower
+        self._aim_angle   = 0.0
+        self._attack_lerp = 0.0
+        self._tri_img     = None
+        self._tri_cache   = {}
+        try:
+            import os as _os
+            _p = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                               "assets", "image", "double_accelerator_triangles.png.png")
+            self._tri_img = pygame.image.load(_p).convert_alpha()
+        except Exception:
+            self._tri_img = None
         self._apply_level()
 
     def _apply_level(self):
@@ -247,10 +260,11 @@ class Frostcelerator(Unit):
                 e.speed=e._frost_orig_speed
 
     def _apply_slow(self, e):
+        if getattr(e,'SLOW_RESISTANCE',0.0) >= 1.0: return
         if not getattr(e,'_frost_frozen',False) and not getattr(e,'_frost_slowed',False):
             e._frost_slowed=True
             e._frost_orig_speed=e.speed
-            resistance=getattr(e,'SLOW_RESISTANCE',1.0)
+            resistance=getattr(e,'SLOW_RESISTANCE',0.0)
             effective_factor=1.0-(1.0-self.SLOW_FACTOR)*resistance
             e.speed=e.speed*effective_factor
 
@@ -259,6 +273,12 @@ class Frostcelerator(Unit):
         if self.cd_left>0: self.cd_left-=dt
         targets=self._get_rightmost(enemies,4)
         self._laser_targets=targets
+        if targets:
+            t0=targets[0]
+            self._aim_angle=math.atan2(t0.y-self.py, t0.x-self.px)
+            self._attack_lerp=min(1.0, self._attack_lerp+dt*8)
+        else:
+            self._attack_lerp=max(0.0, self._attack_lerp-dt*4)
 
         if self.cd_left<=0 and targets:
             self.cd_left=self.firerate
@@ -295,47 +315,90 @@ class Frostcelerator(Unit):
                     if hasattr(e,'_frost_orig_speed'):
                         e.speed=e._frost_orig_speed
 
+    def _tri_positions(self):
+        idle_left_a  = math.pi
+        idle_right_a = 0.0
+        aim_left_a   = self._aim_angle + math.pi / 2
+        aim_right_a  = self._aim_angle - math.pi / 2
+        t2 = self._attack_lerp
+        left_a  = idle_left_a  + t2 * (aim_left_a  - idle_left_a)
+        right_a = idle_right_a + t2 * (aim_right_a - idle_right_a)
+        lx = self.px + math.cos(left_a)  * self._TRI_ORBIT
+        ly = self.py + math.sin(left_a)  * self._TRI_ORBIT
+        rx = self.px + math.cos(right_a) * self._TRI_ORBIT
+        ry = self.py + math.sin(right_a) * self._TRI_ORBIT
+        return (lx, ly), (rx, ry)
+
     def draw(self, surf):
         cx,cy=int(self.px),int(self.py)
-        spin=self._laser_t*180
-        for i in range(4):
-            a=math.radians(spin+i*90)
-            ox=int(cx+math.cos(a)*27); oy=int(cy+math.sin(a)*27)
-            pygame.draw.circle(surf,C_FROST_ICE,(ox,oy),6)
-            pygame.draw.circle(surf,(255,255,255),(ox,oy),3)
+        # Aura
+        pulse = int(abs(math.sin(self._laser_t*5))*50)+20
+        aura=pygame.Surface((120,120),pygame.SRCALPHA)
+        pygame.draw.circle(aura,(0,180,255,pulse//3),(60,60),56)
+        pygame.draw.circle(aura,(40,200,255,pulse),(60,60),36)
+        surf.blit(aura,(cx-60,cy-60))
+        # Body
         pygame.draw.circle(surf,C_FROST_DARK,(cx,cy),27)
         pygame.draw.circle(surf,C_FROST,(cx,cy),20)
-        # Inner ring detail
         pygame.draw.circle(surf,(180,240,255),(cx,cy),20,2)
-        # Snowflake — 6 spokes with small branches
+        # Snowflake
         for i in range(6):
             a=math.radians(i*60+self._laser_t*20)
             ex=cx+int(math.cos(a)*16); ey=cy+int(math.sin(a)*16)
             pygame.draw.line(surf,(200,240,255),(cx,cy),(ex,ey),2)
-            # branch ticks
             for sign in [-1,1]:
                 bx=cx+int(math.cos(a)*9); by=cy+int(math.sin(a)*9)
                 ba=a+sign*math.radians(60)
                 ex2=bx+int(math.cos(ba)*5); ey2=by+int(math.sin(ba)*5)
                 pygame.draw.line(surf,(220,250,255),(bx,by),(ex2,ey2),1)
-        # Centre dot
         pygame.draw.circle(surf,(240,255,255),(cx,cy),3)
         for i in range(self.level):
             pygame.draw.circle(surf,C_FROST_ICE,(cx-14+i*7,cy+36),3)
+
+        # Triangle positions
+        (lx,ly),(rx,ry) = self._tri_positions()
+
+        # Lasers from triangles
         for target in self._laser_targets:
             if not target.alive: continue
             tx,ty=int(target.x),int(target.y); tv=self._laser_t
             s2=pygame.Surface((SCREEN_W,SCREEN_H),pygame.SRCALPHA)
             flicker=int(abs(math.sin(tv*20))*2)
-            for width,col2,alp in [(18+flicker,(0,100,200),15),(11,(40,160,255),30),
-                                    (7,(80,200,255),60),(4,(160,230,255),130),(2,(220,245,255),210)]:
-                pygame.draw.line(s2,(*col2,alp),(cx,cy),(tx,ty),width)
+            for ox,oy in [(int(lx),int(ly)),(int(rx),int(ry))]:
+                for width,col2,alp in [(18+flicker,(0,100,200),15),(11,(40,160,255),30),
+                                        (7,(80,200,255),60),(4,(160,230,255),130),(2,(220,245,255),210)]:
+                    pygame.draw.line(s2,(*col2,alp),(ox,oy),(tx,ty),width)
             surf.blit(s2,(0,0))
             fs=pygame.Surface((40,40),pygame.SRCALPHA)
             fr2=int(abs(math.sin(tv*16))*6)+5
             pygame.draw.circle(fs,(180,230,255,100),(20,20),fr2+4)
             pygame.draw.circle(fs,(220,245,255,180),(20,20),fr2)
             surf.blit(fs,(tx-20,ty-20))
+
+        # Draw triangles
+        tri_size = 36
+        aim_deg = math.degrees(self._aim_angle)
+        tri_img = None
+        if self._tri_img:
+            k = tri_size
+            if k not in self._tri_cache:
+                self._tri_cache[k] = pygame.transform.smoothscale(self._tri_img,(k,k))
+            tri_img = self._tri_cache[k]
+        for pos, side in [((lx,ly),1),((rx,ry),-1)]:
+            px2,py2=int(pos[0]),int(pos[1])
+            glow=pygame.Surface((tri_size+20,tri_size+20),pygame.SRCALPHA)
+            ga=int(abs(math.sin(self._laser_t*6+side))*60)+30
+            pygame.draw.circle(glow,(40,160,255,ga),((tri_size+20)//2,(tri_size+20)//2),(tri_size+20)//2)
+            surf.blit(glow,(px2-(tri_size+20)//2,py2-(tri_size+20)//2))
+            if tri_img:
+                rot=-(aim_deg+side*90)
+                rotated=pygame.transform.rotate(tri_img,rot)
+                surf.blit(rotated,rotated.get_rect(center=(px2,py2)))
+            else:
+                d=10
+                pts=[(px2,py2-d),(px2+d,py2),(px2,py2+d),(px2-d,py2)]
+                pygame.draw.polygon(surf,C_FROST,pts)
+                pygame.draw.polygon(surf,(180,230,255),pts,2)
 
     def draw_enemy_frost(self, surf, enemies):
         """Draw frost/freeze overlays on enemies — called from game.draw."""
@@ -717,11 +780,12 @@ class ArcherArrow:
                 if self.flame:
                     e._fire_timer=3.0; e._fire_tick=0.0
                 if self.ice and not getattr(e,'_frost_frozen',False):
-                    if not getattr(e,'_ice_arrow_slowed',False):
-                        e._ice_arrow_orig_speed=e.speed
-                    e._ice_arrow_slowed=True
-                    e._ice_arrow_timer=0.6
-                    e.speed=e._ice_arrow_orig_speed*0.55
+                    if getattr(e,'SLOW_RESISTANCE',0.0) < 1.0:
+                        if not getattr(e,'_ice_arrow_slowed',False):
+                            e._ice_arrow_orig_speed=e.speed
+                        e._ice_arrow_slowed=True
+                        e._ice_arrow_timer=0.6
+                        e.speed=e._ice_arrow_orig_speed*0.55
                 self.pierce_left-=1
                 if self.pierce_left<=0:
                     self.alive=False; return
@@ -1071,6 +1135,7 @@ CONSOLE_HELP=["help            - show all commands",
               "upgrade_all     - upgrade all placed units to max level",
               "snep - toggle wave spawning",
               "fk_test - trigger fallen wave 40 (music + Fallen King)",
+              "fs_test - trigger frosty wave 40 (music + Frost Spirit)",
               "5       - toggle x5000 damage for all units"]
 
 SPAWN_MAP={
@@ -1294,13 +1359,15 @@ FROSTBLASTER_LEVELS = [
 class FrostBlasterBullet:
     """
     Piercing ice bullet – no pierce limit, hits every enemy it passes through.
+    Homing: continuously steers toward its primary target so it never misses.
     Applies slow (and optionally freeze stacks) on each enemy hit.
     """
     def __init__(self, ox, oy, target, damage, slow_pct, slow_dur,
                  freeze_hits, freeze_dur, armor_shred, defense_drop, speed,
                  owner):
         self.x = float(ox); self.y = float(oy)
-        # Direction vector toward initial target
+        self._target = target   # keep reference for homing
+        # Initial direction
         dx = target.x - ox; dy = target.y - oy
         d = math.hypot(dx, dy) or 1
         self.vx = dx / d; self.vy = dy / d
@@ -1312,13 +1379,25 @@ class FrostBlasterBullet:
         self.freeze_dur = freeze_dur
         self.armor_shred = armor_shred
         self.defense_drop = defense_drop
-        self.owner = owner          # ref to FrostBlaster unit
+        self.owner = owner
         self.alive = True
         self._hit_ids = set()
-        self._dist_left = 1100.0   # max travel distance in pixels
+        self._dist_left = 1100.0
+        self._homed = False  # True once target is hit or dead
 
     def update(self, dt, enemies):
         if not self.alive: return
+
+        # Homing: steer toward primary target while it's alive and not yet hit
+        if self._target and self._target.alive and id(self._target) not in self._hit_ids:
+            dx = self._target.x - self.x
+            dy = self._target.y - self.y
+            d = math.hypot(dx, dy)
+            if d > 1:
+                # Perfect tracking — always point directly at target
+                self.vx = dx / d
+                self.vy = dy / d
+
         step = self.speed * dt
         self.x += self.vx * step
         self.y += self.vy * step
@@ -1330,31 +1409,23 @@ class FrostBlasterBullet:
             if id(e) in self._hit_ids: continue
             if math.hypot(e.x - self.x, e.y - self.y) < e.radius + 7:
                 self._hit_ids.add(id(e))
-                # Armor shred (lv2+) — applied once per enemy per battle
                 if self.armor_shred > 0 and not getattr(e, '_fb_armor_shredded', False):
                     e._fb_armor_shredded = True
-                    new_armor = max(0.0, e.ARMOR - self.armor_shred)
-                    e.ARMOR = new_armor
-                # Defense drop (lv4) — extra dmg multiplier
-                eff_dmg = self.damage
-                if self.defense_drop > 0:
-                    eff_dmg = self.damage * (1.0 + self.defense_drop)
+                    e.ARMOR = max(0.0, e.ARMOR - self.armor_shred)
+                eff_dmg = self.damage * (1.0 + self.defense_drop) if self.defense_drop > 0 else self.damage
                 e.take_damage(eff_dmg)
                 self.owner.total_damage += eff_dmg
-                # ── Slow ──
                 orig = getattr(e, '_fb_orig_speed', None)
                 if orig is None:
                     e._fb_orig_speed = e.speed
                 cur_slow = getattr(e, '_fb_slow_pct', 0.0)
-                if self.slow_pct > cur_slow:
+                if getattr(e, 'SLOW_RESISTANCE', 0.0) >= 1.0:
+                    e._fb_slow_timer = self.slow_dur
+                elif self.slow_pct > cur_slow:
                     e._fb_slow_pct = self.slow_pct
-                    resistance = getattr(e, 'SLOW_RESISTANCE', 1.0)
-                    effective = 1.0 - (1.0 - (1.0 - self.slow_pct)) * resistance
-                    if orig is None: orig = e._fb_orig_speed
-                    e.speed = orig * (1.0 - self.slow_pct * resistance)
-                # Refresh slow timer
-                e._fb_slow_timer = self.slow_dur
-                # ── Freeze stacking ──
+                    resistance = getattr(e, 'SLOW_RESISTANCE', 0.0)
+                    e.speed = e._fb_orig_speed * (1.0 - self.slow_pct * resistance)
+                    e._fb_slow_timer = self.slow_dur
                 if self.freeze_hits > 0:
                     hits = getattr(e, '_fb_hit_count', 0) + 1
                     e._fb_hit_count = hits
@@ -2159,7 +2230,7 @@ class ToxicGunnerBullet:
     def _hit(self, e):
         e.take_damage(self.damage)
         # Slow stack (non-permanent: refreshes timer, stacks up to max)
-        if self.slow_pct > 0:
+        if self.slow_pct > 0 and getattr(e,'SLOW_RESISTANCE',0.0) < 1.0:
             orig = getattr(e, '_tg_orig_speed', None)
             if orig is None:
                 e._tg_orig_speed = e.speed
@@ -2167,7 +2238,7 @@ class ToxicGunnerBullet:
             new = min(cur + self.slow_pct, _TOXICGUN_MAX_SLOW)
             e._tg_slow = new
             e._tg_timer = self.slow_dur
-            resistance = getattr(e, 'SLOW_RESISTANCE', 1.0)
+            resistance = getattr(e, 'SLOW_RESISTANCE', 0.0)
             e.speed = e._tg_orig_speed * (1.0 - new * resistance)
         # Poison (refresh, don't stack damage)
         if self.poison_dmg > 0:
@@ -3607,13 +3678,14 @@ class SnowballerBall:
         self.puddle       = None
 
     def _apply_slow(self, e):
+        if getattr(e,'SLOW_RESISTANCE',0.0) >= 1.0: return
         cur = getattr(e, '_sb_slow', 0.0)
         new = min(cur + self.slow_pct, self.slow_max)
         e._sb_slow = new
         e._sb_timer = self.slow_dur
         if not hasattr(e, '_sb_orig_speed'):
             e._sb_orig_speed = e.speed
-        resistance = getattr(e, 'SLOW_RESISTANCE', 1.0)
+        resistance = getattr(e, 'SLOW_RESISTANCE', 0.0)
         e.speed = e._sb_orig_speed * (1.0 - new * resistance)
         # Freeze check
         if self.freeze_thresh > 0 and new >= self.freeze_thresh and self.freeze_time > 0:
@@ -3833,11 +3905,12 @@ class SnowballerOldBall:
         self._dist_left = 1200.0; self._trail = []; self.puddle = None
 
     def _apply_slow(self, e):
+        if getattr(e,'SLOW_RESISTANCE',0.0) >= 1.0: return
         cur = getattr(e, '_sb_slow', 0.0)
         new = min(cur + self.slow_pct, self.slow_max)
         e._sb_slow = new; e._sb_timer = self.slow_dur
         if not hasattr(e, '_sb_orig_speed'): e._sb_orig_speed = e.speed
-        resistance = getattr(e, 'SLOW_RESISTANCE', 1.0)
+        resistance = getattr(e, 'SLOW_RESISTANCE', 0.0)
         e.speed = e._sb_orig_speed * (1.0 - new * resistance)
 
     def _explode(self):
@@ -4228,3 +4301,784 @@ class Commando(Unit):
             "HidDet":   "YES" if self.hidden_detection else "no",
         }
         return info
+
+# ── Caster ────────────────────────────────────────────────────────────────────────
+C_HACKER      = (40, 200, 255)
+C_HACKER_DARK = (10, 30, 80)
+
+# (damage, firerate, range_tiles, upgrade_cost, hidden_detection)
+CASTER_LEVELS = [
+    (15, 0.19, 7.5, None,  False),   # lv0
+    (18, 0.18, 7.5, 4500,  True),    # lv1
+    (23, 0.18, 7.5, 7000,  True),    # lv2  — lightning strike unlocked
+    (33, 0.15, 7.5, 10000, True),    # lv3
+    (36, 0.10, 7.5, 16500, True),    # lv4
+]
+
+LIGHTNING_THRESHOLD = 2000   # damage needed to charge lightning
+LIGHTNING_DAMAGE    = 300
+LIGHTNING_RADIUS    = 120    # px — area for "most enemies" check
+
+class HackerLaserTest(Unit):
+    PLACE_COST = 7500
+    COLOR      = C_HACKER
+    NAME       = "Caster"
+    hidden_detection = False
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._apply_level()
+        self._laser_t       = 0.0
+        self._laser_targets = []
+        self._charge        = 0.0   # damage accumulated for lightning
+        self._lightning_flash = 0.0  # visual flash timer
+        self._lightning_pos   = None  # (x,y) of last strike
+        # Sound
+        self._sfx = None
+        self._sfx_channel = None
+        try:
+            import os as _os
+            _sfx_path = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "assets", "sound", "caster_hit_sfx.mp3")
+            self._sfx = pygame.mixer.Sound(_sfx_path)
+        except Exception:
+            self._sfx = None
+
+    def _apply_level(self):
+        d, fr, r, _, hd = CASTER_LEVELS[self.level]
+        self.damage          = d
+        self.firerate        = fr
+        self.range_tiles     = r
+        self.hidden_detection = hd
+        self.cd_left         = 0.0
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(CASTER_LEVELS): return None
+        return CASTER_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt >= len(CASTER_LEVELS): return
+        self.level = nxt
+        self._apply_level()
+
+    def _get_sfx_vol(self):
+        from game_core import SETTINGS
+        if SETTINGS.get("music_muted"): return 0.0
+        return max(0.0, SETTINGS.get("music_volume", 0.7) / 6.0)
+
+    def _find_densest_spot(self, enemies):
+        """Return (x,y) of the spot with most enemies within LIGHTNING_RADIUS."""
+        alive = [e for e in enemies if e.alive]
+        if not alive: return None
+        best_pos, best_count = None, 0
+        for e in alive:
+            count = sum(1 for o in alive if math.hypot(o.x - e.x, o.y - e.y) <= LIGHTNING_RADIUS)
+            if count > best_count:
+                best_count = count
+                best_pos = (e.x, e.y)
+        return best_pos
+
+    def update(self, dt, enemies, effects, money):
+        self._laser_t += dt
+        if self.cd_left > 0:
+            self.cd_left -= dt
+        if self._lightning_flash > 0:
+            self._lightning_flash -= dt
+
+        # ALL alive enemies in range are targeted
+        targets = self._get_targets(enemies, 9999)
+        self._laser_targets = targets
+
+        if self.cd_left <= 0 and targets:
+            self.cd_left = self.firerate
+            dmg_dealt = 0
+            for t in targets:
+                t.take_damage(self.damage)
+                dmg_dealt += self.damage
+            # Charge lightning (lv2+)
+            if self.level >= 2:
+                self._charge += dmg_dealt
+                if self._charge >= LIGHTNING_THRESHOLD:
+                    self._charge -= LIGHTNING_THRESHOLD
+                    self._trigger_lightning(enemies, effects)
+            # Play attack sound
+            if self._sfx:
+                try:
+                    self._sfx.set_volume(self._get_sfx_vol())
+                    if self._sfx_channel is None or not self._sfx_channel.get_busy():
+                        self._sfx_channel = self._sfx.play()
+                except Exception:
+                    pass
+
+    def _trigger_lightning(self, enemies, effects):
+        pos = self._find_densest_spot(enemies)
+        if pos is None: return
+        self._lightning_pos   = pos
+        self._lightning_flash = 0.5
+        lx, ly = pos
+        for e in enemies:
+            if e.alive and math.hypot(e.x - lx, e.y - ly) <= LIGHTNING_RADIUS:
+                e.take_damage(LIGHTNING_DAMAGE)
+
+    def _zigzag_points(self, x1, y1, x2, y2, segments, amplitude, seed):
+        import random as _r
+        rng = _r.Random(seed)
+        dx = x2 - x1; dy = y2 - y1
+        length = math.hypot(dx, dy)
+        if length < 1: return [(x1,y1),(x2,y2)]
+        px = -dy / length; py = dx / length
+        pts = [(x1, y1)]
+        for i in range(1, segments):
+            t2 = i / segments
+            bx = x1 + dx * t2; by = y1 + dy * t2
+            taper = math.sin(t2 * math.pi)
+            off = rng.uniform(-amplitude, amplitude) * taper
+            pts.append((bx + px * off, by + py * off))
+        pts.append((x2, y2))
+        return pts
+
+    def draw(self, surf):
+        cx, cy = int(self.px), int(self.py)
+        t = self._laser_t
+
+        # ── Tower body ──────────────────────────────────────────────────────
+        pulse = int(abs(math.sin(t * 5)) * 55) + 25
+        aura2 = pygame.Surface((120, 120), pygame.SRCALPHA)
+        pygame.draw.circle(aura2, (0, 180, 255, pulse // 3), (60, 60), 56)
+        pygame.draw.circle(aura2, (40, 200, 255, pulse), (60, 60), 36)
+        surf.blit(aura2, (cx - 60, cy - 60))
+
+        pygame.draw.circle(surf, (5, 15, 40), (cx, cy), 24)
+        for i in range(6):
+            a = math.radians(i * 60)
+            fx = cx + int(math.cos(a) * 22); fy = cy + int(math.sin(a) * 22)
+            pygame.draw.circle(surf, (20, 80, 140), (fx, fy), 4)
+        pygame.draw.circle(surf, (10, 30, 70), (cx, cy), 19)
+
+        for layer, speed, col, n in [(1, 70, (40,200,255), 6), (-1, 110, (100,220,255), 4)]:
+            for i in range(n):
+                a = math.radians(t * speed * layer + i * (360//n))
+                x1b = cx + int(math.cos(a) * 9);  y1b = cy + int(math.sin(a) * 9)
+                x2b = cx + int(math.cos(a) * 17); y2b = cy + int(math.sin(a) * 17)
+                pygame.draw.line(surf, col, (x1b, y1b), (x2b, y2b), 2)
+
+        core_r = int(abs(math.sin(t * 9)) * 4) + 4
+        core_surf = pygame.Surface((40, 40), pygame.SRCALPHA)
+        pygame.draw.circle(core_surf, (80, 200, 255, 100), (20, 20), core_r + 6)
+        pygame.draw.circle(core_surf, (160, 220, 255, 180), (20, 20), core_r + 2)
+        pygame.draw.circle(core_surf, (220, 240, 255, 255), (20, 20), core_r)
+        surf.blit(core_surf, (cx - 20, cy - 20))
+        pygame.draw.circle(surf, C_HACKER, (cx, cy), 24, 2)
+
+        # Level dots
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_HACKER, (cx - 14 + i * 7, cy + 36), 3)
+
+        # ── Lightning strike visual ─────────────────────────────────────────
+        if self._lightning_flash > 0 and self._lightning_pos:
+            lx, ly = int(self._lightning_pos[0]), int(self._lightning_pos[1])
+            frac = self._lightning_flash / 0.5
+            alpha = int(frac * 220)
+            # Strike beam from sky (above screen) to target
+            bolt_surf = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            sky_y = max(0, ly - 300)
+            seed_l = int(t * 60)
+            for bolt_i in range(3):
+                pts = self._zigzag_points(lx, sky_y, lx, ly, 12, 30 - bolt_i * 8, seed_l + bolt_i * 111)
+                ipts = [(int(p[0]), int(p[1])) for p in pts]
+                widths = [14, 7, 2]
+                colors = [(40, 180, 255, int(alpha*0.3)), (120, 220, 255, int(alpha*0.6)), (230, 248, 255, alpha)]
+                for j in range(len(ipts)-1):
+                    pygame.draw.line(bolt_surf, colors[bolt_i], ipts[j], ipts[j+1], widths[bolt_i])
+            surf.blit(bolt_surf, (0, 0))
+            # Impact circle
+            imp_r = int(LIGHTNING_RADIUS * frac)
+            imp = pygame.Surface((LIGHTNING_RADIUS*2+40, LIGHTNING_RADIUS*2+40), pygame.SRCALPHA)
+            hc = LIGHTNING_RADIUS + 20
+            pygame.draw.circle(imp, (40, 160, 255, int(alpha*0.2)), (hc, hc), imp_r + 20)
+            pygame.draw.circle(imp, (100, 210, 255, int(alpha*0.5)), (hc, hc), imp_r, 3)
+            pygame.draw.circle(imp, (220, 248, 255, alpha), (hc, hc), max(4, imp_r//3))
+            surf.blit(imp, (lx - hc, ly - hc))
+
+        # ── Laser beams ─────────────────────────────────────────────────────
+        if not self._laser_targets:
+            return
+
+        s2 = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+
+        for target in self._laser_targets:
+            if not target.alive:
+                continue
+            tx, ty = int(target.x), int(target.y)
+            tv = self._laser_t
+
+            pygame.draw.line(s2, (0, 100, 200, 10), (cx, cy), (tx, ty), 26)
+            pygame.draw.line(s2, (0, 160, 255, 18), (cx, cy), (tx, ty), 14)
+
+            seed_a = int(tv * 28) + id(target) % 9999
+            pts_a = self._zigzag_points(cx, cy, tx, ty, 18, 22, seed_a)
+            ia = [(int(p[0]), int(p[1])) for p in pts_a]
+            for j in range(len(ia)-1):
+                pygame.draw.line(s2, (0, 160, 255, 22),   ia[j], ia[j+1], 11)
+            for j in range(len(ia)-1):
+                pygame.draw.line(s2, (30, 200, 255, 40),  ia[j], ia[j+1], 6)
+
+            seed_b = int(tv * 35) + id(target) % 9999 + 3333
+            pts_b = self._zigzag_points(cx, cy, tx, ty, 16, 12, seed_b)
+            ib = [(int(p[0]), int(p[1])) for p in pts_b]
+            for j in range(len(ib)-1):
+                pygame.draw.line(s2, (80, 210, 255, 80),  ib[j], ib[j+1], 4)
+            for j in range(len(ib)-1):
+                pygame.draw.line(s2, (160, 230, 255, 160), ib[j], ib[j+1], 2)
+
+            seed_c = int(tv * 42) + id(target) % 9999 + 7777
+            pts_c = self._zigzag_points(cx, cy, tx, ty, 14, 6, seed_c)
+            ic = [(int(p[0]), int(p[1])) for p in pts_c]
+            for j in range(len(ic)-1):
+                pygame.draw.line(s2, (200, 240, 255, 220), ic[j], ic[j+1], 2)
+            for j in range(len(ic)-1):
+                pygame.draw.line(s2, (230, 248, 255, 255), ic[j], ic[j+1], 1)
+
+            ir_base = int(abs(math.sin(tv * 22 + tx * 0.05)) * 14) + 8
+            imp_size = 120
+            imp = pygame.Surface((imp_size, imp_size), pygame.SRCALPHA)
+            hc = imp_size // 2
+            pygame.draw.circle(imp, (0,  140, 220, 18),  (hc, hc), ir_base + 30)
+            pygame.draw.circle(imp, (20, 180, 255, 35),  (hc, hc), ir_base + 20)
+            pygame.draw.circle(imp, (60, 210, 255, 70),  (hc, hc), ir_base + 12)
+            pygame.draw.circle(imp, (120,220, 255, 130), (hc, hc), ir_base + 5)
+            pygame.draw.circle(imp, (180,240, 255, 200), (hc, hc), ir_base)
+            pygame.draw.circle(imp, (220,248, 255, 255), (hc, hc), max(2, ir_base - 4))
+            import random as _r2
+            spark_rng = _r2.Random(int(tv * 20) + tx)
+            for _ in range(6):
+                sa = spark_rng.uniform(0, math.pi * 2)
+                sr = spark_rng.uniform(ir_base + 4, ir_base + 18)
+                sx2 = hc + int(math.cos(sa) * sr)
+                sy2 = hc + int(math.sin(sa) * sr)
+                sx1 = hc + int(math.cos(sa) * (ir_base + 1))
+                sy1 = hc + int(math.sin(sa) * (ir_base + 1))
+                pygame.draw.line(imp, (140, 220, 255, 180), (sx1, sy1), (sx2, sy2), 1)
+            surf.blit(imp, (tx - hc, ty - hc))
+
+        surf.blit(s2, (0, 0))
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (40, 200, 255, 18), (r, r), r)
+        pygame.draw.circle(s, (40, 200, 255, 55), (r, r), r, 2)
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+
+    def get_info(self):
+        info = {
+            "Damage":   self.damage,
+            "Firerate": f"{self.firerate:.2f}",
+            "Range":    self.range_tiles,
+            "Targets":  "∞",
+            "HidDet":   "YES" if self.hidden_detection else "no",
+        }
+        if self.level >= 2:
+            info["Lightning"] = f"{int(self._charge)}/{LIGHTNING_THRESHOLD} ({LIGHTNING_DAMAGE} dmg)"
+        return info
+
+Caster = HackerLaserTest  # alias
+
+# ── DoubleAccelerator ──────────────────────────────────────────────────────────
+C_DACCEL      = (180, 80, 255)
+C_DACCEL_DARK = (40, 10, 80)
+
+# Same stats as max-level Accelerator, but exclusive/cosmetic variant
+# (damage, firerate, range_tiles, upgrade_cost, dual)
+DACCEL_LEVELS = [
+    (36, 0.108, 7, None, True),   # lv0 — already at max accel stats, no upgrades
+]
+
+class DoubleAccelerator(Unit):
+    PLACE_COST = 7500
+    COLOR      = C_DACCEL
+    NAME       = "Accelerator+"
+    hidden_detection = True
+
+    # Orbit distance from center for the triangles
+    _TRI_ORBIT = 38
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self.damage      = 36
+        self.firerate    = 0.108
+        self.range_tiles = 7
+        self.dual        = True
+        self.cd_left     = 0.0
+        self._laser_t    = 0.0
+        self._laser_targets = []
+        self._aim_angle  = 0.0   # angle toward current target
+        self._attacking  = False
+        self._attack_lerp = 0.0  # 0=idle (left/right), 1=locked toward enemy
+        # Load triangle images
+        self._tri_img = None
+        self._frost_img = None
+        self._tri_img_cache = {}
+        try:
+            import os as _os
+            _base = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                               "assets", "image")
+            _p = _os.path.join(_base, "double_accelerator_triangles.png.png")
+            self._tri_img = pygame.image.load(_p).convert_alpha()
+        except Exception:
+            self._tri_img = None
+
+
+    def upgrade_cost(self): return None
+    def upgrade(self): pass
+
+    def _get_tri_img(self, size):
+        if self._tri_img is None: return None
+        if size not in self._tri_img_cache:
+            self._tri_img_cache[size] = pygame.transform.smoothscale(self._tri_img, (size, size))
+        return self._tri_img_cache[size]
+
+
+    def update(self, dt, enemies, effects, money):
+        self._laser_t += dt
+        if self.cd_left > 0: self.cd_left -= dt
+
+        targets = self._get_targets(enemies, 2)
+        self._laser_targets = targets
+
+        if targets:
+            # Aim toward first target
+            t0 = targets[0]
+            self._aim_angle = math.atan2(t0.y - self.py, t0.x - self.px)
+            self._attacking = True
+            self._attack_lerp = min(1.0, self._attack_lerp + dt * 8)
+        else:
+            self._attacking = False
+            self._attack_lerp = max(0.0, self._attack_lerp - dt * 4)
+            # No free orbit — triangles stay fixed left/right
+
+        if self.cd_left <= 0 and targets:
+            self.cd_left = self.firerate
+            for t in targets:
+                t.take_damage(self.damage)
+                self.total_damage += self.damage
+
+    def _tri_positions(self):
+        """Return (left_pos, right_pos) of the two triangles."""
+        # When idle: triangles sit directly left and right of center
+        # When attacking: rotate to be left/right of the laser direction
+        idle_left_a  = math.pi       # left  (180°)
+        idle_right_a = 0.0           # right (0°)
+
+        aim_left_a  = self._aim_angle + math.pi / 2
+        aim_right_a = self._aim_angle - math.pi / 2
+
+        t = self._attack_lerp
+        left_a  = idle_left_a  + t * (aim_left_a  - idle_left_a)
+        right_a = idle_right_a + t * (aim_right_a - idle_right_a)
+
+        cx, cy = self.px, self.py
+        lx = cx + math.cos(left_a)  * self._TRI_ORBIT
+        ly = cy + math.sin(left_a)  * self._TRI_ORBIT
+        rx = cx + math.cos(right_a) * self._TRI_ORBIT
+        ry = cy + math.sin(right_a) * self._TRI_ORBIT
+        return (lx, ly), (rx, ry)
+
+    def draw(self, surf):
+        cx, cy = int(self.px), int(self.py)
+        t = self._laser_t
+
+        # ── Aura ────────────────────────────────────────────────────────────
+        pulse = int(abs(math.sin(t * 5)) * 50) + 20
+        aura = pygame.Surface((120, 120), pygame.SRCALPHA)
+        pygame.draw.circle(aura, (140, 40, 255, pulse // 3), (60, 60), 56)
+        pygame.draw.circle(aura, (180, 80, 255, pulse),      (60, 60), 36)
+        surf.blit(aura, (cx - 60, cy - 60))
+
+        # ── Core body ────────────────────────────────────────────────────────
+        pygame.draw.circle(surf, C_DACCEL_DARK, (cx, cy), 27)
+        pygame.draw.circle(surf, C_DACCEL,      (cx, cy), 20)
+        pygame.draw.circle(surf, (200, 140, 255), (cx, cy), 20, 2)
+        # Lightning bolt (same as Accelerator)
+        bolt = [(cx+4,cy-14),(cx-3,cy-1),(cx+5,cy-1),(cx-4,cy+14),(cx+3,cy+1),(cx-5,cy+1)]
+        pygame.draw.polygon(surf, (230, 200, 255), bolt)
+        pygame.draw.polygon(surf, (255, 245, 255), bolt, 1)
+
+        # ── Laser beams (drawn BEFORE triangles so triangles appear on top) ──
+        (lx, ly), (rx, ry) = self._tri_positions()
+
+        for target in self._laser_targets:
+            if not target.alive: continue
+            tx, ty = int(target.x), int(target.y)
+            tv = t
+
+            s2 = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            flicker = int(abs(math.sin(tv * 22)) * 3)
+
+            # Laser FROM left triangle
+            for width, color, alpha in [
+                (18+flicker, (120,40,255), 18), (11, (160,80,255), 35),
+                (7, (200,130,255), 70), (4, (230,190,255), 140), (2, (255,240,255), 220)
+            ]:
+                pygame.draw.line(s2, (*color, alpha), (int(lx), int(ly)), (tx, ty), width)
+
+            # Laser FROM right triangle
+            for width, color, alpha in [
+                (18+flicker, (120,40,255), 18), (11, (160,80,255), 35),
+                (7, (200,130,255), 70), (4, (230,190,255), 140), (2, (255,240,255), 220)
+            ]:
+                pygame.draw.line(s2, (*color, alpha), (int(rx), int(ry)), (tx, ty), width)
+
+            surf.blit(s2, (0, 0))
+
+            # Impact flash
+            imp = pygame.Surface((50, 50), pygame.SRCALPHA)
+            ir = int(abs(math.sin(tv * 18)) * 8) + 6
+            pygame.draw.circle(imp, (220, 180, 255, 100), (25, 25), ir + 4)
+            pygame.draw.circle(imp, (255, 240, 255, 180), (25, 25), ir)
+            surf.blit(imp, (tx - 25, ty - 25))
+
+        # ── Triangle images ──────────────────────────────────────────────────
+        tri_size = 36
+        img_tri  = self._get_tri_img(tri_size)
+        aim_deg = math.degrees(self._aim_angle)
+
+        for pos, side in [((lx, ly), 1), ((rx, ry), -1)]:
+            px2, py2 = int(pos[0]), int(pos[1])
+
+            # Glow around each triangle
+            glow = pygame.Surface((tri_size+20, tri_size+20), pygame.SRCALPHA)
+            ga = int(abs(math.sin(t * 6 + side)) * 60) + 30
+            pygame.draw.circle(glow, (180, 80, 255, ga),
+                               ((tri_size+20)//2, (tri_size+20)//2), (tri_size+20)//2)
+            surf.blit(glow, (px2 - (tri_size+20)//2, py2 - (tri_size+20)//2))
+
+            rot_angle = -(aim_deg + side * 90)
+            if img_tri:
+                rotated = pygame.transform.rotate(img_tri, rot_angle)
+                surf.blit(rotated, rotated.get_rect(center=(px2, py2)))
+            else:
+                d = 10
+                pts = [(px2, py2-d), (px2+d, py2), (px2, py2+d), (px2-d, py2)]
+                pygame.draw.polygon(surf, C_DACCEL, pts)
+                pygame.draw.polygon(surf, (255, 200, 255), pts, 2)
+
+
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r*2, r*2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (180, 80, 255, 18), (r, r), r)
+        pygame.draw.circle(s, (180, 80, 255, 55), (r, r), r, 2)
+        surf.blit(s, (int(self.px)-r, int(self.py)-r))
+
+    def get_info(self):
+        return {
+            "Damage":   self.damage,
+            "Firerate": f"{self.firerate:.4f}",
+            "Range":    self.range_tiles,
+            "Dual":     "YES",
+            "HidDet":   "YES",
+        }
+
+
+# ── Warlock ────────────────────────────────────────────────────────────────────
+C_WARLOCK      = (160, 60, 220)
+C_WARLOCK_DARK = (50,  10,  80)
+
+# Tuple: (melee_dmg, melee_fr, melee_range, ranged_dmg, ranged_fr, ranged_range,
+#          upgrade_cost, hidden_det, melee_pierce, knockback_dist)
+WARLOCK_LEVELS = [
+    # lv0
+    (45,  2.0,  6.0,  25, 1.0, 12.0,  None,  False, 1,  0.0),
+    # lv1
+    (75,  2.0,  6.0,  40, 1.0, 13.0,  2500,  False, 1,  0.0),
+    # lv2  — knockback 15px, hidden detect, ranged: 0.8 fr, +1 range, melee +0.5 range
+    (140, 2.0,  6.5,  60, 0.8, 14.0,  6800,  True,  1,  15.0),
+    # lv3
+    (200, 2.0,  6.5, 115, 0.8, 14.0, 12000,  True,  1,  17.5),
+    # lv4  — melee pierce 2
+    (200, 1.808,6.5, 190, 0.8, 14.5, 22500,  True,  2,  17.5),
+    # lv5  — ranged 0.708 fr
+    (400, 1.808,7.5, 260, 0.708,17.0, 32500,  True,  2,  20.0),
+]
+
+
+class Warlock(Unit):
+    PLACE_COST       = 4200
+    COLOR            = C_WARLOCK
+    NAME             = "Warlock"
+    hidden_detection = False
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._melee_cd   = 0.0
+        self._ranged_cd  = 0.0
+        self._swing_t    = 0.0    # animation timer
+        self._aim_angle  = 0.0
+        self._orb_angle  = 0.0
+        self._swing_flash = 0.0
+        self._laser_flashes = []  # [(tx,ty,age)] red laser flashes
+        self._hit_counters = {}
+        self._apply_level()
+
+    def _apply_level(self):
+        row = WARLOCK_LEVELS[self.level]
+        (self._melee_dmg, self._melee_fr, self._melee_range,
+         self._ranged_dmg, self._ranged_fr, self._ranged_range,
+         _, hd, self._melee_pierce, self._knockback_dist) = row
+        self.hidden_detection = hd
+        # expose for UI
+        self.damage      = self._melee_dmg
+        self.firerate    = self._melee_fr
+        self.range_tiles = self._ranged_range
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(WARLOCK_LEVELS): return None
+        return WARLOCK_LEVELS[nxt][6]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(WARLOCK_LEVELS):
+            self.level = nxt; self._apply_level()
+
+    # ── helpers ───────────────────────────────────────────────────────────────
+    def _enemies_in_range(self, enemies, range_tiles):
+        r = range_tiles * TILE
+        out = []
+        for e in enemies:
+            if not e.alive: continue
+            if getattr(e, '_reversed', False): continue
+            if e.IS_HIDDEN and not self.hidden_detection: continue
+            if dist((e.x, e.y), (self.px, self.py)) <= r:
+                out.append(e)
+        return out
+
+    def _sort_by_mode(self, pool):
+        mode = getattr(self, 'target_mode', 'First')
+        if   mode == "First":      pool.sort(key=lambda e: -e.x)
+        elif mode == "Last":       pool.sort(key=lambda e:  e.x)
+        elif mode == "Lowest HP":  pool.sort(key=lambda e:  e.hp)
+        elif mode == "Highest HP": pool.sort(key=lambda e: -e.hp)
+        elif mode == "Nearest":    pool.sort(key=lambda e:  dist((e.x,e.y),(self.px,self.py)))
+        elif mode == "Farthest":   pool.sort(key=lambda e: -dist((e.x,e.y),(self.px,self.py)))
+
+    # ── update ────────────────────────────────────────────────────────────────
+    def update(self, dt, enemies, effects, money):
+        self._swing_t  += dt
+        self._orb_angle += dt * 120
+        if self._melee_cd  > 0: self._melee_cd  -= dt
+        if self._ranged_cd > 0: self._ranged_cd -= dt
+        if self._swing_flash > 0: self._swing_flash -= dt
+
+        # ── Melee ─────────────────────────────────────────────────────────
+        if self._melee_cd <= 0:
+            melee_pool = self._enemies_in_range(enemies, self._melee_range)
+            if melee_pool:
+                self._sort_by_mode(melee_pool)
+                primary = melee_pool[0]
+                self._aim_angle = math.atan2(primary.y - self.py, primary.x - self.px)
+                arc_half = math.radians(90)
+                hits = 0
+                for e in melee_pool:
+                    if hits >= self._melee_pierce: break
+                    angle = math.atan2(e.y - self.py, e.x - self.px)
+                    diff  = abs(math.atan2(math.sin(angle - self._aim_angle),
+                                           math.cos(angle - self._aim_angle)))
+                    if diff <= arc_half:
+                        e.take_damage(self._melee_dmg)
+                        self.total_damage += self._melee_dmg
+                        hits += 1
+                self._melee_cd   = self._melee_fr
+                self._swing_flash = 0.18
+
+        # ── Ranged — only enemies OUTSIDE melee range ──────────────────────
+        if self._ranged_cd <= 0:
+            all_ranged = self._enemies_in_range(enemies, self._ranged_range)
+            melee_ids  = {id(e) for e in self._enemies_in_range(enemies, self._melee_range)}
+            ranged_only = [e for e in all_ranged if id(e) not in melee_ids]
+            if ranged_only:
+                self._sort_by_mode(ranged_only)
+                target = ranged_only[0]
+                # Instant hit
+                target.take_damage(self._ranged_dmg)
+                self.total_damage += self._ranged_dmg
+                if self._knockback_dist > 0:
+                    eid = id(target)
+                    self._hit_counters[eid] = self._hit_counters.get(eid, 0) + 1
+                    if self._hit_counters[eid] >= 2:
+                        self._hit_counters[eid] = 0
+                        # Push backward along path (reverse direction of travel)
+                        import game_core as _gc
+                        path = getattr(target, '_frosty_path', None) or _gc.get_map_path()
+                        wp = getattr(target, '_wp_index', 1)
+                        # Forward direction = toward current waypoint
+                        if wp < len(path):
+                            wpx, wpy = path[wp]
+                        else:
+                            wpx, wpy = path[-1]
+                        fwd_dx = wpx - target.x
+                        fwd_dy = wpy - target.y
+                        fwd_d = math.hypot(fwd_dx, fwd_dy) or 1
+                        # Push opposite to travel direction
+                        target.x -= fwd_dx / fwd_d * self._knockback_dist
+                        target.y -= fwd_dy / fwd_d * self._knockback_dist
+                        # If pushed past previous waypoint, snap back and decrement wp
+                        if wp >= 2:
+                            prev_x, prev_y = path[wp - 1]
+                            ppx, ppy = path[wp - 2]
+                            seg_dx = prev_x - ppx; seg_dy = prev_y - ppy
+                            seg_d = math.hypot(seg_dx, seg_dy) or 1
+                            # Check if target is now behind prev waypoint
+                            dot = ((target.x - prev_x) * (-seg_dx / seg_d) +
+                                   (target.y - prev_y) * (-seg_dy / seg_d))
+                            if dot > 0:
+                                target.x = float(prev_x)
+                                target.y = float(prev_y)
+                                target._wp_index = max(1, wp - 1)
+                # Store laser flash
+                self._laser_flashes.append([float(target.x), float(target.y), 0.5])
+                self._ranged_cd = self._ranged_fr
+
+        # ── Tick laser flashes ─────────────────────────────────────────────
+        for f2 in self._laser_flashes:
+            f2[2] -= dt
+        self._laser_flashes = [f2 for f2 in self._laser_flashes if f2[2] > 0]
+
+    # ── draw ─────────────────────────────────────────────────────────────────
+    def draw(self, surf):
+        cx, cy = int(self.px), int(self.py)
+        t = self._swing_t
+
+        # Aura
+        pulse = int(abs(math.sin(t * 4)) * 50) + 20
+        aura = pygame.Surface((110, 110), pygame.SRCALPHA)
+        pygame.draw.circle(aura, (120, 30, 200, pulse // 3), (55, 55), 52)
+        pygame.draw.circle(aura, (160, 60, 220, pulse),      (55, 55), 34)
+        surf.blit(aura, (cx - 55, cy - 55))
+
+        # Melee flash
+        if self._swing_flash > 0:
+            frac = self._swing_flash / 0.18
+            a2 = math.radians(self._aim_angle)
+            arc_r = int(self._melee_range * TILE)
+            arc_s = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            alpha = int(frac * 80)
+            for i in range(12):
+                ang = a2 - math.radians(90) + math.radians(180 * i / 11)
+                x1 = cx + int(math.cos(ang) * 10)
+                y1 = cy + int(math.sin(ang) * 10)
+                x2 = cx + int(math.cos(ang) * arc_r)
+                y2 = cy + int(math.sin(ang) * arc_r)
+                pygame.draw.line(arc_s, (220, 100, 255, alpha), (x1, y1), (x2, y2), 3)
+            surf.blit(arc_s, (0, 0))
+
+        # Body
+        pygame.draw.circle(surf, C_WARLOCK_DARK, (cx, cy), 26)
+        pygame.draw.circle(surf, C_WARLOCK,      (cx, cy), 20)
+        pygame.draw.circle(surf, (200, 140, 255), (cx, cy), 20, 2)
+
+        # Staff symbol
+        pygame.draw.line(surf, (200, 140, 255), (cx, cy - 14), (cx, cy + 14), 3)
+        pygame.draw.circle(surf, (230, 180, 255), (cx, cy - 14), 5)
+        pygame.draw.circle(surf, (255, 220, 255), (cx, cy - 14), 3)
+
+        # Orbiting orb
+        oa = math.radians(self._orb_angle)
+        ox2 = cx + int(math.cos(oa) * 22)
+        oy2 = cy + int(math.sin(oa) * 22)
+        orb_s = pygame.Surface((20, 20), pygame.SRCALPHA)
+        pygame.draw.circle(orb_s, (180, 80, 255, 120), (10, 10), 8)
+        pygame.draw.circle(orb_s, (230, 180, 255, 220), (10, 10), 5)
+        surf.blit(orb_s, (ox2 - 10, oy2 - 10))
+
+        # Level pips
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_WARLOCK, (cx - 14 + i * 6, cy + 36), 3)
+
+        # ── Ranged laser flashes (0.5s fade) ────────────────────────────────
+        if self._laser_flashes:
+            s2 = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            import random as _r
+            for fl in self._laser_flashes:
+                ox, oy = int(self.px), int(self.py)
+                tx2, ty2 = int(fl[0]), int(fl[1])
+                frac = fl[2] / 0.5  # 1.0 fresh → 0.0 gone
+                tv = self._swing_t
+
+                pygame.draw.line(s2, (180,0,0,  int(10*frac)), (ox,oy),(tx2,ty2), 22)
+                pygame.draw.line(s2, (255,40,40, int(18*frac)), (ox,oy),(tx2,ty2), 14)
+
+                for bolt_i in range(3):
+                    seed = int(tv*30) + bolt_i*9999 + tx2
+                    amp  = 18 - bolt_i*5
+                    segs = 14
+                    rng2 = _r.Random(seed)
+                    dx2 = tx2-ox; dy2 = ty2-oy
+                    ln = math.hypot(dx2,dy2) or 1
+                    pvx = -dy2/ln; pvy = dx2/ln
+                    pts = [(ox,oy)]
+                    for i in range(1,segs):
+                        t3 = i/segs
+                        bx2 = ox+dx2*t3; by2 = oy+dy2*t3
+                        taper = math.sin(t3*math.pi)
+                        off = rng2.uniform(-amp,amp)*taper
+                        pts.append((bx2+pvx*off, by2+pvy*off))
+                    pts.append((tx2,ty2))
+                    ipts = [(int(p2[0]),int(p2[1])) for p2 in pts]
+                    if bolt_i==0:
+                        for j in range(len(ipts)-1):
+                            pygame.draw.line(s2,(200,0,0,int(22*frac)),ipts[j],ipts[j+1],11)
+                        for j in range(len(ipts)-1):
+                            pygame.draw.line(s2,(255,60,60,int(40*frac)),ipts[j],ipts[j+1],6)
+                    elif bolt_i==1:
+                        for j in range(len(ipts)-1):
+                            pygame.draw.line(s2,(255,80,80,int(80*frac)),ipts[j],ipts[j+1],4)
+                        for j in range(len(ipts)-1):
+                            pygame.draw.line(s2,(255,160,160,int(160*frac)),ipts[j],ipts[j+1],2)
+                    else:
+                        for j in range(len(ipts)-1):
+                            pygame.draw.line(s2,(255,200,200,int(220*frac)),ipts[j],ipts[j+1],2)
+                        for j in range(len(ipts)-1):
+                            pygame.draw.line(s2,(255,240,240,int(255*frac)),ipts[j],ipts[j+1],1)
+
+                ir = int(abs(math.sin(tv*22+tx2*0.05))*10)+6
+                imp = pygame.Surface((80,80),pygame.SRCALPHA)
+                hc = 40
+                pygame.draw.circle(imp,(180,0,0,   int(20*frac)),(hc,hc),ir+20)
+                pygame.draw.circle(imp,(255,60,60,  int(50*frac)),(hc,hc),ir+10)
+                pygame.draw.circle(imp,(255,120,120,int(130*frac)),(hc,hc),ir+4)
+                pygame.draw.circle(imp,(255,200,200,int(220*frac)),(hc,hc),ir)
+                surf.blit(imp,(tx2-hc,ty2-hc))
+            surf.blit(s2,(0,0))
+
+    def draw_range(self, surf):
+        # Two circles: melee (red) and ranged (white)
+        rm = int(self._melee_range  * TILE)
+        rr = int(self._ranged_range * TILE)
+        # Ranged (white, outer)
+        s2 = pygame.Surface((rr * 2, rr * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s2, (255, 255, 255, 18), (rr, rr), rr)
+        pygame.draw.circle(s2, (255, 255, 255, 60), (rr, rr), rr, 2)
+        surf.blit(s2, (int(self.px) - rr, int(self.py) - rr))
+        # Melee (red, inner)
+        s1 = pygame.Surface((rm * 2, rm * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s1, (255, 60,  60,  18), (rm, rm), rm)
+        pygame.draw.circle(s1, (255, 60,  60,  80), (rm, rm), rm, 2)
+        surf.blit(s1, (int(self.px) - rm, int(self.py) - rm))
+
+    def get_info(self):
+        info = {
+            "Damage":        self._melee_dmg,
+            "RangedDamage":  self._ranged_dmg,
+            "RangedFR":      f"{self._ranged_fr:.3f}",
+            "RangedRange":   self._ranged_range,
+        }
+        if self._knockback_dist > 0:
+            info["Knockback"] = f"{self._knockback_dist}px / 2 hits"
+        return info
+
+
+WarlockUnit = Warlock  # alias

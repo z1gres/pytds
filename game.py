@@ -129,6 +129,9 @@ from units import (
     C_SNOWBALLER, C_SNOWBALLER_DARK,
     Commando, COMMANDO_LEVELS,
     C_COMMANDO, C_COMMANDO_DARK,
+    Caster, C_HACKER, C_HACKER_DARK, CASTER_LEVELS, LIGHTNING_THRESHOLD,
+    DoubleAccelerator, C_DACCEL, C_DACCEL_DARK, DACCEL_LEVELS,
+    Warlock, WarlockUnit, C_WARLOCK, C_WARLOCK_DARK, WARLOCK_LEVELS,
     SPAWN_MAP, CONSOLE_HELP,
     C_LIFESTEALER, C_LIFESTEALER_DARK,
     C_FROST, C_FROST_DARK, C_FROST_ICE,
@@ -227,6 +230,20 @@ class DevConsole:
             game.wave_mgr.wave = 40
             game.wave_mgr.state = "waiting"
             self.output_lines.append("  fk_test: wave 40 queued — music starts now")
+        elif c=="fs_test":
+            # Simulate frosty mode wave 40: music → spawn Frost Spirit
+            game.mode = "frosty"
+            game._frost_spirit_spawned = False
+            game._frost_spirit_music_timer = None
+            game._frosty_bgm_active = False
+            game._frosty_bgm_stopped = True
+            # Clear enemies, force wave 40 waiting state
+            for e in game.enemies: e.alive = False
+            game.wave_mgr.wave = 40
+            game.wave_mgr.state = "waiting"
+            try: pygame.mixer.music.stop()
+            except: pass
+            self.output_lines.append("  fs_test: wave 40 queued — frostspirit music starts now")
         elif c=="5":
             game._x5000_dmg = not getattr(game,"_x5000_dmg",False)
             state = "ON" if game._x5000_dmg else "OFF"
@@ -460,6 +477,9 @@ class AdminPanel:
                 ("SbOld",SnowballerOld,C_SNOWBALLER),
                 ("Commander",Commander,C_COMMANDER),
                 ("Commando",Commando,C_COMMANDO),
+                ("Caster",Caster,C_HACKER),
+                ("Accel+",DoubleAccelerator,C_DACCEL),
+                ("Warlock",Warlock,C_WARLOCK),
                 ("Spotlight",SpotlightTech,C_SPOTLIGHT),
             ]
             active_cls=set(s for s in (ui_ref.SLOT_TYPES if ui_ref else []) if s)
@@ -717,7 +737,7 @@ class UI:
         pygame.draw.rect(surf,(20,15,35),rect,border_radius=6)
         pygame.draw.rect(surf,(60,50,90),rect,2,border_radius=6)
         t=pygame.time.get_ticks()*0.001
-        if isinstance(u,Accelerator): draw_accel_icon(surf,cx,cy,t,size=30)
+        if isinstance(u,Accelerator) or isinstance(u,DoubleAccelerator): draw_accel_icon(surf,cx,cy,t,size=30)
         elif isinstance(u,Xw5ytUnit): draw_xw5yt_icon(surf,cx,cy,t,size=30)
         elif isinstance(u,Frostcelerator): draw_frost_icon(surf,cx,cy,t,size=30)
         elif isinstance(u,Lifestealer):
@@ -1041,6 +1061,15 @@ class UI:
                     "Burst":f"{burst} shots / {bcd:.1f}s cd","Pierce":pierce}
             if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
             return result
+        elif cls==Warlock:
+            if nxt>=len(WARLOCK_LEVELS): return None
+            row=WARLOCK_LEVELS[nxt]
+            md,mfr,mr,rd,rfr,rr,_,hd,mp,kb=row
+            result={"Damage":md,"RangedDamage":rd,"RangedFR":f"{rfr:.3f}","RangedRange":rr}
+            if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
+            if kb>unit._knockback_dist: result["Knockback"]=f"{kb}px / 2 hits"
+            if mp>unit._melee_pierce: result["Pierce"]=f"Up to {mp} enemies"
+            return result
         return None
 
     def draw(self,surf,units,money,wave_mgr,player_hp,player_maxhp,enemies,
@@ -1061,7 +1090,7 @@ class UI:
             txt(surf,"⚙ ADMIN",ap_r.center,C_WHITE,font_md,center=True)
             self._admin_btn_rect=ap_r
         else:
-            wave_str="good luck" if gl else f"WAVE  {wave}/{wave_mgr.max_waves}"
+            wave_str="good luck" if gl else (f"WAVE  {wave}" if wave_mgr.max_waves>=999999 else f"WAVE  {wave}/{wave_mgr.max_waves}")
             txt(surf,wave_str,(18,14),C_RED if gl else C_CYAN,font_lg)
             tl=wave_mgr.time_left()
             if tl is not None and not gl: txt(surf,f"Next: {tl:.1f}s",(210,18),C_GOLD,font_sm)
@@ -1217,13 +1246,13 @@ class UI:
 
             cls=type(u)
             nxt=self._get_next_stats(u)
-            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS}
+            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,DoubleAccelerator:DACCEL_LEVELS,Warlock:WARLOCK_LEVELS}
             lvl_list=levels_map.get(cls,[])
             total_lvls=len(lvl_list)
 
             # Build stats list: (key, display_val, next_val_or_None)
             # HidDet: shown in stats only if already active; shown in "changes" if it unlocks next
-            STAT_ICO={"Damage":"damage_ico","Firerate":"firerate_ico",
+            STAT_ICO={"RangedDamage":"ranged_damage_ico","Damage":"damage_ico","Firerate":"firerate_ico",
                       "Range":"range_ico","Slow":"slow_ico","HidDet":"hidden_detection_ico",
                       "FlameArrow":"flame_ico","IceArrow":"slow_ico","Income":"money_ico",
                       "Pierce":"pierce_ico","Freeze":"slow_ico"}
@@ -1530,11 +1559,36 @@ class UI:
                 if u.level>=2: stats.append(("Grenade","AoE 3-tile splash",None))
                 elif nxt and u.level==1: stats.append(("Grenade",None,"AoE 3-tile splash"))
                 if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
+            elif cls==Warlock:
+                nxt_row=WARLOCK_LEVELS[u.level+1] if u.level+1<len(WARLOCK_LEVELS) else None
+                stats=[]
+                if u.hidden_detection: stats.append(("HidDet","Hidden Detection",None))
+                # Melee
+                stats.append(("Damage", u._melee_dmg,
+                    nxt_row[0] if nxt_row else None))
+                # Ranged
+                stats.append(("RangedDamage", u._ranged_dmg,
+                    nxt_row[3] if nxt_row else None))
+                stats.append(("RangedFR", f"{u._ranged_fr:.3f}",
+                    f"{nxt_row[4]:.3f}" if nxt_row else None))
+                stats.append(("RangedRange", u._ranged_range,
+                    nxt_row[5] if nxt_row else None))
+                if u._knockback_dist>0:
+                    stats.append(("Knockback",f"{u._knockback_dist}px/2hits",
+                        f"{nxt_row[9]}px/2hits" if nxt_row and nxt_row[9]!=u._knockback_dist else None))
+                elif nxt_row and nxt_row[9]>0:
+                    stats.append(("Knockback",None,f"{nxt_row[9]}px/2hits"))
+                if nxt_row and not u.hidden_detection and nxt_row[7]:
+                    stats.append(("HidDet_unlock",None,"Hidden Detection"))
+                if u._melee_pierce>=2:
+                    stats.append(("Pierce",f"Up to {u._melee_pierce} enemies",None))
+                elif nxt_row and nxt_row[8]>u._melee_pierce:
+                    stats.append(("Pierce",None,f"Up to {nxt_row[8]} enemies"))
             else:
                 stats=[(k,v,None) for k,v in u.get_info().items()]
 
             STAT_COLORS={"HidDet":(80,255,120),"HidDet_unlock":(80,255,120),
-                         "Damage":(255,120,80),"Firerate":(255,220,60),
+                         "Damage":(255,120,80),"RangedDamage":(255,160,80),"Firerate":(255,220,60),
                          "Range":(80,200,255),"Dual_unlock":(200,100,255),"Slow":(100,200,255),
                          "Money":(220,60,80),"Pierce":(200,160,80),
                          "FlameArrow":(255,130,30),"FlameArrow_unlock":(255,130,30),
@@ -1551,6 +1605,16 @@ class UI:
             # === TOP HALF: portrait left + STATS right ===
             # For Frostcelerator: stun bar at very top of card
             top_offset=4
+            if isinstance(u,Caster) and u.level>=2:
+                bar_x=mx_m+6; bar_w=mw-12; bar_y=my_m+top_offset+14
+                frac=min(1.0,u._charge/LIGHTNING_THRESHOLD)
+                lbl_s=font_sm.render(f"Lightning: {int(u._charge)}/{LIGHTNING_THRESHOLD}",True,C_HACKER)
+                surf.blit(lbl_s,(bar_x,my_m+top_offset))
+                pygame.draw.rect(surf,(10,25,55),(bar_x,bar_y,bar_w,9),border_radius=4)
+                fill_col=(40,200,255) if frac<1.0 else (200,240,255)
+                pygame.draw.rect(surf,fill_col,(bar_x,bar_y,int(bar_w*frac),9),border_radius=4)
+                pygame.draw.rect(surf,C_HACKER,(bar_x,bar_y,bar_w,9),1,border_radius=4)
+                top_offset+=26
             if isinstance(u,Frostcelerator):
                 bar_x=mx_m+6; bar_w=mw-12; bar_y=my_m+top_offset+14
                 frac=min(1.0,u._shared_dmg/1000)
@@ -1943,6 +2007,10 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
             "Snowballer": C_SNOWBALLER,
             "Commander": C_COMMANDER,
             "Commando": C_COMMANDO,
+            "hacker_laser_effects_test": C_HACKER,
+            "Caster": C_HACKER,
+            "Accelerator+": C_DACCEL,
+            "Warlock": C_WARLOCK,
         }
         unit_col = _col_map.get(unit_name, C_ASSASSIN)
         pygame.draw.circle(surf, (30, 20, 50), (icon_cx, icon_cy), 36)
@@ -1959,7 +2027,10 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
                 "Frost Blaster": 800, "Sledger": 950, "Gladiator": 500,
                 "Toxic Gunner": 525, "Slasher": 1700, "Golden Cowboy": 550,
                 "Hallow Punk": 300, "Spotlight Tech": 3250,
-                "Snowballer": 400, "Commander": 650, "Commando": 900}
+                "Snowballer": 400, "Commander": 650, "Commando": 900,
+                "hacker_laser_effects_test": 7500, "Caster": 7500,
+                "Accelerator+": 7500,
+                "Warlock": 4200}
     cost = cost_map.get(unit_name)
     if cost:
         ico_m = load_icon("money_ico", 18)
@@ -2188,15 +2259,17 @@ class DifficultyMenu:
         self.t = 0.0
         self.action = None
         self.save_data = save_data or {}
-        card_w, card_h = 180, 240
+        card_w, card_h = 160, 240
         cx = SCREEN_W // 2
-        # 4 cards: Easy, Fallen, Frosty, Sandbox
-        total_cards_w = card_w * 4 + 40 * 3
+        # 5 cards: Easy, Fallen, Frosty, Endless, Sandbox
+        gap = 28
+        total_cards_w = card_w * 5 + gap * 4
         x0 = cx - total_cards_w // 2
-        self.card_easy    = pygame.Rect(x0,                    220, card_w, card_h)
-        self.card_fallen  = pygame.Rect(x0 + card_w + 40,     220, card_w, card_h)
-        self.card_frosty  = pygame.Rect(x0 + card_w*2 + 80,   220, card_w, card_h)
-        self.card_sandbox = pygame.Rect(x0 + card_w*3 + 120,  220, card_w, card_h)
+        self.card_easy    = pygame.Rect(x0,                         220, card_w, card_h)
+        self.card_fallen  = pygame.Rect(x0 + (card_w+gap),         220, card_w, card_h)
+        self.card_frosty  = pygame.Rect(x0 + (card_w+gap)*2,       220, card_w, card_h)
+        self.card_endless = pygame.Rect(x0 + (card_w+gap)*3,       220, card_w, card_h)
+        self.card_sandbox = pygame.Rect(x0 + (card_w+gap)*4,       220, card_w, card_h)
 
         btn_w, btn_h = 260, 54
         self.btn_back = pygame.Rect(cx - btn_w//2, 220 + card_h + 20, btn_w, btn_h)
@@ -2215,6 +2288,7 @@ class DifficultyMenu:
                     if self.card_easy.collidepoint(pos):    self.action = "play_easy"
                     if self.card_fallen.collidepoint(pos):  self.action = "play_fallen"
                     if self.card_frosty.collidepoint(pos):  self.action = "play_frosty"
+                    if self.card_endless.collidepoint(pos): self.action = "play_endless"
                     if self.card_sandbox.collidepoint(pos): self.action = "play_sandbox"
                     if self.btn_back.collidepoint(pos):     self.action = "back"
             self._draw()
@@ -2287,6 +2361,7 @@ class DifficultyMenu:
         hov_easy    = self.card_easy.collidepoint(mx, my)
         hov_fallen  = self.card_fallen.collidepoint(mx, my)
         hov_frosty  = self.card_frosty.collidepoint(mx, my)
+        hov_endless = self.card_endless.collidepoint(mx, my)
         hov_sandbox = self.card_sandbox.collidepoint(mx, my)
 
         self._draw_mode_card(
@@ -2308,11 +2383,25 @@ class DifficultyMenu:
             label_bg=(14, 42, 80), fill_icon=True
         )
         self._draw_mode_card(
+            self.card_endless, "ENDLESS", "endless_ico", hov_endless,
+            bg_col=(18, 14, 45), bg_hov=(28, 20, 70),
+            border_col=(100, 60, 200), border_hov=(160, 100, 255),
+            label_bg=(14, 10, 36), fill_icon=True
+        )
+        self._draw_mode_card(
             self.card_sandbox, "SANDBOX", "sandbox_ico", hov_sandbox,
             bg_col=(80, 68, 42), bg_hov=(108, 92, 56),
             border_col=(160, 130, 70), border_hov=(220, 185, 100),
             label_bg=(65, 55, 32), fill_icon=True
         )
+        # ── Coin reward labels under each card ─────────────────────────────
+        ico_m = load_icon("coin_ico", 16)
+        reward_data = [
+            (self.card_easy,    "200",      (100,220,100)),
+            (self.card_fallen,  "750",      (180,100,255)),
+            (self.card_frosty,  "1500",     (80,200,255)),
+            (self.card_endless, "0.5/wave", (255,130,130)),
+        ]
 
 
         hov_back = self.btn_back.collidepoint(mx, my)
@@ -2778,8 +2867,13 @@ class MainMenu:
                         diff = DifficultyMenu(self.screen, self.save_data).run()
                         if diff != "back":
                             if diff == "play_frosty":
-                                if FrostyWarningScreen(self.screen).run() == "continue":
+                                if True:  # warning removed
                                     game_core.CURRENT_MAP = "frosty"
+                                    self.action = diff
+                            elif diff == "play_endless":
+                                map_choice = MapSelectMenu(self.screen).run()
+                                if map_choice != "back":
+                                    game_core.CURRENT_MAP = map_choice
                                     self.action = diff
                             else:
                                 map_choice = MapSelectMenu(self.screen).run()
@@ -2846,21 +2940,25 @@ ALL_UNITS_POOL = [
     {"name": "Accelerator",    "rarity": "epic"},
     {"name": "Frostcelerator", "rarity": "exclusive"},
     {"name": "Lifestealer",    "rarity": "starter"},
-    {"name": "Archer",         "rarity": "epic"},
+    {"name": "Archer",         "rarity": "common"},
     {"name": "Red Ball",       "rarity": "rare"},
     {"name": "Farm",           "rarity": "common"},
     {"name": "Freezer",        "rarity": "common"},
     {"name": "Frost Blaster",  "rarity": "rare"},
     {"name": "Sledger",        "rarity": "epic"},
     {"name": "Gladiator",      "rarity": "epic"},
-    {"name": "Toxic Gunner",   "rarity": "rare"},
+    {"name": "Toxic Gunner",   "rarity": "common"},
     {"name": "Slasher",        "rarity": "epic"},
-    {"name": "Golden Cowboy",  "rarity": "epic"},
+    {"name": "Golden Cowboy",  "rarity": "starter"},
     {"name": "Hallow Punk",    "rarity": "rare"},
-    {"name": "Spotlight Tech", "rarity": "epic"},
+    {"name": "Spotlight Tech", "rarity": "common"},
     {"name": "Snowballer",     "rarity": "rare"},
-    {"name": "Commander",      "rarity": "epic"},
+    {"name": "Commander",      "rarity": "starter"},
     {"name": "Commando",       "rarity": "rare"},
+    {"name": "hacker_laser_effects_test", "rarity": "exclusive"},
+    {"name": "Caster", "rarity": "exclusive"},
+    {"name": "Accelerator+", "rarity": "exclusive"},
+    {"name": "Warlock", "rarity": "epic"},
 ]
 
 # Coin cost to unlock units (None = not purchasable / exclusive)
@@ -2884,6 +2982,10 @@ UNIT_SHOP_PRICES = {
     "Snowballer":     700,
     "Commander":      2000,
     "Commando":       800,
+    "hacker_laser_effects_test": None,
+    "Caster": None,
+    "Accelerator+": None,
+    "Warlock": 3000,
 }
 
 class LoadoutScreen:
@@ -2947,6 +3049,12 @@ class LoadoutScreen:
         if self.save_data.get("frostcelerator_unlocked"):
             if "Frostcelerator" not in owned:
                 owned = list(owned) + ["Frostcelerator"]
+        if "Caster" not in owned:
+            owned = list(owned) + ["Caster"]
+        if "Accelerator+" not in owned:
+            owned = list(owned) + ["Accelerator+"]
+        if "hacker_laser_effects_test" not in owned:
+            owned = list(owned) + ["hacker_laser_effects_test"]
         return owned
 
     def _show_msg(self, text, dur=2.5):
@@ -3295,6 +3403,151 @@ class PauseMenu:
 
 
 # ── Game ───────────────────────────────────────────────────────────────────────
+class EndlessWaveManager:
+    """Infinite wave manager. Tiered pool by difficulty. No win state."""
+
+    # Classes that should NEVER appear in endless (final bosses, special triggers)
+    _BLACKLIST_NAMES = {
+        "FrostSpirit", "FallenKing", "TrueFallenKing", "GraveDigger",
+        "OtchimusPrime", "FastBoss",
+    }
+
+    # Tiered pools: (min_wave, max_wave, wave_data, wave_index_range)
+    # Built lazily
+    _TIER_POOLS = None  # list of (min_w, max_w, groups_list)
+
+    @classmethod
+    def _build_pool(cls):
+        if cls._TIER_POOLS is not None: return
+
+        def is_safe(groups):
+            for EClass, _ in groups:
+                if EClass.__name__ in cls._BLACKLIST_NAMES:
+                    return False
+            return True
+
+        tiers = []
+        # Easy waves 1-10 → tier 1 (wave 1-8 in endless)
+        # Easy waves 11-20 → tier 2 (wave 9-18)
+        # Fallen waves 1-20 → tier 3 (wave 15-30)
+        # Fallen waves 21-40 → tier 4 (wave 28-50)
+        # Frosty waves 1-20 → tier 5 (wave 35-60)
+        # Frosty waves 21-40 → tier 6 (wave 50+)
+        sources = [
+            (WAVE_DATA,        1,  10,   1, 12),   # easy early
+            (WAVE_DATA,        9,  20,  10, 20),   # easy late
+            (FALLEN_WAVE_DATA, 15, 32,   1, 21),   # fallen early
+            (FALLEN_WAVE_DATA, 25, 50,  20, 40),   # fallen late
+            (FROSTY_WAVE_DATA, 35, 65,   1, 21),   # frosty early
+            (FROSTY_WAVE_DATA, 50, 999, 20, 40),   # frosty late
+        ]
+        for wdata, min_w, max_w, idx_start, idx_end in sources:
+            pool = []
+            for i, entry in enumerate(wdata):
+                if i < idx_start or i >= idx_end: continue
+                if entry is None: continue
+                groups, _, _ = entry
+                if groups and is_safe(groups):
+                    pool.append(groups)
+            if pool:
+                tiers.append((min_w, max_w, pool))
+
+        cls._TIER_POOLS = tiers
+
+    def __init__(self):
+        self._build_pool()
+        self.wave = 0
+        self.max_waves = 999999
+        self.state = "prep"
+        self.prep_timer = 5.0
+        self.spawn_queue = []
+        self.spawn_timer = 0.0
+        self.spawn_interval = 0.9
+        self._lmoney_paid = False
+        self._bonus_paid = False
+        self._gd_spawned = False
+
+    def _build_queue(self, wn):
+        import random as _r
+
+        # Find eligible tiers for this wave number
+        eligible = [pool for (min_w, max_w, pool) in self._TIER_POOLS
+                    if min_w <= wn <= max_w]
+        if not eligible:
+            # Fallback: use highest tier available
+            eligible = [self._TIER_POOLS[-1][2]]
+
+        # Weight toward harder tiers as wave increases
+        # Pick from one of the eligible tier pools, biased toward later ones
+        chosen_pool = eligible[min(int(_r.random() ** 0.5 * len(eligible)), len(eligible)-1)]
+        groups = _r.choice(chosen_pool)
+
+        # Count scaling: more enemies every 5 waves, capped
+        count_mult = 1 + wn // 8
+        q = []
+        for EClass, base_count in groups:
+            count = min(base_count * count_mult, base_count + 25)
+            for _ in range(count):
+                e = EClass(wn)
+                e._from_wave = True
+                # HP scale: +3% per wave beyond 15
+                if wn > 15:
+                    scale = 1.0 + (wn - 15) * 0.03
+                    e.hp = int(e.hp * scale)
+                    e.maxhp = e.hp
+                q.append(e)
+        _r.shuffle(q)
+        return q
+
+    def update(self, dt, enemies):
+        alive_count = sum(1 for e in enemies if e.alive and not getattr(e, "free_kill", False))
+        if self.state == "prep":
+            self.prep_timer -= dt
+            if self.prep_timer <= 0: self._start_wave()
+        elif self.state == "spawning":
+            self.spawn_timer -= dt
+            if self.spawn_timer <= 0 and self.spawn_queue:
+                self.spawn_timer = self.spawn_interval
+                enemies.append(self.spawn_queue.pop(0))
+            if not self.spawn_queue: self.state = "waiting"
+        elif self.state == "waiting":
+            if alive_count == 0:
+                self.state = "between"; self.prep_timer = 5.0
+        elif self.state == "between":
+            self.prep_timer -= dt
+            if self.prep_timer <= 0: self._start_wave()
+
+    def _start_wave(self):
+        self.wave += 1
+        self.state = "spawning"
+        self.spawn_queue = self._build_queue(self.wave)
+        self.spawn_timer = 0
+        self._lmoney_paid = False
+        self._bonus_paid = False
+
+    def time_left(self):
+        if self.state in ("prep", "between"): return max(0, self.prep_timer)
+        return None
+
+    def wave_lmoney(self):
+        idx = self.wave
+        if 1 <= idx < len(FALLEN_WAVE_DATA) and FALLEN_WAVE_DATA[idx]:
+            lm = FALLEN_WAVE_DATA[idx][1]
+            if lm > 0: return lm
+        # Beyond fallen data — multiply last known (wave 38: 2300) by +8% per extra wave
+        extra = max(0, self.wave - 38)
+        return int(2300 * (1.0 + extra * 0.08))
+
+    def wave_bmoney(self):
+        idx = self.wave
+        if 1 <= idx < len(FALLEN_WAVE_DATA) and FALLEN_WAVE_DATA[idx]:
+            bm = FALLEN_WAVE_DATA[idx][2]
+            if bm > 0: return bm
+        # Beyond fallen data — multiply last known (wave 38: 500) by +8% per extra wave
+        extra = max(0, self.wave - 38)
+        return int(500 * (1.0 + extra * 0.08))
+
+
 class Game:
     def __init__(self, save_data=None, mode="easy"):
         self.screen=pygame.display.set_mode((SCREEN_W,SCREEN_H))
@@ -3312,6 +3565,10 @@ class Game:
             self.wave_mgr=WaveManager(wave_data=FROSTY_WAVE_DATA, max_waves=FROSTY_MAX_WAVES)
             self.player_hp=300; self.player_maxhp=300
             self._frosty_lane=0   # cycles 0-3: which of 4 entry paths next enemy gets
+        elif mode=="endless":
+            self.wave_mgr=EndlessWaveManager()
+            self.player_hp=450; self.player_maxhp=450
+            self.money=900
         else:
             self.wave_mgr=WaveManager()
         # Frosty background music state
@@ -3384,7 +3641,11 @@ class Game:
                         "Spotlight Tech": SpotlightTech,
                         "Snowballer": Snowballer,
                         "Commander": Commander,
-                        "Commando": Commando}
+                        "Commando": Commando,
+                        "hacker_laser_effects_test": Caster,
+                        "Caster": Caster,
+                        "Accelerator+": DoubleAccelerator,
+                        "Warlock": Warlock}
         _loadout = self.save_data.get("loadout", ["Assassin", "Accelerator", None, None, None])
         while len(_loadout) < 5: _loadout.append(None)
         self.ui.SLOT_TYPES = [_name_to_cls.get(n) if n else None for n in _loadout]
@@ -3412,15 +3673,19 @@ class Game:
             except Exception:
                 pass
 
+    def _pause_caster_sfx(self, pause):
+        pass
+
     def _give_wave_coins(self, wave_num):
-        if self.mode not in ("easy", "fallen", "frosty"): return
+        if self.mode not in ("easy", "fallen", "frosty", "endless"): return
         if wave_num <= self._last_coin_wave: return
         waves_done = wave_num - self._last_coin_wave
         self._last_coin_wave = wave_num
         # Easy: 200 total / 20 waves = 10 per wave
         # Fallen: 750 total / 40 waves = 18.75 per wave
         # Frosty: 1500 total / 40 waves = 37.5 per wave
-        rate = {"easy": 10.0, "fallen": 18.75, "frosty": 37.5}.get(self.mode, 10.0)
+        # Endless: 0.5 per wave
+        rate = {"easy": 10.0, "fallen": 18.75, "frosty": 37.5, "endless": 0.5}.get(self.mode, 10.0)
         self._wave_coin_accum += waves_done * rate
         whole = int(self._wave_coin_accum)
         if whole > 0:
@@ -3614,7 +3879,7 @@ class Game:
                     if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
                         self.paused = False
                     continue
-                if ev.type == pygame.KEYDOWN:
+                if ev.type == pygame.KEYDOWN and not self.game_over and not self.win:
                     if ev.key == pygame.K_ESCAPE:
                         if not self.paused: self.paused = True
                     if ev.key == pygame.K_F1: self.console.toggle()
@@ -3626,24 +3891,22 @@ class Game:
                     if ev.key == pygame.K_x and self.ui.open_unit:
                         u = self.ui.open_unit
                         self.money += self.ui._sell_value(u)
+                        self.units.remove(u); self.ui.open_unit = None
                     if ev.key == pygame.K_f:
-                        # Activate ability of open_unit, or first ready ability
-                        activated = False
                         target = self.ui.open_unit
                         if target is None:
-                            # Find first unit with ready ability
                             for _u in self.units:
                                 if _u.ability and _u.ability.ready():
                                     target = _u; break
                         if target:
+                            activated = False
                             if target.ability and target.ability.ready():
                                 target.ability.activate(self.enemies, self.effects)
                                 activated = True
-                            elif not activated:
+                            if not activated:
                                 ab2 = getattr(target, 'ability2', None)
                                 if ab2 and ab2.ready():
                                     ab2.activate(self.enemies, self.effects)
-                        self.units.remove(u); self.ui.open_unit = None
                     slot_keys = {pygame.K_1:0,pygame.K_2:1,pygame.K_3:2,pygame.K_4:3,pygame.K_5:4}
                     if ev.key in slot_keys and not self.console.visible:
                         idx = slot_keys[ev.key]; UType = self.ui.SLOT_TYPES[idx]
@@ -3684,9 +3947,10 @@ class Game:
                         delta = self.ui.handle_release(ev.pos, self.units, self.money)
                         self.money += delta
 
-            self._elapsed += dt
+            if not self.game_over and not self.win:
+                self._elapsed += dt
             prev_wave = self.wave_mgr.wave
-            if not self.paused:
+            if not self.paused and not self.game_over and not self.win:
                 if not getattr(self,'natural_spawn_stopped',False):
                     _pre_count = len(self.enemies)
                     self.wave_mgr.update(dt,self.enemies)
@@ -3998,6 +4262,7 @@ class Game:
                     if not e.alive and not getattr(e,'_reward_paid',False) and not getattr(e,'free_kill',False):
                         e._reward_paid=True
                         reward=e.KILL_REWARD
+                        if self.mode == "endless": reward *= 2
                         if reward>0 and self.mode != "easy":
                             self.money+=reward
                             self.effects.append(FloatingText(e.x, e.y-e.radius-10, f"+{reward}"))
@@ -4195,16 +4460,17 @@ class Game:
                     fk_tf = FallenKing(1)
                     fk_tf.hp = 10000; fk_tf.maxhp = 10000; fk_tf.x = -30.0
                     self.enemies.append(fk_tf)
-                if self.wave_mgr.state=="done" and not any(e.alive for e in self.enemies) and not fk_pending :
+                if self.wave_mgr.state=="done" and not any(e.alive for e in self.enemies) and not fk_pending and self.mode!="endless":
                     if not self.win:
                         # ── Ensure all waves paid (covers state=done skipping the waiting block) ──
                         self._give_wave_coins(self.wave_mgr.wave)
                         # Flush leftover fractional accumulator (e.g. 0.5 from Fallen odd waves)
-                        if self.mode in ("easy", "fallen", "frosty") and self._wave_coin_accum >= 0.5:
+                        if self.mode in ("easy", "fallen", "frosty", "endless") and self._wave_coin_accum >= 0.5:
                             self._end_coin_reward += 1
                             self.save_data["coins"] = self.save_data.get("coins", 0) + 1
                             self._wave_coin_accum = 0.0
-                        write_save(self.save_data)
+                        if self.mode != "endless":
+                            write_save(self.save_data)
                         # ── Grant achievements on win ──
                         if self.mode == "fallen":
                             self.ach_mgr.try_grant("fallen_angel")
@@ -4637,7 +4903,7 @@ class Game:
         elapsed=int(self._elapsed)
         mins=elapsed//60; secs=elapsed%60
         # True Fallen comment removed
-        mode_label={"easy":"Easy","fallen":"Fallen","sandbox":"Sandbox","frosty":"Frosty"}.get(self.mode,self.mode.title())
+        mode_label={"easy":"Easy","fallen":"Fallen","sandbox":"Sandbox","frosty":"Frosty","endless":"Endless"}.get(self.mode,self.mode.title())
         rows=[
             ("Time:", f"{mins}m {secs:02d}s"),
             ("Wave:",           str(self.wave_mgr.wave)),
@@ -4719,8 +4985,13 @@ class MainMenu(_OrigMainMenu):
                         diff = DifficultyMenu(self.screen, self.save_data).run()
                         if diff != "back":
                             if diff == "play_frosty":
-                                if FrostyWarningScreen(self.screen).run() == "continue":
+                                if True:  # warning removed
                                     game_core.CURRENT_MAP = "frosty"
+                                    self.action = diff
+                            elif diff == "play_endless":
+                                map_choice = MapSelectMenu(self.screen).run()
+                                if map_choice != "back":
+                                    game_core.CURRENT_MAP = map_choice
                                     self.action = diff
                             else:
                                 map_choice = MapSelectMenu(self.screen).run()
@@ -4893,10 +5164,11 @@ if __name__ == "__main__":
             ls.run()
             save_data = load_save()
 
-        elif action in ("play_easy", "play_sandbox", "play_fallen", "play_frosty"):
+        elif action in ("play_easy", "play_sandbox", "play_fallen", "play_frosty", "play_endless"):
             if action == "play_sandbox": mode = "sandbox"
             elif action == "play_fallen": mode = "fallen"
             elif action == "play_frosty": mode = "frosty"
+            elif action == "play_endless": mode = "endless"
             else: mode = "easy"
             print("Starting game mode:", mode)
             try:

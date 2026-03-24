@@ -185,6 +185,10 @@ UNIT_LIMITS = {
     "Commander":      3,
     "Snowballer":     4,
     "Commando":       4,
+    "hacker_laser_effects_test": 1,
+    "Caster":         1,
+    "Accelerator+":   2,
+    "Warlock":        4,
 }
 
 def load_save():
