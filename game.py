@@ -22,7 +22,7 @@ from game_core import (
     C_BG, C_PATH, C_WHITE, C_BLACK, C_RED, C_GREEN, C_GOLD, C_CYAN,
     C_ORANGE, C_DARKGRAY, C_PANEL, C_BORDER, C_HP_BG, C_HP_FG, C_HP_FG2,
     C_SLOT_BG, C_SLOT_SEL, C_ASSASSIN, C_ACCEL,
-    get_map_path, get_frosty_path, spawn_enemy_at_start,
+    get_map_path, get_frosty_path, spawn_enemy_at_start, CURRENT_MAP,
     font_sm, font_md, font_lg, font_xl, font_ru, font_ru_lg,
     SAVE_FILE, load_icon, RARITY_DATA, UNIT_LIMITS,
     load_save, write_save, dist, txt, draw_rect_alpha,
@@ -4464,7 +4464,6 @@ class Game:
                     if getattr(e,'_reversed',False):
                         e._bob += dt * 4
                         # Move backward along the path (toward previous waypoint)
-                        from game_core import get_map_path, get_frosty_path, CURRENT_MAP
                         if CURRENT_MAP == "frosty":
                             _path = getattr(e, '_frosty_path', None) or get_map_path()
                         else:
