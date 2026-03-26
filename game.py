@@ -132,6 +132,7 @@ from units import (
     Caster, C_HACKER, C_HACKER_DARK, CASTER_LEVELS, LIGHTNING_THRESHOLD,
     DoubleAccelerator, C_DACCEL, C_DACCEL_DARK, DACCEL_LEVELS,
     Warlock, WarlockUnit, C_WARLOCK, C_WARLOCK_DARK, WARLOCK_LEVELS,
+    Jester, JESTER_LEVELS, C_JESTER, C_JESTER_DARK,
     SPAWN_MAP, CONSOLE_HELP,
     C_LIFESTEALER, C_LIFESTEALER_DARK,
     C_FROST, C_FROST_DARK, C_FROST_ICE,
@@ -481,6 +482,7 @@ class AdminPanel:
                 ("Accel+",DoubleAccelerator,C_DACCEL),
                 ("Warlock",Warlock,C_WARLOCK),
                 ("Spotlight",SpotlightTech,C_SPOTLIGHT),
+                ("Jester",Jester,C_JESTER),
             ]
             active_cls=set(s for s in (ui_ref.SLOT_TYPES if ui_ref else []) if s)
             for i,(name,cls,col) in enumerate(unit_list):
@@ -651,6 +653,23 @@ class UI:
                     if u.level>=3: u.arrow_mode="flame_arrow"
                     else: self.show_msg("Unlock at level 3!")
                     return 0
+            # Jester bomb mode buttons
+            if isinstance(self.open_unit, Jester):
+                u=self.open_unit
+                if btns.get("bomb_fire") and btns["bomb_fire"].collidepoint(pos):
+                    u.bomb_mode="fire"; return 0
+                if btns.get("bomb_ice") and btns["bomb_ice"].collidepoint(pos):
+                    if u.level>=2: u.bomb_mode="ice"
+                    else: self.show_msg("Unlock at level 2!")
+                    return 0
+                if btns.get("bomb_poison") and btns["bomb_poison"].collidepoint(pos):
+                    if u.level>=3: u.bomb_mode="poison"
+                    else: self.show_msg("Unlock at level 3!")
+                    return 0
+                if btns.get("bomb_confusion") and btns["bomb_confusion"].collidepoint(pos):
+                    if u.level>=4: u.bomb_mode="confusion"
+                    else: self.show_msg("Unlock at level 4!")
+                    return 0
             if btns.get("ability_sq") and btns["ability_sq"].collidepoint(pos):
                 if self.open_unit.ability and self.open_unit.ability.ready():
                     self.open_unit.ability.activate(enemies,effects)
@@ -729,6 +748,13 @@ class UI:
             btns["arrow_arrow"]=pygame.Rect(mx+8,               arrow_btn_y, btn_w, btn_h)
             btns["arrow_ice"]  =pygame.Rect(mx+8+btn_w+3,       arrow_btn_y, btn_w, btn_h)
             btns["arrow_flame"]=pygame.Rect(mx+8+(btn_w+3)*2,   arrow_btn_y, btn_w, btn_h)
+        if isinstance(unit, Jester):
+            btn_h=24; btn_w=(mw-20)//4
+            bomb_btn_y=my+260
+            btns["bomb_fire"]     =pygame.Rect(mx+8,                    bomb_btn_y, btn_w, btn_h)
+            btns["bomb_ice"]      =pygame.Rect(mx+8+(btn_w+2),          bomb_btn_y, btn_w, btn_h)
+            btns["bomb_poison"]   =pygame.Rect(mx+8+(btn_w+2)*2,        bomb_btn_y, btn_w, btn_h)
+            btns["bomb_confusion"]=pygame.Rect(mx+8+(btn_w+2)*3,        bomb_btn_y, btn_w, btn_h)
         return menu,btns
 
     def _draw_unit_portrait(self, surf, u, rect):
@@ -865,6 +891,21 @@ class UI:
                 surf.blit(ico_farm,(cx-11,cy-11))
             else:
                 txt(surf,"$",(cx,cy),C_GOLD,font_md,center=True)
+        elif isinstance(u,Jester):
+            t2=pygame.time.get_ticks()*0.001
+            pygame.draw.circle(surf,C_JESTER_DARK,(cx,cy),28)
+            pygame.draw.circle(surf,C_JESTER,(cx,cy),22)
+            pygame.draw.circle(surf,(255,160,210),(cx,cy),22,2)
+            # Mini hat
+            hat_pts=[(cx-7,cy-20),(cx-11,cy-30),(cx,cy-23),(cx+11,cy-30),(cx+7,cy-20)]
+            pygame.draw.polygon(surf,(180,40,120),hat_pts)
+            pygame.draw.circle(surf,C_GOLD,(cx-11,cy-30),3)
+            pygame.draw.circle(surf,C_GOLD,(cx+11,cy-30),3)
+            # Bomb dot
+            ba=math.radians(t2*120)
+            pygame.draw.circle(surf,(255,100,30),(cx+int(math.cos(ba)*14),cy+int(math.sin(ba)*9)),4)
+            if u.hidden_detection:
+                pygame.draw.circle(surf,(100,255,100),(cx+18,cy-18),5)
         else:
             pygame.draw.circle(surf,(70,40,100),(cx,cy),28)
             pygame.draw.circle(surf,u.COLOR,(cx,cy),22)
@@ -895,6 +936,7 @@ class UI:
         elif cls==Snowballer: levels=SNOWBALLER_LEVELS; cost_idx=3
         elif cls==Commander: levels=COMMANDER_LEVELS; cost_idx=3
         elif cls==Commando: levels=COMMANDO_LEVELS; cost_idx=3
+        elif cls==Jester: levels=JESTER_LEVELS; cost_idx=3
         else: levels=[]; cost_idx=3
         for i in range(1,unit.level+1):
             if i<len(levels) and levels[i][cost_idx]: total+=levels[i][cost_idx]
@@ -1069,6 +1111,21 @@ class UI:
             if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
             if kb>unit._knockback_dist: result["Knockback"]=f"{kb}px / 2 hits"
             if mp>unit._melee_pierce: result["Pierce"]=f"Up to {mp} enemies"
+            return result
+        elif cls==Jester:
+            if nxt>=len(JESTER_LEVELS): return None
+            row=JESTER_LEVELS[nxt]
+            (d,fr,r,_,bdmg,bdur,_bt,exr,ipct,imax,itm,idd,iexr,pdmg,ptm,ptk,cftm,cfcd,dual,hd)=row
+            result={"Damage":d,"Firerate":f"{fr:.3f}","Range":r}
+            if bdmg>0: result["Burn"]=f"{bdmg}/tick {bdur:.0f}s"
+            if ipct>0: result["IceSlow"]=f"{int(ipct*100)}%/hit max {int(imax*100)}%"
+            if idd>0 and unit.level<3: result["IceDef"]=f"-{int(idd*100)}%/hit"
+            if pdmg>0 and unit._poison_dmg==0: result["PoisonBomb"]="Unlocks Poison Bomb"
+            elif pdmg>0: result["Poison"]=f"{pdmg}/tick {ptm:.0f}s"
+            if cftm>0 and unit._conf_time==0: result["ConfBomb"]="Unlocks Confusion Bomb"
+            elif cftm>0: result["Confuse"]=f"{cftm:.0f}s/{cfcd:.0f}s cd"
+            if dual and not unit._dual: result["Dual"]="Throws 2 bombs"
+            if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
             return result
         return None
 
@@ -1248,6 +1305,7 @@ class UI:
             nxt=self._get_next_stats(u)
             levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,DoubleAccelerator:DACCEL_LEVELS,Warlock:WARLOCK_LEVELS}
             lvl_list=levels_map.get(cls,[])
+            if cls==Jester: lvl_list=JESTER_LEVELS
             total_lvls=len(lvl_list)
 
             # Build stats list: (key, display_val, next_val_or_None)
@@ -1584,6 +1642,23 @@ class UI:
                     stats.append(("Pierce",f"Up to {u._melee_pierce} enemies",None))
                 elif nxt_row and nxt_row[8]>u._melee_pierce:
                     stats.append(("Pierce",None,f"Up to {nxt_row[8]} enemies"))
+            elif cls==Jester:
+                hd_next=bool(nxt and nxt.get("HidDet") and not u.hidden_detection)
+                stats=[]
+                if u.hidden_detection: stats.append(("HidDet","Hidden Detection",None))
+                stats+=[
+                    ("Damage",  u.damage,           nxt.get("Damage")   if nxt else None),
+                    ("Firerate",f"{u.firerate:.3f}", f"{nxt['Firerate']}" if nxt else None),
+                    ("Range",   u.range_tiles,       nxt.get("Range")    if nxt else None),
+                ]
+                # Bomb unlock notices — sval=None so they only appear in "changing" section
+                if nxt and nxt.get("IceSlow") and u._ice_pct==0:
+                    stats.append(("IceBomb_unlock", None, "Unlocks Ice Bomb"))
+                if nxt and nxt.get("PoisonBomb"):
+                    stats.append(("PoisonBomb_unlock", None, "Unlocks Poison Bomb"))
+                if nxt and nxt.get("ConfBomb"):
+                    stats.append(("ConfBomb_unlock", None, "Unlocks Confusion Bomb"))
+                if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
             else:
                 stats=[(k,v,None) for k,v in u.get_info().items()]
 
@@ -1600,7 +1675,9 @@ class UI:
                          "Poison":(100,220,80),"Crit":(255,160,40),"Bleed":(200,40,40),
                          "CashShot":(255,220,60),"SpinTime":(200,180,100),
                          "Burn":(255,130,30),"Knockback":(200,160,255),"Splash":(220,100,220),
-                         "BeamCircle":(255,240,80),"Expose":(100,255,200),"Confuse":(200,100,255)}
+                         "BeamCircle":(255,240,80),"Expose":(100,255,200),"Confuse":(200,100,255),
+                         "IceSlow":(100,200,255),"IceDef":(140,200,255),"Dual":(200,120,255),
+                         "IceBomb_unlock":(80,200,255),"PoisonBomb_unlock":(80,220,60),"ConfBomb_unlock":(200,80,255),}
 
             # === TOP HALF: portrait left + STATS right ===
             # For Frostcelerator: stun bar at very top of card
@@ -1677,6 +1754,14 @@ class UI:
                 btns["arrow_arrow"]=pygame.Rect(mx_m+8,               arrow_btn_y, btn_w, btn_h)
                 btns["arrow_ice"]  =pygame.Rect(mx_m+8+btn_w+3,       arrow_btn_y, btn_w, btn_h)
                 btns["arrow_flame"]=pygame.Rect(mx_m+8+(btn_w+3)*2,   arrow_btn_y, btn_w, btn_h)
+                btns["upgrade"]=pygame.Rect(mx_m+6,strip_y_actual+54+btn_h+6,mw-12,44)
+            if cls==Jester:
+                btn_h=24; btn_w=(mw-20)//4
+                bomb_btn_y=strip_y_actual+56
+                btns["bomb_fire"]     =pygame.Rect(mx_m+8,                 bomb_btn_y, btn_w, btn_h)
+                btns["bomb_ice"]      =pygame.Rect(mx_m+8+(btn_w+2),       bomb_btn_y, btn_w, btn_h)
+                btns["bomb_poison"]   =pygame.Rect(mx_m+8+(btn_w+2)*2,     bomb_btn_y, btn_w, btn_h)
+                btns["bomb_confusion"]=pygame.Rect(mx_m+8+(btn_w+2)*3,     bomb_btn_y, btn_w, btn_h)
                 btns["upgrade"]=pygame.Rect(mx_m+6,strip_y_actual+54+btn_h+6,mw-12,44)
             up_rect=btns["upgrade"]
             can_up=bool(cost and money>=cost)
@@ -1771,6 +1856,33 @@ class UI:
                         lock_s=pygame.font.SysFont("consolas",9).render(req_lvl,True,(90,80,120))
                         surf.blit(lock_s,(br.right-lock_s.get_width()-2, br.y+2))
 
+            # === JESTER BOMB MODE SELECTOR ===
+            if cls==Jester:
+                _jbomb_modes=[
+                    ("fire",      "Fire",    (255,100,30),  (255,160,60),  0),
+                    ("ice",       "Ice",     (80,200,255),  (160,230,255), 2),
+                    ("poison",    "Poison",  (80,220,60),   (140,255,80),  3),
+                    ("confusion", "Confuse", (200,80,255),  (230,140,255), 4),
+                ]
+                for mode_key, mode_label, col_active, col_border, req_lv in _jbomb_modes:
+                    br=btns.get(f"bomb_{mode_key}")
+                    if not br: continue
+                    is_sel=(u.bomb_mode==mode_key)
+                    locked=(u.level < req_lv)
+                    if locked:
+                        bg=(22,22,35); brd=(55,50,75); tcol=(80,75,100)
+                    elif is_sel:
+                        bg=tuple(max(0,c-90) for c in col_active); brd=col_border; tcol=col_border
+                    else:
+                        bg=(30,28,48); brd=(70,65,100); tcol=(140,135,180)
+                    pygame.draw.rect(surf,bg,br,border_radius=4)
+                    pygame.draw.rect(surf,brd,br,1 if not is_sel else 2,border_radius=4)
+                    lbl_s=font_sm.render(mode_label,True,tcol)
+                    surf.blit(lbl_s,lbl_s.get_rect(center=br.center))
+                    if locked:
+                        lock_s=pygame.font.SysFont("consolas",9).render(f"Lv{req_lv}",True,(90,80,120))
+                        surf.blit(lock_s,(br.right-lock_s.get_width()-2, br.y+2))
+
             if changing:
                 pygame.draw.line(surf,(48,44,70),(mx_m+8,ch_y-5),(mx_m+mw-8,ch_y-5),1)
             ARR_SZ=14
@@ -1784,11 +1896,10 @@ class UI:
                     img=load_icon(ico_name,ICO_SZ)
                     if img:
                         surf.blit(img,(xp,ch_y+(16-ICO_SZ)//2))
-                        ico_drawn=True
+                        ico_drawn=True; xp+=ICO_SZ+5
                 if not ico_drawn:
                     dot_s=font_md.render("●",True,sc)
-                    surf.blit(dot_s,(xp,ch_y))
-                xp+=ICO_SZ+5
+                    surf.blit(dot_s,(xp,ch_y)); xp+=ICO_SZ+5
                 if sval is not None:
                     old_s=font_md.render(str(sval),True,(190,185,210))
                     surf.blit(old_s,(xp,ch_y)); xp+=old_s.get_width()+4
@@ -1802,6 +1913,27 @@ class UI:
                 new_s=font_md.render(str(snext),True,(100,220,100))
                 surf.blit(new_s,(xp,ch_y))
                 ch_y+=20
+
+            # === JESTER EXTRA INFO — plain text after changing stats, clipped inside card ===
+            if cls==Jester:
+                _jinfo_f = pygame.font.SysFont("segoeui", 13)
+                _jinfo_lines = [f"Splash: {u._expl_r} tiles  (max 5 hits)"]
+                if u._burn_dmg>0:    _jinfo_lines.append(f"Burn: {u._burn_dmg}/tick  {u._burn_dur:.0f}s")
+                if u._ice_pct>0:     _jinfo_lines.append(f"Ice: {int(u._ice_pct*100)}%/hit  max {int(u._ice_max*100)}%  {u._ice_time:.0f}s")
+                if u._ice_def_drop>0:_jinfo_lines.append(f"Ice def drop: -{int(u._ice_def_drop*100)}%/hit")
+                if u._poison_dmg>0:  _jinfo_lines.append(f"Poison: {u._poison_dmg}/tick  {u._poison_time:.0f}s  t={u._poison_tick:.1f}s")
+                if u._conf_time>0:   _jinfo_lines.append(f"Confuse: {u._conf_time:.0f}s  cd {u._conf_cd:.0f}s")
+                if u._dual:          _jinfo_lines.append("Dual: throws 2 bombs")
+                _jinfo_y = ch_y + 4
+                _card_clip = pygame.Rect(mx_m+2, my_m+2, mw-4, menu.h-4)
+                old_clip = surf.get_clip()
+                surf.set_clip(_card_clip)
+                for _jl in _jinfo_lines:
+                    if _jinfo_y + 15 > my_m + menu.h - 48: break
+                    _js = _jinfo_f.render(_jl, True, (155, 150, 180))
+                    surf.blit(_js, (mx_m+10, _jinfo_y))
+                    _jinfo_y += 16
+                surf.set_clip(old_clip)
 
 
             # === ABILITY SQUARE — outside card, top-left ===
@@ -2011,6 +2143,7 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
             "Caster": C_HACKER,
             "Accelerator+": C_DACCEL,
             "Warlock": C_WARLOCK,
+            "Jester": C_JESTER,
         }
         unit_col = _col_map.get(unit_name, C_ASSASSIN)
         pygame.draw.circle(surf, (30, 20, 50), (icon_cx, icon_cy), 36)
@@ -2030,7 +2163,8 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
                 "Snowballer": 400, "Commander": 650, "Commando": 900,
                 "hacker_laser_effects_test": 7500, "Caster": 7500,
                 "Accelerator+": 7500,
-                "Warlock": 4200}
+                "Warlock": 4200,
+                "Jester": 650}
     cost = cost_map.get(unit_name)
     if cost:
         ico_m = load_icon("money_ico", 18)
@@ -2955,10 +3089,10 @@ ALL_UNITS_POOL = [
     {"name": "Snowballer",     "rarity": "rare"},
     {"name": "Commander",      "rarity": "starter"},
     {"name": "Commando",       "rarity": "rare"},
-    {"name": "hacker_laser_effects_test", "rarity": "exclusive"},
-    {"name": "Caster", "rarity": "exclusive"},
-    {"name": "Accelerator+", "rarity": "exclusive"},
-    {"name": "Warlock", "rarity": "epic"},
+    {"name": "Accelerator+", "rarity": "epic"},
+    {"name": "Warlock",      "rarity": "epic"},
+    {"name": "Caster",       "rarity": "mythic"},
+    {"name": "Jester",       "rarity": "mythic"},
 ]
 
 # Coin cost to unlock units (None = not purchasable / exclusive)
@@ -2986,6 +3120,7 @@ UNIT_SHOP_PRICES = {
     "Caster": None,
     "Accelerator+": None,
     "Warlock": 3000,
+    "Jester": None,
 }
 
 class LoadoutScreen:
@@ -2998,13 +3133,14 @@ class LoadoutScreen:
       - No bottom strip outside the left zone — slots live inside the left area
     """
 
-    _RARITY_ORDER = ["starter", "common", "rare", "epic", "exclusive"]
+    _RARITY_ORDER = ["starter", "common", "rare", "epic", "mythic", "exclusive"]
     _RARITY_HDR_COL = {
         "starter":   (180, 180, 190),
         "common":    ( 80, 210,  80),
         "rare":      ( 80, 150, 255),
         "epic":      (200, 100, 255),
         "exclusive": (255,  60,  60),
+        "mythic":    (255, 210,  40),
     }
     _RARITY_HDR_LINE = {
         "starter":   (100, 100, 110),
@@ -3012,6 +3148,7 @@ class LoadoutScreen:
         "rare":      ( 40,  80, 180),
         "epic":      (120,  40, 180),
         "exclusive": (160,  20,  20),
+        "mythic":    (180, 140,   0),
     }
 
     # Layout split: left zone = 40%, right zone = 60%
@@ -3042,6 +3179,7 @@ class LoadoutScreen:
         self.msg_timer = 0.0
         self._card_hits = []
         self._buy_hits  = []
+        self._shard_buy_hits = []
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def _owned_units(self):
@@ -3049,8 +3187,6 @@ class LoadoutScreen:
         if self.save_data.get("frostcelerator_unlocked"):
             if "Frostcelerator" not in owned:
                 owned = list(owned) + ["Frostcelerator"]
-        if "Caster" not in owned:
-            owned = list(owned) + ["Caster"]
         if "Accelerator+" not in owned:
             owned = list(owned) + ["Accelerator+"]
         if "hacker_laser_effects_test" not in owned:
@@ -3133,6 +3269,22 @@ class LoadoutScreen:
                     self._show_msg(f"Need {price} coins!")
                 return
 
+        for btn_r, u in self._shard_buy_hits:
+            if btn_r.collidepoint(pos):
+                SHARD_PRICES = {"Caster": 1000, "Jester": 300}
+                price = SHARD_PRICES.get(u["name"], 0)
+                shards = self.save_data.get("shards", 0)
+                if shards >= price:
+                    self.save_data["shards"] = shards - price
+                    ol = list(self.save_data.get("owned_units", ["Assassin"]))
+                    ol.append(u["name"])
+                    self.save_data["owned_units"] = ol
+                    write_save(self.save_data)
+                    self._show_msg(f"{u['name']} unlocked!")
+                else:
+                    self._show_msg(f"Need {price} shards!")
+                return
+
         for card_r, rarity, idx in self._card_hits:
             if card_r.collidepoint(pos):
                 key = (rarity, idx)
@@ -3190,6 +3342,20 @@ class LoadoutScreen:
         else:
             txt(surf, f"Coins: {coins}", (SCREEN_W - 14, 18), C_GOLD, font_lg, right=True)
 
+        # Shards (shown to the left of coins)
+        shards   = self.save_data.get("shards", 0)
+        ico_sh   = load_icon("shard_ico", 22)
+        shard_col = (140, 220, 255)
+        shard_s  = font_lg.render(f" {shards}", True, shard_col)
+        tsw      = (ico_sh.get_width() if ico_sh else 0) + shard_s.get_width()
+        scx      = ccx - tsw - 24
+        if ico_sh:
+            surf.blit(ico_sh,  (scx, 18 + (shard_s.get_height() - ico_sh.get_height()) // 2))
+            surf.blit(shard_s, (scx + ico_sh.get_width(), 18))
+        else:
+            shard_lbl = font_lg.render(f"◆ {shards}", True, shard_col)
+            surf.blit(shard_lbl, shard_lbl.get_rect(right=ccx - 24, centery=29))
+
         # Back button
         hov_b = self.btn_back.collidepoint(mx, my)
         pygame.draw.rect(surf, (110,50,50) if hov_b else (80,40,40), self.btn_back, border_radius=8)
@@ -3217,6 +3383,7 @@ class LoadoutScreen:
             "Gladiator": C_GLADIATOR,      "Toxic Gunner": C_TOXICGUN,
             "Slasher":  C_SLASHER,         "Golden Cowboy": C_GCOWBOY,
             "Hallow Punk": C_HALLOWPUNK,   "Spotlight Tech": C_SPOTLIGHT,
+            "Jester":   C_JESTER,
         }
 
         for si, sr in enumerate(slot_rects):
@@ -3278,6 +3445,7 @@ class LoadoutScreen:
         owned = self._owned_units()
         self._card_hits = []
         self._buy_hits  = []
+        self._shard_buy_hits = []
 
         sec_y   = CONTENT_TOP + 8 - self.scroll_y
         label_f = pygame.font.SysFont("segoeui", 18, bold=True)
@@ -3334,6 +3502,35 @@ class LoadoutScreen:
                         surf.blit(ls3, ls3.get_rect(center=(cx2, cy2 + 8)))
                         es  = excl_f.render("EXCLUSIVE", True, (220,65,65))
                         surf.blit(es, es.get_rect(center=(cx2, cy2 + 30)))
+                    elif rarity == "mythic":
+                        SHARD_PRICES = {"Caster": 1000, "Jester": 300}
+                        shard_price = SHARD_PRICES.get(u["name"])
+                        ls3 = lock_f.render("🔒", True, (255, 220, 80))
+                        surf.blit(ls3, ls3.get_rect(center=(cx2, cy2 - 18)))
+                        if shard_price is not None:
+                            shards_have = self.save_data.get("shards", 0)
+                            can_buy_s   = shards_have >= shard_price
+                            btn_r       = pygame.Rect(cx2 - 52, cy2 + 22, 104, 24)
+                            btn_hov     = btn_r.collidepoint(mx, my)
+                            btn_bg  = (60, 90, 10) if (can_buy_s and btn_hov) else \
+                                      (40, 60,  8) if can_buy_s else (70, 55, 10)
+                            btn_bd  = (200, 220, 40) if can_buy_s else (140, 110, 20)
+                            pygame.draw.rect(surf, btn_bg, btn_r, border_radius=5)
+                            pygame.draw.rect(surf, btn_bd, btn_r, 2, border_radius=5)
+                            ico_sh2 = load_icon("shard_ico", 12)
+                            ps2     = price_f.render(f" {shard_price}", True,
+                                                     (255,220,60) if can_buy_s else (140,120,40))
+                            pw3   = (ico_sh2.get_width() if ico_sh2 else 0) + ps2.get_width()
+                            px4   = btn_r.centerx - pw3 // 2
+                            if ico_sh2:
+                                surf.blit(ico_sh2, (px4, btn_r.centery - 6))
+                                surf.blit(ps2, (px4 + ico_sh2.get_width(),
+                                                btn_r.centery - ps2.get_height()//2))
+                            else:
+                                lbl_sh = price_f.render(f"◆ {shard_price}", True,
+                                                        (255,220,60) if can_buy_s else (140,120,40))
+                                surf.blit(lbl_sh, lbl_sh.get_rect(center=btn_r.center))
+                            self._shard_buy_hits.append((btn_r, u))
                     else:
                         ls3 = lock_f.render("🔒", True, (130,200,130))
                         surf.blit(ls3, ls3.get_rect(center=(cx2, cy2 - 18)))
@@ -3564,13 +3761,32 @@ class Game:
         elif mode=="frosty":
             self.wave_mgr=WaveManager(wave_data=FROSTY_WAVE_DATA, max_waves=FROSTY_MAX_WAVES)
             self.player_hp=300; self.player_maxhp=300
-            self._frosty_lane=0   # cycles 0-3: which of 4 entry paths next enemy gets
+            self._frosty_lane=0
         elif mode=="endless":
             self.wave_mgr=EndlessWaveManager()
             self.player_hp=450; self.player_maxhp=450
             self.money=900
         else:
             self.wave_mgr=WaveManager()
+        # ── Apply Skill Tree bonuses ──────────────────────────────────────────
+        _sd = save_data or {}
+        _st_lvls = _sd.get("skill_tree", {})
+        _bb_lvl = _st_lvls.get("bigger_budget", 0)
+        if _bb_lvl > 0:
+            self.money = int(self.money * (1.0 + _bb_lvl * 0.01))
+        self._sk_range_bonus  = _st_lvls.get("enhanced_optics", 0) * 0.005
+        # Push debuff/AoE multipliers to game_core so units.py can read them
+        game_core.DEBUFF_MULT = 1.0 + _st_lvls.get("fight_dirty", 0) * 0.01
+        game_core.AOE_MULT    = 1.0 + _st_lvls.get("improved_gunpowder", 0) * 0.005
+        self._sk_aoe_bonus    = _st_lvls.get("improved_gunpowder", 0) * 0.005
+        self._sk_debuff_bonus = _st_lvls.get("fight_dirty", 0) * 0.01
+        self._sk_wave_bonus   = _st_lvls.get("stonks", 0) * 0.005
+        _scav_lvl = _st_lvls.get("scavenger", 0)
+        self._sk_scavenger_n  = max(10, 29 - _scav_lvl) if _scav_lvl > 0 else 0
+        self._sk_kill_counter = 0
+        _prec_lvl = _st_lvls.get("precision", 0)
+        self._sk_precision_n  = max(15, 29 - _prec_lvl) if _prec_lvl > 0 else 0
+        self._sk_shot_counter = 0
         # Frosty background music state
         self._frosty_bgm_active = False   # True while alternating frostymode/frostymode2 is playing
         self._frosty_bgm_track = 1        # 1 or 2 — which track plays next
@@ -3645,7 +3861,8 @@ class Game:
                         "hacker_laser_effects_test": Caster,
                         "Caster": Caster,
                         "Accelerator+": DoubleAccelerator,
-                        "Warlock": Warlock}
+                        "Warlock": Warlock,
+                        "Jester": Jester}
         _loadout = self.save_data.get("loadout", ["Assassin", "Accelerator", None, None, None])
         while len(_loadout) < 5: _loadout.append(None)
         self.ui.SLOT_TYPES = [_name_to_cls.get(n) if n else None for n in _loadout]
@@ -3890,7 +4107,10 @@ class Game:
                         else: self.ui.show_msg("Max level!")
                     if ev.key == pygame.K_x and self.ui.open_unit:
                         u = self.ui.open_unit
-                        self.money += self.ui._sell_value(u)
+                        _sv = self.ui._sell_value(u)
+                        _res_lvl = self.save_data.get("skill_tree", {}).get("resourcefulness", 0)
+                        if _res_lvl > 0: _sv = int(_sv * (1.0 + _res_lvl * 0.012))
+                        self.money += _sv
                         self.units.remove(u); self.ui.open_unit = None
                     if ev.key == pygame.K_f:
                         target = self.ui.open_unit
@@ -3923,9 +4143,16 @@ class Game:
                             except: pass
                 elif not self.game_over:
                     if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                        _pre_open = self.ui.open_unit
+                        _pre_units_len = len(self.units)
                         delta = self.ui.handle_click(ev.pos, self.units, self.money,
                                                      self.effects, self.enemies,
                                                      self.wave_mgr.wave, self.save_data, self.mode)
+                        # Apply Resourcefulness to sell value
+                        if delta > 0 and _pre_open is not None and len(self.units) < _pre_units_len:
+                            _res_lvl = self.save_data.get("skill_tree", {}).get("resourcefulness", 0)
+                            if _res_lvl > 0:
+                                delta = int(delta * (1.0 + _res_lvl * 0.012))
                         self.money += delta
                         if self._hixw5yt_frozen:
                             for e in self.enemies:
@@ -3944,8 +4171,13 @@ class Game:
                                         self._pokaxw5yt_owner = None
                                     break
                     if ev.type == pygame.MOUSEBUTTONUP and ev.button == 1:
+                        _pre_len = len(self.units)
                         delta = self.ui.handle_release(ev.pos, self.units, self.money)
                         self.money += delta
+                        # Apply Enhanced Optics range bonus to newly placed unit
+                        if len(self.units) > _pre_len and getattr(self, '_sk_range_bonus', 0) > 0:
+                            _new_u = self.units[-1]
+                            _new_u.range_tiles = _new_u.range_tiles * (1.0 + self._sk_range_bonus)
 
             if not self.game_over and not self.win:
                 self._elapsed += dt
@@ -4259,10 +4491,17 @@ class Game:
     
                 # Kill rewards: give money + floating text for freshly killed enemies
                 for e in self.enemies:
-                    if not e.alive and not getattr(e,'_reward_paid',False) and not getattr(e,'free_kill',False):
+                    if not e.alive and not getattr(e,"_reward_paid",False) and not getattr(e,"free_kill",False):
                         e._reward_paid=True
                         reward=e.KILL_REWARD
                         if self.mode == "endless": reward *= 2
+                        # Scavenger: every N kills -> 1.5x reward
+                        _scav_n = getattr(self, "_sk_scavenger_n", 0)
+                        if _scav_n > 0 and reward > 0:
+                            self._sk_kill_counter += 1
+                            if self._sk_kill_counter >= _scav_n:
+                                self._sk_kill_counter = 0
+                                reward = int(reward * 1.5)
                         if reward>0 and self.mode != "easy":
                             self.money+=reward
                             self.effects.append(FloatingText(e.x, e.y-e.radius-10, f"+{reward}"))
@@ -4419,6 +4658,11 @@ class Game:
                     if self.mode == "frosty":
                         if lm: lm += 150
                         if bm: bm += 150
+                    # Apply Stonks skill bonus to wave rewards
+                    _sw = getattr(self, "_sk_wave_bonus", 0)
+                    if _sw > 0:
+                        if lm: lm = int(lm * (1.0 + _sw))
+                        if bm: bm = int(bm * (1.0 + _sw))
                     # Farm income — only count OWN farms (not peer farms)
                     own_farms = [u for u in self.units if isinstance(u, Farm)]
                     farm_income = sum(u.income for u in own_farms)
@@ -4525,6 +4769,9 @@ class Game:
             if self.game_over or self.win:
                 self._draw_end_screen()
             pygame.display.flip()
+        # Reset skill tree globals so they dont bleed into menu
+        game_core.DEBUFF_MULT = 1.0
+        game_core.AOE_MULT    = 1.0
 
     def draw(self):
         fk_shake=(0,0)
@@ -4961,14 +5208,16 @@ class MainMenu(_OrigMainMenu):
         cx = SCREEN_W // 2
         btn_w, btn_h = 260, 54
         gap = 16
-        # 5 buttons starting at y=248 with gap=16
+        # 7 buttons starting at y=248 with gap=14
         y0 = 248
-        self.btn_play        = pygame.Rect(cx - btn_w//2, y0,              btn_w, btn_h)
+        gap = 14
+        self.btn_play        = pygame.Rect(cx - btn_w//2, y0,                btn_w, btn_h)
         self.btn_loadout     = pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*1, btn_w, btn_h)
         self.btn_mp          = pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*2, btn_w, btn_h)
-        self.btn_achievements= pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*3, btn_w, btn_h)
-        self.btn_settings    = pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*4, btn_w, btn_h)
-        self.btn_quit        = pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*5, btn_w, btn_h)
+        self.btn_skilltree   = pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*3, btn_w, btn_h)
+        self.btn_achievements= pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*4, btn_w, btn_h)
+        self.btn_settings    = pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*5, btn_w, btn_h)
+        self.btn_quit        = pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*6, btn_w, btn_h)
 
     def run(self):
         clock = pygame.time.Clock()
@@ -5000,6 +5249,7 @@ class MainMenu(_OrigMainMenu):
                                     self.action = diff
                     if self.btn_loadout.collidepoint(pos):      self.action = "loadout"
                     if self.btn_mp.collidepoint(pos):           self.action = "multiplayer"
+                    if self.btn_skilltree.collidepoint(pos):    self.action = "skilltree"
                     if self.btn_achievements.collidepoint(pos): self.action = "achievements"
                     if self.btn_settings.collidepoint(pos):    self.action = "settings"
                     if self.btn_quit.collidepoint(pos):         self.action = "quit"
@@ -5080,6 +5330,7 @@ class MainMenu(_OrigMainMenu):
         draw_fancy_btn(self.btn_play,        "PLAY",         self.btn_play.collidepoint(mx, my),        (60, 160, 255))
         draw_fancy_btn(self.btn_loadout,     "LOADOUT",      self.btn_loadout.collidepoint(mx, my),     (120, 80, 220))
         draw_fancy_btn(self.btn_mp,          "MULTIPLAYER",   self.btn_mp.collidepoint(mx, my),          (40, 180, 100))
+        draw_fancy_btn(self.btn_skilltree,   "SKILL TREE",    self.btn_skilltree.collidepoint(mx, my),   (60, 200, 140))
         draw_fancy_btn(self.btn_achievements,"ACHIEVEMENTS",   self.btn_achievements.collidepoint(mx, my),(200, 160, 20))
         draw_fancy_btn(self.btn_settings,    "SETTINGS",      self.btn_settings.collidepoint(mx, my),    (60, 130, 180))
         draw_fancy_btn(self.btn_quit,        "QUIT",          self.btn_quit.collidepoint(mx, my),        (180, 50, 50))
@@ -5097,6 +5348,22 @@ class MainMenu(_OrigMainMenu):
             surf.blit(coin_s, (coin_bg.x + 8 + ico_m.get_width(), coin_bg.y + (34 - coin_s.get_height()) // 2))
         else:
             surf.blit(coin_s, coin_s.get_rect(midleft=(coin_bg.x + 8, coin_bg.centery)))
+
+        # ── Shard counter (left of coins) ─────────────────────────────────────
+        shards = self.save_data.get("shards", 0)
+        ico_sh = load_icon("shard_ico", 28)
+        shard_col2 = (140, 220, 255)
+        shard_s2 = pygame.font.SysFont("segoeui", 22, bold=True).render(f" {shards}", True, shard_col2)
+        total_sw = (ico_sh.get_width() if ico_sh else 0) + shard_s2.get_width() + 16
+        shard_bg = pygame.Rect(coin_bg.x - total_sw - 8, 8, total_sw, 34)
+        draw_rect_alpha(surf, (5, 20, 30), (shard_bg.x, shard_bg.y, shard_bg.w, shard_bg.h), 160, 8)
+        pygame.draw.rect(surf, (40, 120, 180), shard_bg, 1, border_radius=8)
+        if ico_sh:
+            surf.blit(ico_sh, (shard_bg.x + 8, shard_bg.y + (34 - ico_sh.get_height()) // 2))
+            surf.blit(shard_s2, (shard_bg.x + 8 + ico_sh.get_width(), shard_bg.y + (34 - shard_s2.get_height()) // 2))
+        else:
+            shard_lbl2 = pygame.font.SysFont("segoeui", 22, bold=True).render(f"◆ {shards}", True, shard_col2)
+            surf.blit(shard_lbl2, shard_lbl2.get_rect(midleft=(shard_bg.x + 8, shard_bg.centery)))
 
         # ── Version (bottom left) ─────────────────────────────────────────────
         ver = font_sm.render("v1.2", True, (40, 48, 65))
@@ -5155,6 +5422,16 @@ if __name__ == "__main__":
 
         elif action == "achievements":
             AchievementsScreen(screen).run()
+
+        elif action == "skilltree":
+            import importlib.util as _ilu2, os as _os2
+            _st_path = _os2.path.join(_os2.path.dirname(_os2.path.abspath(__file__)),
+                                      "assets", "skill_tree.py")
+            _spec2 = _ilu2.spec_from_file_location("skill_tree", _st_path)
+            _st_mod = _ilu2.module_from_spec(_spec2)
+            _spec2.loader.exec_module(_st_mod)
+            _st_mod.SkillTreeScreen(screen, save_data).run()
+            save_data = load_save()
 
         elif action == "settings":
             SettingsScreen(screen).run()

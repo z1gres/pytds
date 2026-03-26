@@ -7,6 +7,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
+import game_core as _game_core_ref
 from game_core import (
     SCREEN_W, SCREEN_H, PATH_Y, SLOT_AREA_Y, TILE,
     C_WHITE, C_BLACK, C_GOLD, C_ASSASSIN, C_ACCEL,
@@ -15,6 +16,9 @@ from game_core import (
     UNIT_LIMITS,
     SwordEffect, WhirlwindEffect, FloatingText, BloodSlashEffect,
 )
+
+def _dm(): """Return current debuff duration multiplier from skill tree."""; return getattr(_game_core_ref, "DEBUFF_MULT", 1.0)
+def _am(): """Return current AoE radius multiplier from skill tree."""; return getattr(_game_core_ref, "AOE_MULT", 1.0)
 from enemies import (
     Enemy, HiddenEnemy, BreakerEnemy, ArmoredEnemy, ScoutEnemy, TankEnemy,
     NormalBoss, SlowBoss, HiddenBoss, FastBoss, Necromancer, GraveDigger,
@@ -251,7 +255,7 @@ class Frostcelerator(Unit):
         """Apply freeze to an enemy."""
         if not hasattr(e,'_frost_frozen'): e._frost_frozen=False
         e._frost_frozen=True
-        e._frost_freeze_timer=getattr(e,'_frost_freeze_timer',0)+secs
+        e._frost_freeze_timer=getattr(e,'_frost_freeze_timer',0)+secs*_dm()
         e.frozen=True
         # Restore speed if was slowed
         if getattr(e,'_frost_slowed',False):
@@ -391,7 +395,7 @@ class Frostcelerator(Unit):
             pygame.draw.circle(glow,(40,160,255,ga),((tri_size+20)//2,(tri_size+20)//2),(tri_size+20)//2)
             surf.blit(glow,(px2-(tri_size+20)//2,py2-(tri_size+20)//2))
             if tri_img:
-                rot=-(aim_deg+side*90)
+                rot=-(aim_deg+side*90) + 90
                 rotated=pygame.transform.rotate(tri_img,rot)
                 surf.blit(rotated,rotated.get_rect(center=(px2,py2)))
             else:
@@ -778,7 +782,7 @@ class ArcherArrow:
                 e.take_damage(self.damage)
                 self._hit_ids.add(id(e))
                 if self.flame:
-                    e._fire_timer=3.0; e._fire_tick=0.0
+                    e._fire_timer=3.0*_dm(); e._fire_tick=0.0
                 if self.ice and not getattr(e,'_frost_frozen',False):
                     if getattr(e,'SLOW_RESISTANCE',0.0) < 1.0:
                         if not getattr(e,'_ice_arrow_slowed',False):
@@ -1425,14 +1429,14 @@ class FrostBlasterBullet:
                     e._fb_slow_pct = self.slow_pct
                     resistance = getattr(e, 'SLOW_RESISTANCE', 0.0)
                     e.speed = e._fb_orig_speed * (1.0 - self.slow_pct * resistance)
-                    e._fb_slow_timer = self.slow_dur
+                    e._fb_slow_timer = self.slow_dur * _dm()
                 if self.freeze_hits > 0:
                     hits = getattr(e, '_fb_hit_count', 0) + 1
                     e._fb_hit_count = hits
                     if hits >= self.freeze_hits:
                         e._fb_hit_count = 0
                         e.frozen = True
-                        e._fb_freeze_timer = getattr(e, '_fb_freeze_timer', 0) + self.freeze_dur
+                        e._fb_freeze_timer = getattr(e, '_fb_freeze_timer', 0) + self.freeze_dur * _dm()
 
     def draw(self, surf):
         if not self.alive: return
@@ -1677,7 +1681,7 @@ class Sledger(Unit):
             if last_frozen_by is not id(self):
                 e._sledger_last_frozen = id(self)
                 e.frozen = True
-                e._sledger_freeze_timer = self._freeze_dur
+                e._sledger_freeze_timer = self._freeze_dur * _dm()
                 # Reset chill so it can build again
                 e._sledger_slow = 0.0
 
@@ -2869,7 +2873,7 @@ class HallowPunkRocket:
         self.vx = dx / d; self.vy = dy / d
         self.speed   = speed
         self.damage  = damage
-        self.splash_r= splash_r * TILE
+        self.splash_r= splash_r * TILE * _am()
         self.knockback = knockback
         self.burn_dmg  = burn_dmg
         self.burn_time = burn_time
@@ -2903,7 +2907,7 @@ class HallowPunkRocket:
                     e.y -= (dy2 / d2) * push
                 # Burn (lv1+)
                 if self.burn_dmg > 0:
-                    e._fire_timer = max(getattr(e, '_fire_timer', 0.0), self.burn_time)
+                    e._fire_timer = max(getattr(e, '_fire_timer', 0.0), self.burn_time * _dm())
                     e._fire_tick  = getattr(e, '_fire_tick', 0.0)
                     e._fire_dmg   = self.burn_dmg
                     e._fire_tick_interval = self.burn_tick
@@ -3238,7 +3242,7 @@ class SpotlightTech(Unit):
                     e._exposed = True; e._exposed_timer = self.firerate + 0.5
 
                 if self._burn_dmg > 0:
-                    e._st_fire_timer = self._burn_time; e._st_fire_tick = 0.0
+                    e._st_fire_timer = self._burn_time * _dm(); e._st_fire_tick = 0.0
 
             # Confusion (lv4, with cooldown)
             if self._conf_thresh > 0 and self._conf_accum >= self._conf_thresh and self._conf_cd <= 0:
@@ -3669,7 +3673,7 @@ class SnowballerBall:
         self.freeze_thresh= freeze_thresh
         self.freeze_time  = freeze_time
         self.explosive    = explosive
-        self.splash_r     = splash_r * TILE
+        self.splash_r     = splash_r * TILE * _am()
         self.defense_bypass = defense_bypass
         self._enemies     = all_enemies_ref
         self.alive        = True
@@ -3690,7 +3694,7 @@ class SnowballerBall:
         # Freeze check
         if self.freeze_thresh > 0 and new >= self.freeze_thresh and self.freeze_time > 0:
             e.frozen = True
-            e._sb_freeze_timer = self.freeze_time
+            e._sb_freeze_timer = self.freeze_time * _dm()
 
     def _hit_enemy(self, e):
         if self.defense_bypass:
@@ -3898,7 +3902,7 @@ class SnowballerOldBall:
         d = math.hypot(dx, dy) or 1
         self.vx = dx/d; self.vy = dy/d
         self.speed = _SB_BALL_SPEED
-        self.damage = damage; self.splash_r = splash_r * TILE
+        self.damage = damage; self.splash_r = splash_r * TILE * _am()
         self.slow_pct = slow_pct; self.slow_max = slow_max
         self.slow_dur = slow_dur; self.leave_puddle = leave_puddle
         self._enemies = all_enemies_ref; self.alive = True
@@ -4114,7 +4118,7 @@ class CommandoGrenade:
         self.vx = dx / d; self.vy = dy / d
         self.speed  = _COMMANDO_GRENADE_SPEED
         self.damage = damage * 3  # grenade deals 3x bullet damage AoE
-        self.splash_r = splash_r
+        self.splash_r = splash_r * _am()
         self._enemies = all_enemies_ref
         self._dist_left = 800.0
         self.alive = True
@@ -4229,7 +4233,7 @@ class Commando(Unit):
 
             # On first shot of burst, optionally launch grenade
             if self._grenade_on and self._burst_left == self._burst - 1:
-                splash_r = 3.0 * TILE
+                splash_r = 3.0 * TILE * _am()
                 g = CommandoGrenade(self.px, self.py, t1,
                                     self.damage, splash_r, enemies)
                 self._grenades.append(g)
@@ -5082,3 +5086,485 @@ class Warlock(Unit):
 
 
 WarlockUnit = Warlock  # alias
+
+
+# ── Jester ─────────────────────────────────────────────────────────────────────
+C_JESTER      = (220, 80, 160)
+C_JESTER_DARK = (80, 20, 55)
+
+# Tuple layout:
+#  (damage, firerate, range_tiles, upgrade_cost,
+#   burn_dmg,          # fire dot damage per tick
+#   burn_dur,          # fire dot total duration (seconds)
+#   burn_tick,         # fire dot tick interval
+#   expl_range,        # explosion splash radius (tiles)
+#   ice_pct,           # ice bomb: slowdown per hit (fraction)
+#   ice_max,           # ice bomb: max slowdown (fraction)
+#   ice_time,          # ice bomb: slow duration (seconds)
+#   ice_def_drop,      # ice bomb: defense drop per hit (fraction, lv3+)
+#   ice_expl_range,    # ice bomb: explosion radius (tiles, lv3+)
+#   poison_dmg,        # poison bomb: damage per tick (0 = unavailable)
+#   poison_time,       # poison bomb: puddle lifetime (seconds)
+#   poison_tick,       # poison bomb: tick interval (seconds)
+#   conf_time,         # confusion bomb: reversal duration (seconds, 0 = unavailable)
+#   conf_cd,           # confusion bomb: per-enemy cooldown (seconds)
+#   dual_bomb,         # True = fire two bombs per attack (lv4+)
+#   hidden_detection)
+#
+# Bomb modes: "fire", "ice", "poison", "confusion"
+# The Jester picks a target in range, throws a bomb that lands at target position
+# applying flat splash (same dmg regardless of distance) up to 5 enemies.
+# Poison bomb creates a ground puddle (no splash), lead-pierce via splash damage.
+
+JESTER_LEVELS = [
+    # lv0 – place $650
+    # dmg  fr      rng  cost   bdmg btdur bttick  expr  ipct  imax  itm   idd   iexr  pdmg  ptm   ptk   cftm  cfcd  dual  hid
+    (  4, 1.208,   7,   None,   0,   0.0,  1.0,   4,    0.0,  0.0,  0.0,  0.00, 4,    0,    0.0,  0.4,  0.0,  6.0,  False,False),
+    # lv1 – +$400
+    (  6, 1.008,   9.3, 400,    1,   4.0,  1.0,   4,    0.0,  0.0,  0.0,  0.00, 4,    0,    0.0,  0.4,  0.0,  6.0,  False,False),
+    # lv2 – +$670  (unlocks ice bomb)
+    ( 10, 1.008,  10.0, 670,    2,   4.0,  1.0,   4,    0.20, 0.50, 3.0,  0.00, 4,    0,    0.0,  0.4,  0.0,  6.0,  False,False),
+    # lv3 – +$2750 (unlocks poison bomb, hidden det, enhanced ice)
+    ( 30, 1.008,  10.0,2750,    8,   4.0,  1.0,   4,    0.40, 0.50, 3.0,  0.01, 7,    3,   30.0,  0.4,  0.0,  6.0,  False,True),
+    # lv4 – +$8500 (unlocks confusion bomb, dual bombs, faster firerate)
+    ( 50, 0.608,  13.0,8500,   14,   4.0,  1.0,   4,    0.50, 0.50, 3.0,  0.01, 7,    5,   30.0,  0.4,  2.0,  6.0,  True, True),
+]
+
+_JESTER_MAX_SPLASH_HITS = 5    # max enemies hit by splash
+_JESTER_MAX_ICE_SLOW    = 0.50  # absolute max slow from ice bombs
+_JESTER_MAX_DEFDROP     = 0.50  # max defense drop (ice chill drop)
+
+
+class JesterBomb:
+    """Projectile arc from Jester to target position, then explodes."""
+    TRAVEL_SPEED = 480.0   # px per second
+
+    def __init__(self, ox, oy, tx, ty, bomb_type, jester):
+        self.ox = float(ox); self.oy = float(oy)
+        self.tx = float(tx); self.ty = float(ty)
+        self.bomb_type = bomb_type  # "fire", "ice", "poison", "confusion"
+        self.jester = jester        # ref to owning unit for stats
+        dx = self.tx - ox; dy = self.ty - oy
+        d = math.hypot(dx, dy) or 1
+        self.vx = dx / d; self.vy = dy / d
+        self.x = float(ox); self.y = float(oy)
+        self.alive = True
+        self._arc_t = 0.0
+        self._total_dist = d
+        self._traveled  = 0.0
+
+    # colour per type
+    _TYPE_COLS = {
+        "fire":      (255, 100, 30),
+        "ice":       (80,  200, 255),
+        "poison":    (80,  220, 60),
+        "confusion": (200, 80,  255),
+    }
+
+    def update(self, dt, enemies, effects, total_damage_ref):
+        if not self.alive: return
+        step = self.TRAVEL_SPEED * dt
+        self.x += self.vx * step
+        self.y += self.vy * step
+        self._traveled += step
+        self._arc_t += dt
+        if self._traveled >= self._total_dist:
+            self._explode(enemies, effects, total_damage_ref)
+            self.alive = False
+
+    def _explode(self, enemies, effects, total_damage_ref):
+        j = self.jester
+        row = JESTER_LEVELS[j.level]
+        (damage, _, _, _, bdmg, bdur, btick, expl_r,
+         ipct, imax, itm, idd, iexr,
+         pdmg, ptm, ptk, cftm, cfcd, _, hid) = row
+
+        expl_px = expl_r * TILE   # explosion radius in pixels
+        bt = self.bomb_type
+
+        if bt == "poison":
+            # create a puddle — no splash damage, just register on all enemies in range
+            j._puddles.append({
+                "x": self.tx, "y": self.ty,
+                "r": expl_px,
+                "timer": ptm,
+                "tick_t": ptk,
+                "dmg": pdmg,
+                "def_drop_done": {},  # enemy id → total defense dropped so far
+            })
+            # Poison puddle explosion VFX
+            effects.append(_JesterExplosionEffect(self.tx, self.ty, expl_px, (60, 200, 40)))
+            return
+
+        if bt == "confusion":
+            # No damage, just apply confusion to non-boss enemies in splash
+            hits = 0
+            for e in enemies:
+                if not e.alive: continue
+                if getattr(e, '_reversed', False): continue
+                if e.IS_HIDDEN and not j.hidden_detection: continue
+                if dist((e.x, e.y), (self.tx, self.ty)) > expl_px: continue
+                if hits >= _JESTER_MAX_SPLASH_HITS: break
+                # Bosses are immune
+                if getattr(e, 'IS_BOSS', False): continue
+                now_cd = getattr(e, '_jester_conf_cd', 0.0)
+                if now_cd > 0: continue
+                e._jester_conf_cd = cfcd
+                e._reversed = True
+                e._jester_conf_timer = cftm * _dm()
+                hits += 1
+            effects.append(_JesterExplosionEffect(self.tx, self.ty, expl_px, (180, 60, 255)))
+            return
+
+        # Fire or Ice — deal splash damage (flat, all in radius equally), apply effects
+        # Build candidate list in radius, sort by target mode
+        candidates = []
+        for e in enemies:
+            if not e.alive: continue
+            if getattr(e, '_reversed', False): continue
+            if e.IS_HIDDEN and not j.hidden_detection: continue
+            if dist((e.x, e.y), (self.tx, self.ty)) <= expl_px:
+                candidates.append(e)
+        # sort by target mode (same as unit targeting)
+        mode = getattr(j, 'target_mode', 'First')
+        if   mode == "First":       candidates.sort(key=lambda e: -e.x)
+        elif mode == "Last":        candidates.sort(key=lambda e:  e.x)
+        elif mode == "Lowest HP":   candidates.sort(key=lambda e:  e.hp)
+        elif mode == "Highest HP":  candidates.sort(key=lambda e: -e.hp)
+        elif mode == "Nearest":     candidates.sort(key=lambda e:  dist((e.x,e.y),(j.px,j.py)))
+        elif mode == "Farthest":    candidates.sort(key=lambda e: -dist((e.x,e.y),(j.px,j.py)))
+        candidates = candidates[:_JESTER_MAX_SPLASH_HITS]
+
+        for e in candidates:
+            # Splash damage does NOT ignore defense (uses normal take_damage)
+            e.take_damage(damage)
+            total_damage_ref[0] += damage
+
+            if bt == "fire":
+                # Apply burn
+                e._jester_burn_dmg   = bdmg
+                e._jester_burn_dur   = bdur * _dm()
+                e._jester_burn_tick  = btick
+                e._jester_burn_timer = btick   # first tick after one interval
+
+            elif bt == "ice":
+                if getattr(e, 'SLOW_RESISTANCE', 0.0) < 1.0:
+                    resistance = getattr(e, 'SLOW_RESISTANCE', 0.0)
+                    orig = getattr(e, '_jester_ice_orig_spd', None)
+                    if orig is None:
+                        e._jester_ice_orig_spd = e.speed
+                    cur = getattr(e, '_jester_ice_slow', 0.0)
+                    new = min(cur + ipct * (1.0 - resistance), _JESTER_MAX_ICE_SLOW)
+                    e._jester_ice_slow = new
+                    e._jester_ice_timer = itm * _dm()
+                    e.speed = e._jester_ice_orig_spd * (1.0 - e._jester_ice_slow)
+                    # Defense drop (lv3+)
+                    if idd > 0:
+                        dropped = getattr(e, '_jester_ice_defdrop', 0.0)
+                        if dropped < _JESTER_MAX_DEFDROP:
+                            apply_dd = min(idd, _JESTER_MAX_DEFDROP - dropped)
+                            e.ARMOR = max(0.0, e.ARMOR - apply_dd)
+                            e._jester_ice_defdrop = dropped + apply_dd
+
+        col = (255, 80, 20) if bt == "fire" else (80, 200, 255)
+        effects.append(_JesterExplosionEffect(self.tx, self.ty, expl_px, col))
+
+    def draw(self, surf):
+        if not self.alive: return
+        # Arc trajectory: bomb bounces up in a parabola
+        prog = self._traveled / max(1, self._total_dist)
+        arc_off = math.sin(prog * math.pi) * 40  # peak height offset
+        cx = int(self.x)
+        cy = int(self.y - arc_off)
+        col = self._TYPE_COLS.get(self.bomb_type, (200, 200, 200))
+        # Shadow on ground
+        sh = pygame.Surface((18, 8), pygame.SRCALPHA)
+        shadow_alpha = int(prog * 80 + (1-prog) * 20)
+        pygame.draw.ellipse(sh, (0, 0, 0, shadow_alpha), (0, 0, 18, 8))
+        surf.blit(sh, (int(self.x) - 9, int(self.y) - 4))
+        # Bomb body
+        s = pygame.Surface((20, 20), pygame.SRCALPHA)
+        pygame.draw.circle(s, (*col, 200), (10, 10), 7)
+        pygame.draw.circle(s, (255, 255, 255, 120), (10, 10), 7, 1)
+        # Fuse spark
+        spark_col = (255, 220, 60) if self._arc_t % 0.12 < 0.06 else (255, 140, 20)
+        pygame.draw.circle(s, (*spark_col, 255), (10, 4), 3)
+        surf.blit(s, (cx - 10, cy - 10))
+
+
+class _JesterExplosionEffect:
+    """Flash ring effect for Jester bomb explosion."""
+    def __init__(self, x, y, radius, color):
+        self.x = x; self.y = y; self.radius = radius
+        self.color = color; self.life = 0.4; self.t = 0.0
+
+    def update(self, dt):
+        self.t += dt
+        return self.t < self.life
+
+    def draw(self, surf):
+        prog = self.t / self.life
+        alpha = int(220 * (1 - prog))
+        r = int(self.radius * (0.3 + 0.7 * prog))
+        s = pygame.Surface((r * 2 + 4, r * 2 + 4), pygame.SRCALPHA)
+        pygame.draw.circle(s, (*self.color[:3], alpha // 3), (r + 2, r + 2), r)
+        pygame.draw.circle(s, (*self.color[:3], alpha),     (r + 2, r + 2), r, max(1, int(3 * (1-prog)) + 1))
+        surf.blit(s, (int(self.x) - r - 2, int(self.y) - r - 2))
+
+
+class JesterPuddleEffect:
+    """Visual for lingering poison puddle on ground."""
+    def __init__(self, x, y, r, total_time):
+        self.x = x; self.y = y; self.r = r
+        self.total_time = total_time; self.t = 0.0
+        self._bubbles = [(random.uniform(-r, r), random.uniform(-r*0.5, r*0.5),
+                          random.uniform(0.4, 1.6)) for _ in range(8)]
+
+    def update(self, dt):
+        self.t += dt
+        return self.t < self.total_time
+
+    def draw(self, surf):
+        prog = self.t / self.total_time
+        alpha = int(120 * (1 - prog * 0.6))
+        rx = int(self.r); ry = int(self.r * 0.45)
+        s = pygame.Surface((rx * 2 + 4, ry * 2 + 4), pygame.SRCALPHA)
+        pygame.draw.ellipse(s, (40, 180, 20, alpha), (2, 2, rx * 2, ry * 2))
+        pygame.draw.ellipse(s, (80, 230, 40, min(255, alpha + 60)), (2, 2, rx * 2, ry * 2), 2)
+        surf.blit(s, (int(self.x) - rx - 2, int(self.y) - ry - 2))
+        # Bubbles
+        tv = self.t
+        for bx, by, spd in self._bubbles:
+            ba = int(60 * (1 - prog))
+            bubble_y = by - (tv * spd * 12) % (self.r * 0.8)
+            bs = pygame.Surface((8, 8), pygame.SRCALPHA)
+            pygame.draw.circle(bs, (100, 255, 60, ba), (4, 4), 3)
+            surf.blit(bs, (int(self.x + bx) - 4, int(self.y + bubble_y) - 4))
+
+
+class Jester(Unit):
+    PLACE_COST = 650
+    COLOR      = C_JESTER
+    NAME       = "Jester"
+    hidden_detection = False
+
+    # Available bomb types per level unlock
+    _BOMB_UNLOCK = {0: ["fire"], 1: ["fire"], 2: ["fire","ice"],
+                    3: ["fire","ice","poison"], 4: ["fire","ice","poison","confusion"]}
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._anim_t   = 0.0
+        self._bombs    = []    # active bomb projectiles
+        self._puddles  = []    # active poison puddles (dicts)
+        self._puddle_vfx = []  # JesterPuddleEffect instances
+        self.bomb_mode = "fire"
+        self._apply_level()
+
+    def _apply_level(self):
+        row = JESTER_LEVELS[self.level]
+        (self.damage, self.firerate, self.range_tiles, _,
+         self._burn_dmg, self._burn_dur, self._burn_tick,
+         self._expl_r,
+         self._ice_pct, self._ice_max, self._ice_time, self._ice_def_drop, self._ice_expl_r,
+         self._poison_dmg, self._poison_time, self._poison_tick,
+         self._conf_time, self._conf_cd,
+         self._dual, self.hidden_detection) = row
+        # Clamp bomb mode to what's available at this level
+        available = self._BOMB_UNLOCK.get(self.level, ["fire"])
+        if self.bomb_mode not in available:
+            self.bomb_mode = "fire"
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(JESTER_LEVELS): return None
+        return JESTER_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(JESTER_LEVELS):
+            self.level = nxt
+            self._apply_level()
+
+    def _try_attack(self, enemies, effects):
+        if self.cd_left > 0: return
+        targets = self._get_targets(enemies, 1)
+        if not targets: return
+        self.cd_left = self.firerate
+        t0 = targets[0]
+
+        bomb_type = self.bomb_mode
+        # For ice bomb: use ice explosion range
+        self._throw_bomb(t0.x, t0.y, bomb_type, effects)
+        if self._dual:
+            # Second bomb targets same or next enemy
+            t2_list = self._get_targets(enemies, 2)
+            t2 = t2_list[1] if len(t2_list) >= 2 else t0
+            self._throw_bomb(t2.x, t2.y, bomb_type, effects)
+
+    def _throw_bomb(self, tx, ty, bomb_type, effects):
+        b = JesterBomb(self.px, self.py, tx, ty, bomb_type, self)
+        self._bombs.append(b)
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t += dt
+        if self.cd_left > 0: self.cd_left -= dt
+        self._try_attack(enemies, effects)
+
+        # Update bombs
+        dmg_ref = [0]
+        for b in self._bombs:
+            b.update(dt, enemies, effects, dmg_ref)
+        self.total_damage += dmg_ref[0]
+        self._bombs = [b for b in self._bombs if b.alive]
+
+        # Tick burn on enemies
+        for e in enemies:
+            if not e.alive: continue
+            bdur = getattr(e, '_jester_burn_dur', 0.0)
+            if bdur > 0:
+                e._jester_burn_dur = bdur - dt
+                e._jester_burn_timer = getattr(e, '_jester_burn_timer', 0.0) - dt
+                if e._jester_burn_timer <= 0:
+                    e._jester_burn_timer = getattr(e, '_jester_burn_tick', 1.0)
+                    bdmg = getattr(e, '_jester_burn_dmg', 0)
+                    if bdmg > 0:
+                        e.take_damage(bdmg)
+                        self.total_damage += bdmg
+                if e._jester_burn_dur <= 0:
+                    e._jester_burn_dur = 0.0
+
+        # Tick ice slow timers
+        for e in enemies:
+            if not e.alive: continue
+            itimer = getattr(e, '_jester_ice_timer', 0.0)
+            if itimer > 0:
+                e._jester_ice_timer = itimer - dt
+                if e._jester_ice_timer <= 0:
+                    orig = getattr(e, '_jester_ice_orig_spd', None)
+                    if orig is not None:
+                        e.speed = orig
+                    e._jester_ice_orig_spd = None
+                    e._jester_ice_slow = 0.0
+
+        # Tick confusion reversal
+        for e in enemies:
+            if not e.alive: continue
+            if getattr(e, '_jester_conf_cd', 0.0) > 0:
+                e._jester_conf_cd -= dt
+            conf_timer = getattr(e, '_jester_conf_timer', 0.0)
+            if conf_timer > 0:
+                e._jester_conf_timer = conf_timer - dt
+                if e._jester_conf_timer <= 0:
+                    e._reversed = False
+                    e._jester_conf_timer = 0.0
+
+        # Tick puddles
+        new_puddles = []
+        for p in self._puddles:
+            p["timer"] -= dt
+            p["tick_t"] -= dt
+            if p["tick_t"] <= 0:
+                p["tick_t"] += p["tick_t_orig"] if "tick_t_orig" in p else self._poison_tick
+                p["tick_t"] = self._poison_tick
+                # Damage enemies in puddle
+                for e in enemies:
+                    if not e.alive: continue
+                    if e.IS_HIDDEN and not self.hidden_detection: continue
+                    if dist((e.x, e.y), (p["x"], p["y"])) <= p["r"]:
+                        e.take_damage(p["dmg"])
+                        self.total_damage += p["dmg"]
+            if p["timer"] > 0:
+                new_puddles.append(p)
+        self._puddles = new_puddles
+
+        # Spawn puddle VFX when puddles are created (tracked by count mismatch)
+        # Instead, we spawn them in _throw_bomb via effects (done in JesterBomb._explode already)
+
+        # Update puddle VFX
+        self._puddle_vfx = [v for v in self._puddle_vfx if v.update(dt)]
+
+    def draw(self, surf):
+        cx, cy = int(self.px), int(self.py)
+        t = self._anim_t
+
+        # Jester body — colorful magenta/pink
+        pygame.draw.circle(surf, C_JESTER_DARK, (cx, cy), 27)
+        pygame.draw.circle(surf, C_JESTER,      (cx, cy), 21)
+        pygame.draw.circle(surf, (255, 160, 210), (cx, cy), 21, 2)
+
+        # Jester hat — two-pointed fool hat above the circle
+        hat_pts = [
+            (cx - 10, cy - 20),
+            (cx - 16, cy - 40),
+            (cx,      cy - 26),
+            (cx + 16, cy - 40),
+            (cx + 10, cy - 20),
+        ]
+        pygame.draw.polygon(surf, (180, 40, 120), hat_pts)
+        pygame.draw.polygon(surf, (255, 120, 200), hat_pts, 2)
+        # Bell on each tip
+        pygame.draw.circle(surf, C_GOLD, (cx - 16, cy - 40), 4)
+        pygame.draw.circle(surf, C_GOLD, (cx + 16, cy - 40), 4)
+
+        # Animated juggling bomb dots
+        for i in range(3):
+            a = math.radians(t * 90 * (1 + i * 0.3) + i * 120)
+            bx2 = cx + int(math.cos(a) * (24 + i * 3))
+            by2 = cy + int(math.sin(a) * (16 + i * 2))
+            btype = ["fire", "ice", "poison"][i]
+            bcol  = JesterBomb._TYPE_COLS[btype]
+            bs = pygame.Surface((10, 10), pygame.SRCALPHA)
+            pygame.draw.circle(bs, (*bcol, 200), (5, 5), 4)
+            surf.blit(bs, (bx2 - 5, by2 - 5))
+
+        # Hidden detection indicator
+        if self.hidden_detection:
+            pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
+
+        # Level pips
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_JESTER, (cx - 10 + i * 7, cy + 36), 3)
+
+        # Draw active bombs
+        for b in self._bombs:
+            b.draw(surf)
+
+        # Draw puddle VFX
+        for v in self._puddle_vfx:
+            v.draw(surf)
+
+        # Draw active puddles (simple ground overlay)
+        for p in self._puddles:
+            frac = p["timer"] / max(0.01, self._poison_time)
+            rx = int(p["r"]); ry = int(p["r"] * 0.45)
+            alpha = int(80 * frac + 20)
+            ps = pygame.Surface((rx * 2 + 4, ry * 2 + 4), pygame.SRCALPHA)
+            pygame.draw.ellipse(ps, (40, 180, 20, alpha), (2, 2, rx * 2, ry * 2))
+            pygame.draw.ellipse(ps, (80, 255, 40, min(180, alpha + 40)), (2, 2, rx * 2, ry * 2), 2)
+            surf.blit(ps, (int(p["x"]) - rx - 2, int(p["y"]) - ry - 2))
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (255, 100, 180, 18), (r, r), r)
+        pygame.draw.circle(s, (255, 100, 180, 60), (r, r), r, 2)
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+
+    def get_info(self):
+        info = {
+            "Damage":   self.damage,
+            "Firerate": f"{self.firerate:.3f}",
+            "Range":    self.range_tiles,
+            "SplashR":  f"{self._expl_r} tiles (max {_JESTER_MAX_SPLASH_HITS} hits)",
+            "Mode":     self.bomb_mode,
+        }
+        if self._burn_dmg > 0:
+            info["Burn"] = f"{self._burn_dmg}/tick {self._burn_dur:.0f}s"
+        if self._ice_pct > 0:
+            info["IceSlow"] = f"{int(self._ice_pct*100)}%/hit max {int(self._ice_max*100)}%"
+        if self._poison_dmg > 0:
+            info["Poison"] = f"{self._poison_dmg}/tick {self._poison_time:.0f}s"
+        if self._conf_time > 0:
+            info["Confuse"] = f"{self._conf_time:.0f}s / {self._conf_cd:.0f}s cd"
+        return info

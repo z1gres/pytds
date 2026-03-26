@@ -160,6 +160,7 @@ RARITY_DATA = {
     "rare":      {"label":"RARE",      "color":(30,50,120),   "border":(80,120,255),  "shimmer":(100,150,255),    "text_col":(120,180,255)},
     "epic":      {"label":"EPIC",      "color":(80,20,120),   "border":(180,60,255),  "shimmer":None,             "text_col":(200,120,255)},
     "exclusive": {"label":"EXCLUSIVE", "color":(50,10,90),    "border":(200,50,255),  "shimmer":(255,160,255),    "text_col":(255,180,255)},
+    "mythic":    {"label":"MYTHIC",    "color":(80,60,0),     "border":(255,200,0),   "shimmer":(255,240,100),    "text_col":(255,220,60)},
 }
 
 # Unit rarity assignments
@@ -189,6 +190,7 @@ UNIT_LIMITS = {
     "Caster":         1,
     "Accelerator+":   2,
     "Warlock":        4,
+    "Jester":         8,
 }
 
 def load_save():
@@ -197,7 +199,7 @@ def load_save():
             with open(SAVE_FILE,"r") as f:
                 return json.load(f)
         except: pass
-    return {"frostcelerator_unlocked": False, "loadout": ["Assassin", None, None, None, None], "coins": 0, "owned_units": ["Assassin"], "xw5yt_unlocked": False}
+    return {"frostcelerator_unlocked": False, "loadout": ["Assassin", None, None, None, None], "coins": 0, "owned_units": ["Assassin"], "xw5yt_unlocked": False, "shards": 0}
 
 def write_save(data):
     try:
@@ -329,3 +331,10 @@ class BloodSlashEffect:
 
 # ── Enemy base ─────────────────────────────────────────────────────────────────
 SETTINGS = {"colored_range": False}
+
+# ── Skill Tree global multipliers (set by Game.__init__ from save_data) ──────
+# Fight Dirty: debuff durations multiplier (1.0 = no bonus)
+DEBUFF_MULT = 1.0
+# Enhanced Optics: range multiplier (applied at placement, not here)
+# AoE radius multiplier for Improved Gunpowder
+AOE_MULT = 1.0
