@@ -2859,7 +2859,8 @@ def _apply_audio_settings():
         pygame.mixer.music.set_volume(vol)
     except Exception: pass
 
-_SETTINGS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "settings.json")
+from game_core import SAVE_FILE as _SAVE_FILE
+_SETTINGS_FILE = os.path.join(os.path.dirname(_SAVE_FILE), "settings.json")
 
 def load_settings():
     global SETTINGS
@@ -5408,38 +5409,6 @@ class MainMenu(_OrigMainMenu):
         ver = font_sm.render("v1.2", True, (40, 48, 65))
         surf.blit(ver, (10, SCREEN_H - 20))
 
-        # ── Changelog (top left) ──────────────────────────────────────────────
-        cl_x, cl_y = 12, 58
-        cl_w, cl_h = 310, 14 + len(_CHANGELOG) * 20 + 8
-        draw_rect_alpha(surf, (12, 10, 22), (cl_x, cl_y, cl_w, cl_h), 200, 8)
-        pygame.draw.rect(surf, (70, 50, 110), pygame.Rect(cl_x, cl_y, cl_w, cl_h), 1, border_radius=8)
-        cy_cl = cl_y + 8
-        for text, col, bold in _CHANGELOG:
-            cf = pygame.font.SysFont("segoeui", 13, bold=bold)
-            cs2 = cf.render(text, True, col)
-            surf.blit(cs2, (cl_x + 8, cy_cl))
-            cy_cl += 20
-
-
-# ── Changelog widget (drawn in MainMenu._draw) ────────────────────────────────
-_CHANGELOG = [
-    ("CHANGELOG", (200, 180, 255), True),
-    ("• Полный РЕБАЛАНС Фрости режима до играбельности", (160, 220, 255), False),
-    ("• Ребаланс Snowballer", (200, 200, 200), False),
-    ("  (старая версия доступна в sandbox)", (160, 160, 160), False),
-    ("• Командир убран до реворка из-за очень", (255, 120, 100), False),
-    ("  большого количества багов и недоработок", (255, 120, 100), False),
-    ("  (доступен в sandbox)", (200, 100, 80), False),
-    ("• Frostcelerator бафф", (160, 220, 255), False),
-    ("", (200, 200, 200), False),
-    ("В следующем обновлении:", (255, 230, 80), True),
-    ("• Реворк командо", (200, 200, 200), False),
-    ("• Ребаланс халов панк", (200, 200, 200), False),
-    ("• У каждой волны свой таймер до перехода", (200, 200, 200), False),
-    ("  на следующую, больше не будет зависеть", (200, 200, 200), False),
-    ("  переход от убиты ли враги", (200, 200, 200), False),
-    ("• Возможность скипать волны от таймера", (200, 200, 200), False),
-]
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
