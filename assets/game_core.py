@@ -107,6 +107,7 @@ ACHIEVEMENTS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath
 ACHIEVEMENT_DEFS = [
     {"id": "first_path",   "name": "Первый путь",    "desc": "Пройти Easy режим",                       "color": (80,200,80),   "border": (120,255,120)},
     {"id": "fallen_angel", "name": "Падший ангел",   "desc": "Пройти Fallen режим",                     "color": (140,40,200),  "border": (200,80,255)},
+    {"id": "frosty_clear", "name": "Ледяной путь",   "desc": "Пройти Frosty режим",                     "color": (80,200,255),  "border": (140,240,255)},
     {"id": "glitch",       "name": "tH3 GL1tcH",     "desc": "Пройти Hidden Wave. Недоступно",                     "color": (0,200,255),   "border": (80,240,255)},
     {"id": "king_victim",  "name": "Жертва Короля",  "desc": "Проиграть Fallen King на 40 волне Fallen", "color": (180,20,20),   "border": (255,60,60)},
     {"id": "true_end",     "name": "Истинный конец", "desc": "Пройти True Fallen",                      "color": (200,150,0),   "border": (255,210,50)},
@@ -180,7 +181,8 @@ UNIT_LIMITS = {
     "Gladiator":      2,
     "Toxic Gunner":   3,
     "Slasher":        3,
-    "Golden Cowboy":  6,
+    "Golden Cowboy":  6,   # legacy save compat
+    "Cowboy":         6,
     "Hallow Punk":    10,
     "Spotlight Tech": 1,
     "Commander":      3,
@@ -188,7 +190,6 @@ UNIT_LIMITS = {
     "Commando":       4,
     "hacker_laser_effects_test": 1,
     "Caster":         1,
-    "Accelerator+":   2,
     "Warlock":        4,
     "Jester":         8,
 }

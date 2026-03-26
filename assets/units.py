@@ -2644,7 +2644,7 @@ class Slasher(Unit):
         return info
 
 
-# ── Golden Cowboy ──────────────────────────────────────────────────────────────
+# ── Cowboy (formerly Golden Cowboy) ────────────────────────────────────────────
 C_GCOWBOY      = (220, 180, 40)
 C_GCOWBOY_DARK = (80,  60,  10)
 
@@ -2681,7 +2681,7 @@ GCOWBOY_LEVELS = [
 class GoldenCowboy(Unit):
     PLACE_COST       = 550
     COLOR            = C_GCOWBOY
-    NAME             = "Golden Cowboy"
+    NAME             = "Cowboy"
     hidden_detection = False
 
     def __init__(self, px, py):
@@ -4589,205 +4589,22 @@ class HackerLaserTest(Unit):
 
 Caster = HackerLaserTest  # alias
 
-# ── DoubleAccelerator ──────────────────────────────────────────────────────────
+# ── Accelerator+ (DoubleAccelerator) REMOVED — stubs for import compatibility ──
 C_DACCEL      = (180, 80, 255)
 C_DACCEL_DARK = (40, 10, 80)
-
-# Same stats as max-level Accelerator, but exclusive/cosmetic variant
-# (damage, firerate, range_tiles, upgrade_cost, dual)
-DACCEL_LEVELS = [
-    (36, 0.108, 7, None, True),   # lv0 — already at max accel stats, no upgrades
-]
+DACCEL_LEVELS = []
 
 class DoubleAccelerator(Unit):
-    PLACE_COST = 7500
-    COLOR      = C_DACCEL
-    NAME       = "Accelerator+"
-    hidden_detection = True
-
-    # Orbit distance from center for the triangles
-    _TRI_ORBIT = 38
-
+    """Removed unit — stub only, cannot be placed."""
+    PLACE_COST = 999999; COLOR = C_DACCEL; NAME = "Accelerator+"; hidden_detection = True
     def __init__(self, px, py):
         super().__init__(px, py)
-        self.damage      = 36
-        self.firerate    = 0.108
-        self.range_tiles = 7
-        self.dual        = True
-        self.cd_left     = 0.0
-        self._laser_t    = 0.0
-        self._laser_targets = []
-        self._aim_angle  = 0.0   # angle toward current target
-        self._attacking  = False
-        self._attack_lerp = 0.0  # 0=idle (left/right), 1=locked toward enemy
-        # Load triangle images
-        self._tri_img = None
-        self._frost_img = None
-        self._tri_img_cache = {}
-        try:
-            import os as _os
-            _base = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
-                               "assets", "image")
-            _p = _os.path.join(_base, "double_accelerator_triangles.png.png")
-            self._tri_img = pygame.image.load(_p).convert_alpha()
-        except Exception:
-            self._tri_img = None
+        self.damage = 0; self.firerate = 1.0; self.range_tiles = 1
+    def update(self, dt, enemies, effects, money): pass
+    def draw(self, surf): pass
+    def get_info(self): return {}
 
 
-    def upgrade_cost(self): return None
-    def upgrade(self): pass
-
-    def _get_tri_img(self, size):
-        if self._tri_img is None: return None
-        if size not in self._tri_img_cache:
-            self._tri_img_cache[size] = pygame.transform.smoothscale(self._tri_img, (size, size))
-        return self._tri_img_cache[size]
-
-
-    def update(self, dt, enemies, effects, money):
-        self._laser_t += dt
-        if self.cd_left > 0: self.cd_left -= dt
-
-        targets = self._get_targets(enemies, 2)
-        self._laser_targets = targets
-
-        if targets:
-            # Aim toward first target
-            t0 = targets[0]
-            self._aim_angle = math.atan2(t0.y - self.py, t0.x - self.px)
-            self._attacking = True
-            self._attack_lerp = min(1.0, self._attack_lerp + dt * 8)
-        else:
-            self._attacking = False
-            self._attack_lerp = max(0.0, self._attack_lerp - dt * 4)
-            # No free orbit — triangles stay fixed left/right
-
-        if self.cd_left <= 0 and targets:
-            self.cd_left = self.firerate
-            for t in targets:
-                t.take_damage(self.damage)
-                self.total_damage += self.damage
-
-    def _tri_positions(self):
-        """Return (left_pos, right_pos) of the two triangles."""
-        # When idle: triangles sit directly left and right of center
-        # When attacking: rotate to be left/right of the laser direction
-        idle_left_a  = math.pi       # left  (180°)
-        idle_right_a = 0.0           # right (0°)
-
-        aim_left_a  = self._aim_angle + math.pi / 2
-        aim_right_a = self._aim_angle - math.pi / 2
-
-        t = self._attack_lerp
-        left_a  = idle_left_a  + t * (aim_left_a  - idle_left_a)
-        right_a = idle_right_a + t * (aim_right_a - idle_right_a)
-
-        cx, cy = self.px, self.py
-        lx = cx + math.cos(left_a)  * self._TRI_ORBIT
-        ly = cy + math.sin(left_a)  * self._TRI_ORBIT
-        rx = cx + math.cos(right_a) * self._TRI_ORBIT
-        ry = cy + math.sin(right_a) * self._TRI_ORBIT
-        return (lx, ly), (rx, ry)
-
-    def draw(self, surf):
-        cx, cy = int(self.px), int(self.py)
-        t = self._laser_t
-
-        # ── Aura ────────────────────────────────────────────────────────────
-        pulse = int(abs(math.sin(t * 5)) * 50) + 20
-        aura = pygame.Surface((120, 120), pygame.SRCALPHA)
-        pygame.draw.circle(aura, (140, 40, 255, pulse // 3), (60, 60), 56)
-        pygame.draw.circle(aura, (180, 80, 255, pulse),      (60, 60), 36)
-        surf.blit(aura, (cx - 60, cy - 60))
-
-        # ── Core body ────────────────────────────────────────────────────────
-        pygame.draw.circle(surf, C_DACCEL_DARK, (cx, cy), 27)
-        pygame.draw.circle(surf, C_DACCEL,      (cx, cy), 20)
-        pygame.draw.circle(surf, (200, 140, 255), (cx, cy), 20, 2)
-        # Lightning bolt (same as Accelerator)
-        bolt = [(cx+4,cy-14),(cx-3,cy-1),(cx+5,cy-1),(cx-4,cy+14),(cx+3,cy+1),(cx-5,cy+1)]
-        pygame.draw.polygon(surf, (230, 200, 255), bolt)
-        pygame.draw.polygon(surf, (255, 245, 255), bolt, 1)
-
-        # ── Laser beams (drawn BEFORE triangles so triangles appear on top) ──
-        (lx, ly), (rx, ry) = self._tri_positions()
-
-        for target in self._laser_targets:
-            if not target.alive: continue
-            tx, ty = int(target.x), int(target.y)
-            tv = t
-
-            s2 = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
-            flicker = int(abs(math.sin(tv * 22)) * 3)
-
-            # Laser FROM left triangle
-            for width, color, alpha in [
-                (18+flicker, (120,40,255), 18), (11, (160,80,255), 35),
-                (7, (200,130,255), 70), (4, (230,190,255), 140), (2, (255,240,255), 220)
-            ]:
-                pygame.draw.line(s2, (*color, alpha), (int(lx), int(ly)), (tx, ty), width)
-
-            # Laser FROM right triangle
-            for width, color, alpha in [
-                (18+flicker, (120,40,255), 18), (11, (160,80,255), 35),
-                (7, (200,130,255), 70), (4, (230,190,255), 140), (2, (255,240,255), 220)
-            ]:
-                pygame.draw.line(s2, (*color, alpha), (int(rx), int(ry)), (tx, ty), width)
-
-            surf.blit(s2, (0, 0))
-
-            # Impact flash
-            imp = pygame.Surface((50, 50), pygame.SRCALPHA)
-            ir = int(abs(math.sin(tv * 18)) * 8) + 6
-            pygame.draw.circle(imp, (220, 180, 255, 100), (25, 25), ir + 4)
-            pygame.draw.circle(imp, (255, 240, 255, 180), (25, 25), ir)
-            surf.blit(imp, (tx - 25, ty - 25))
-
-        # ── Triangle images ──────────────────────────────────────────────────
-        tri_size = 36
-        img_tri  = self._get_tri_img(tri_size)
-        aim_deg = math.degrees(self._aim_angle)
-
-        for pos, side in [((lx, ly), 1), ((rx, ry), -1)]:
-            px2, py2 = int(pos[0]), int(pos[1])
-
-            # Glow around each triangle
-            glow = pygame.Surface((tri_size+20, tri_size+20), pygame.SRCALPHA)
-            ga = int(abs(math.sin(t * 6 + side)) * 60) + 30
-            pygame.draw.circle(glow, (180, 80, 255, ga),
-                               ((tri_size+20)//2, (tri_size+20)//2), (tri_size+20)//2)
-            surf.blit(glow, (px2 - (tri_size+20)//2, py2 - (tri_size+20)//2))
-
-            rot_angle = -(aim_deg + side * 90)
-            if img_tri:
-                rotated = pygame.transform.rotate(img_tri, rot_angle)
-                surf.blit(rotated, rotated.get_rect(center=(px2, py2)))
-            else:
-                d = 10
-                pts = [(px2, py2-d), (px2+d, py2), (px2, py2+d), (px2-d, py2)]
-                pygame.draw.polygon(surf, C_DACCEL, pts)
-                pygame.draw.polygon(surf, (255, 200, 255), pts, 2)
-
-
-
-    def draw_range(self, surf):
-        r = int(self.range_tiles * TILE)
-        s = pygame.Surface((r*2, r*2), pygame.SRCALPHA)
-        pygame.draw.circle(s, (180, 80, 255, 18), (r, r), r)
-        pygame.draw.circle(s, (180, 80, 255, 55), (r, r), r, 2)
-        surf.blit(s, (int(self.px)-r, int(self.py)-r))
-
-    def get_info(self):
-        return {
-            "Damage":   self.damage,
-            "Firerate": f"{self.firerate:.4f}",
-            "Range":    self.range_tiles,
-            "Dual":     "YES",
-            "HidDet":   "YES",
-        }
-
-
-# ── Warlock ────────────────────────────────────────────────────────────────────
 C_WARLOCK      = (160, 60, 220)
 C_WARLOCK_DARK = (50,  10,  80)
 
@@ -5534,15 +5351,43 @@ class Jester(Unit):
         for v in self._puddle_vfx:
             v.draw(surf)
 
-        # Draw active puddles (simple ground overlay)
+        # Draw active puddles — stretched along path direction
+        import game_core as _gc_ref2
+        _map_path = _gc_ref2.get_map_path()
+        # Determine path direction angle at puddle position
+        def _puddle_path_angle(px2, py2):
+            """Find the path segment closest to (px2,py2) and return its angle in degrees."""
+            best_angle = 0.0
+            best_dist = float('inf')
+            path = _map_path
+            for i in range(len(path) - 1):
+                ax, ay = path[i]; bx, by = path[i+1]
+                # Midpoint of segment
+                mx2 = (ax+bx)/2; my2 = (ay+by)/2
+                d = math.hypot(px2-mx2, py2-my2)
+                if d < best_dist:
+                    best_dist = d
+                    best_angle = math.degrees(math.atan2(by-ay, bx-ax))
+            return best_angle
+
         for p in self._puddles:
             frac = p["timer"] / max(0.01, self._poison_time)
-            rx = int(p["r"]); ry = int(p["r"] * 0.45)
+            r_long = int(p["r"])        # long axis = full radius along path
+            r_short = int(p["r"] * 0.38)  # short axis = squished across path
             alpha = int(80 * frac + 20)
-            ps = pygame.Surface((rx * 2 + 4, ry * 2 + 4), pygame.SRCALPHA)
-            pygame.draw.ellipse(ps, (40, 180, 20, alpha), (2, 2, rx * 2, ry * 2))
-            pygame.draw.ellipse(ps, (80, 255, 40, min(180, alpha + 40)), (2, 2, rx * 2, ry * 2), 2)
-            surf.blit(ps, (int(p["x"]) - rx - 2, int(p["y"]) - ry - 2))
+            angle_deg = _puddle_path_angle(p["x"], p["y"])
+            # Draw rotated ellipse via Surface + rotate
+            surf_w = r_long * 2 + 4; surf_h = r_long * 2 + 4
+            ps = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
+            # Draw axis-aligned ellipse (long along X, short along Y) then rotate
+            ex = surf_w // 2; ey = surf_h // 2
+            pygame.draw.ellipse(ps, (40, 180, 20, alpha),
+                                (ex - r_long, ey - r_short, r_long * 2, r_short * 2))
+            pygame.draw.ellipse(ps, (80, 255, 40, min(180, alpha + 40)),
+                                (ex - r_long, ey - r_short, r_long * 2, r_short * 2), 2)
+            ps_rot = pygame.transform.rotate(ps, -angle_deg)
+            rr = ps_rot.get_rect(center=(int(p["x"]), int(p["y"])))
+            surf.blit(ps_rot, rr.topleft)
 
     def draw_range(self, surf):
         r = int(self.range_tiles * TILE)

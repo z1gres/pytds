@@ -479,7 +479,6 @@ class AdminPanel:
                 ("Commander",Commander,C_COMMANDER),
                 ("Commando",Commando,C_COMMANDO),
                 ("Caster",Caster,C_HACKER),
-                ("Accel+",DoubleAccelerator,C_DACCEL),
                 ("Warlock",Warlock,C_WARLOCK),
                 ("Spotlight",SpotlightTech,C_SPOTLIGHT),
                 ("Jester",Jester,C_JESTER),
@@ -763,7 +762,7 @@ class UI:
         pygame.draw.rect(surf,(20,15,35),rect,border_radius=6)
         pygame.draw.rect(surf,(60,50,90),rect,2,border_radius=6)
         t=pygame.time.get_ticks()*0.001
-        if isinstance(u,Accelerator) or isinstance(u,DoubleAccelerator): draw_accel_icon(surf,cx,cy,t,size=30)
+        if isinstance(u,Accelerator): draw_accel_icon(surf,cx,cy,t,size=30)
         elif isinstance(u,Xw5ytUnit): draw_xw5yt_icon(surf,cx,cy,t,size=30)
         elif isinstance(u,Frostcelerator): draw_frost_icon(surf,cx,cy,t,size=30)
         elif isinstance(u,Lifestealer):
@@ -1303,7 +1302,7 @@ class UI:
 
             cls=type(u)
             nxt=self._get_next_stats(u)
-            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,DoubleAccelerator:DACCEL_LEVELS,Warlock:WARLOCK_LEVELS}
+            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,Warlock:WARLOCK_LEVELS}
             lvl_list=levels_map.get(cls,[])
             if cls==Jester: lvl_list=JESTER_LEVELS
             total_lvls=len(lvl_list)
@@ -2133,7 +2132,8 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
             "Gladiator": C_GLADIATOR,
             "Toxic Gunner": C_TOXICGUN,
             "Slasher": C_SLASHER,
-            "Golden Cowboy": C_GCOWBOY,
+            "Golden Cowboy": C_GCOWBOY,  # legacy
+            "Cowboy": C_GCOWBOY,
             "Hallow Punk": C_HALLOWPUNK,
             "Spotlight Tech": C_SPOTLIGHT,
             "Snowballer": C_SNOWBALLER,
@@ -2141,7 +2141,6 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
             "Commando": C_COMMANDO,
             "hacker_laser_effects_test": C_HACKER,
             "Caster": C_HACKER,
-            "Accelerator+": C_DACCEL,
             "Warlock": C_WARLOCK,
             "Jester": C_JESTER,
         }
@@ -2158,11 +2157,10 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
     cost_map = {"Assassin": 300, "Accelerator": 5000, "Frostcelerator": 3500, "Freezer": 400,
                 "Lifestealer": 400, "Archer": 400, "Red Ball": 1000, "Farm": 250,
                 "Frost Blaster": 800, "Sledger": 950, "Gladiator": 500,
-                "Toxic Gunner": 525, "Slasher": 1700, "Golden Cowboy": 550,
+                "Toxic Gunner": 525, "Slasher": 1700, "Cowboy": 550,
                 "Hallow Punk": 300, "Spotlight Tech": 3250,
                 "Snowballer": 400, "Commander": 650, "Commando": 900,
                 "hacker_laser_effects_test": 7500, "Caster": 7500,
-                "Accelerator+": 7500,
                 "Warlock": 4200,
                 "Jester": 650}
     cost = cost_map.get(unit_name)
@@ -3080,16 +3078,15 @@ ALL_UNITS_POOL = [
     {"name": "Freezer",        "rarity": "common"},
     {"name": "Frost Blaster",  "rarity": "rare"},
     {"name": "Sledger",        "rarity": "epic"},
-    {"name": "Gladiator",      "rarity": "epic"},
+    {"name": "Gladiator",      "rarity": "rare"},
     {"name": "Toxic Gunner",   "rarity": "common"},
     {"name": "Slasher",        "rarity": "epic"},
-    {"name": "Golden Cowboy",  "rarity": "starter"},
+    {"name": "Cowboy",         "rarity": "starter"},
     {"name": "Hallow Punk",    "rarity": "rare"},
     {"name": "Spotlight Tech", "rarity": "common"},
     {"name": "Snowballer",     "rarity": "rare"},
     {"name": "Commander",      "rarity": "starter"},
     {"name": "Commando",       "rarity": "rare"},
-    {"name": "Accelerator+", "rarity": "epic"},
     {"name": "Warlock",      "rarity": "epic"},
     {"name": "Caster",       "rarity": "mythic"},
     {"name": "Jester",       "rarity": "mythic"},
@@ -3110,7 +3107,8 @@ UNIT_SHOP_PRICES = {
     "Gladiator":      2500,
     "Toxic Gunner":   800,
     "Slasher":        3000,
-    "Golden Cowboy":  3500,
+    "Golden Cowboy":  None,  # legacy key kept for save compat
+    "Cowboy":         None,
     "Hallow Punk":    600,
     "Spotlight Tech": 5000,
     "Snowballer":     700,
@@ -3118,7 +3116,6 @@ UNIT_SHOP_PRICES = {
     "Commando":       800,
     "hacker_laser_effects_test": None,
     "Caster": None,
-    "Accelerator+": None,
     "Warlock": 3000,
     "Jester": None,
 }
@@ -3187,10 +3184,13 @@ class LoadoutScreen:
         if self.save_data.get("frostcelerator_unlocked"):
             if "Frostcelerator" not in owned:
                 owned = list(owned) + ["Frostcelerator"]
-        if "Accelerator+" not in owned:
-            owned = list(owned) + ["Accelerator+"]
         if "hacker_laser_effects_test" not in owned:
             owned = list(owned) + ["hacker_laser_effects_test"]
+        # Cowboy is a starter — always owned (rename migration from Golden Cowboy)
+        if "Cowboy" not in owned and "Golden Cowboy" not in owned:
+            owned = list(owned) + ["Cowboy"]
+        # Migrate old Golden Cowboy save entries to Cowboy
+        owned = ["Cowboy" if u == "Golden Cowboy" else u for u in owned]
         return owned
 
     def _show_msg(self, text, dur=2.5):
@@ -3381,7 +3381,7 @@ class LoadoutScreen:
             "Farm":     C_FARM,            "Freezer":     C_FREEZER,
             "Frost Blaster": C_FROSTBLASTER, "Sledger":   C_SLEDGER,
             "Gladiator": C_GLADIATOR,      "Toxic Gunner": C_TOXICGUN,
-            "Slasher":  C_SLASHER,         "Golden Cowboy": C_GCOWBOY,
+            "Slasher":  C_SLASHER,         "Golden Cowboy": C_GCOWBOY, "Cowboy": C_GCOWBOY,
             "Hallow Punk": C_HALLOWPUNK,   "Spotlight Tech": C_SPOTLIGHT,
             "Jester":   C_JESTER,
         }
@@ -3815,6 +3815,7 @@ class Game:
         self.return_to_menu = False
         self._hixw5yt_frozen = False   # time stopped, waiting for enemy click
         self._hixw5yt_owner = None     # which Xw5ytUnit triggered it
+        self._ability_cycle_idx = 0    # index into self.units for F-key ability cycling
         # pokaxw5yt ability state
         self._pokaxw5yt_frozen = False
         self._pokaxw5yt_owner = None
@@ -3852,7 +3853,8 @@ class Game:
                         "Freezer": Freezer, "Frost Blaster": FrostBlaster,
                         "Sledger": Sledger, "Gladiator": Gladiator,
                         "Toxic Gunner": ToxicGunner, "Slasher": Slasher,
-                        "Golden Cowboy": GoldenCowboy,
+                        "Golden Cowboy": GoldenCowboy,  # legacy save compat
+                        "Cowboy": GoldenCowboy,
                         "Hallow Punk": HallowPunk,
                         "Spotlight Tech": SpotlightTech,
                         "Snowballer": Snowballer,
@@ -3860,7 +3862,6 @@ class Game:
                         "Commando": Commando,
                         "hacker_laser_effects_test": Caster,
                         "Caster": Caster,
-                        "Accelerator+": DoubleAccelerator,
                         "Warlock": Warlock,
                         "Jester": Jester}
         _loadout = self.save_data.get("loadout", ["Assassin", "Accelerator", None, None, None])
@@ -4112,21 +4113,37 @@ class Game:
                         if _res_lvl > 0: _sv = int(_sv * (1.0 + _res_lvl * 0.012))
                         self.money += _sv
                         self.units.remove(u); self.ui.open_unit = None
+                        self._ability_cycle_idx = 0  # reset cycle on sell
                     if ev.key == pygame.K_f:
-                        target = self.ui.open_unit
-                        if target is None:
-                            for _u in self.units:
-                                if _u.ability and _u.ability.ready():
-                                    target = _u; break
-                        if target:
-                            activated = False
-                            if target.ability and target.ability.ready():
-                                target.ability.activate(self.enemies, self.effects)
-                                activated = True
-                            if not activated:
-                                ab2 = getattr(target, 'ability2', None)
-                                if ab2 and ab2.ready():
-                                    ab2.activate(self.enemies, self.effects)
+                        # Cycle through units in placement order, activate the first
+                        # ready ability found starting from _ability_cycle_idx.
+                        # Each press advances to the next unit that has a ready ability.
+                        _units_with_ability = [
+                            u for u in self.units
+                            if (u.ability and u.ability.ready()) or
+                               (getattr(u, 'ability2', None) and u.ability2.ready()) or
+                               (getattr(u, 'ability3', None) and u.ability3.ready())
+                        ]
+                        if _units_with_ability:
+                            # Clamp cycle index to current list length
+                            self._ability_cycle_idx = self._ability_cycle_idx % len(self.units)
+                            # Find next unit in placement order that has a ready ability
+                            _activated = False
+                            for _offset in range(len(self.units)):
+                                _idx = (self._ability_cycle_idx + _offset) % len(self.units)
+                                _u = self.units[_idx]
+                                _ab  = _u.ability if (_u.ability and _u.ability.ready()) else None
+                                _ab2 = getattr(_u, 'ability2', None)
+                                _ab2 = _ab2 if (_ab2 and _ab2.ready()) else None
+                                _ab3 = getattr(_u, 'ability3', None)
+                                _ab3 = _ab3 if (_ab3 and _ab3.ready()) else None
+                                _best = _ab or _ab2 or _ab3
+                                if _best:
+                                    _best.activate(self.enemies, self.effects)
+                                    # Advance cycle index past this unit for next press
+                                    self._ability_cycle_idx = (_idx + 1) % len(self.units)
+                                    _activated = True
+                                    break
                     slot_keys = {pygame.K_1:0,pygame.K_2:1,pygame.K_3:2,pygame.K_4:3,pygame.K_5:4}
                     if ev.key in slot_keys and not self.console.visible:
                         idx = slot_keys[ev.key]; UType = self.ui.SLOT_TYPES[idx]
@@ -4442,11 +4459,32 @@ class Game:
                 for e in self.enemies:
                     if not e.alive: continue
                     if self._hixw5yt_frozen: continue  # time stopped
-                    # Reversed enemy: walks backward and deals collision damage
+                    # Reversed enemy: walks backward along path and deals collision damage
                     if getattr(e,'_reversed',False):
-                        e.x -= e.speed * dt * 1.5
                         e._bob += dt * 4
-                        if e.x < -60:
+                        # Move backward along the path (toward previous waypoint)
+                        from game_core import get_map_path, get_frosty_path, CURRENT_MAP
+                        if CURRENT_MAP == "frosty":
+                            _path = getattr(e, '_frosty_path', None) or get_map_path()
+                        else:
+                            _path = getattr(e, '_frosty_path', None) or get_map_path()
+                        _wp = getattr(e, '_wp_index', 1)
+                        # Previous waypoint is index _wp-2 (since _wp_index points to NEXT)
+                        _prev_wp_idx = max(0, _wp - 2)
+                        _ptx, _pty = _path[_prev_wp_idx]
+                        _dx = _ptx - e.x; _dy = _pty - e.y
+                        _d = math.hypot(_dx, _dy)
+                        _step = e.speed * dt * 1.5
+                        if _d <= _step + 1:
+                            e.x = float(_ptx); e.y = float(_pty)
+                            if _prev_wp_idx > 0:
+                                e._wp_index = max(1, _wp - 1)
+                        else:
+                            e.x += _dx / _d * _step
+                            e.y += _dy / _d * _step
+                        # Kill if walked back off screen start
+                        _start = _path[0]
+                        if math.hypot(e.x - _start[0], e.y - _start[1]) < 5 and _wp <= 1:
                             e.alive = False; continue
                         # Collide with other enemies
                         for other in self.enemies:
@@ -4719,6 +4757,7 @@ class Game:
                         if self.mode == "fallen":
                             self.ach_mgr.try_grant("fallen_angel")
                         elif self.mode == "frosty":
+                            self.ach_mgr.try_grant("frosty_clear")
                             # Reward: unlock Frostcelerator
                             if not self.save_data.get("frostcelerator_unlocked"):
                                 self.save_data["frostcelerator_unlocked"] = True
