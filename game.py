@@ -28,6 +28,7 @@ from game_core import (
     load_save, write_save, dist, txt, draw_rect_alpha,
     SwordEffect, WhirlwindEffect, FloatingText, BloodSlashEffect,
     ACHIEVEMENTS_FILE, ACHIEVEMENT_DEFS, load_achievements, grant_achievement,
+    fmt_num,
 )
 
 
@@ -670,6 +671,21 @@ class UI:
                     if u.level>=4: u.bomb_mode="confusion"
                     else: self.show_msg("Unlock at level 4!")
                     return 0
+                # Second bomb row (lv4 only)
+                if btns.get("bomb2_fire") and btns["bomb2_fire"].collidepoint(pos):
+                    u.bomb_mode2="fire"; return 0
+                if btns.get("bomb2_ice") and btns["bomb2_ice"].collidepoint(pos):
+                    if u.level>=2: u.bomb_mode2="ice"
+                    else: self.show_msg("Unlock at level 2!")
+                    return 0
+                if btns.get("bomb2_poison") and btns["bomb2_poison"].collidepoint(pos):
+                    if u.level>=3: u.bomb_mode2="poison"
+                    else: self.show_msg("Unlock at level 3!")
+                    return 0
+                if btns.get("bomb2_confusion") and btns["bomb2_confusion"].collidepoint(pos):
+                    if u.level>=4: u.bomb_mode2="confusion"
+                    else: self.show_msg("Unlock at level 4!")
+                    return 0
             if btns.get("ability_sq") and btns["ability_sq"].collidepoint(pos):
                 if self.open_unit.ability and self.open_unit.ability.ready():
                     self.open_unit.ability.activate(enemies,effects)
@@ -755,6 +771,13 @@ class UI:
             btns["bomb_ice"]      =pygame.Rect(mx+8+(btn_w+2),          bomb_btn_y, btn_w, btn_h)
             btns["bomb_poison"]   =pygame.Rect(mx+8+(btn_w+2)*2,        bomb_btn_y, btn_w, btn_h)
             btns["bomb_confusion"]=pygame.Rect(mx+8+(btn_w+2)*3,        bomb_btn_y, btn_w, btn_h)
+            # Second row for lv4 dual
+            if unit.level >= 4 and unit._dual:
+                bomb_btn2_y = bomb_btn_y + btn_h + 6
+                btns["bomb2_fire"]     =pygame.Rect(mx+8,                    bomb_btn2_y, btn_w, btn_h)
+                btns["bomb2_ice"]      =pygame.Rect(mx+8+(btn_w+2),          bomb_btn2_y, btn_w, btn_h)
+                btns["bomb2_poison"]   =pygame.Rect(mx+8+(btn_w+2)*2,        bomb_btn2_y, btn_w, btn_h)
+                btns["bomb2_confusion"]=pygame.Rect(mx+8+(btn_w+2)*3,        bomb_btn2_y, btn_w, btn_h)
         return menu,btns
 
     def _draw_unit_portrait(self, surf, u, rect):
@@ -1214,7 +1237,7 @@ class UI:
         if gl or is_sandbox:
             ms = pygame.font.SysFont("segoeui", 28, bold=True).render("∞", True, C_GOLD)
         else:
-            ms = pygame.font.SysFont("segoeui", 28, bold=True).render(str(money), True, C_GOLD)
+            ms = pygame.font.SysFont("segoeui", 28, bold=True).render(fmt_num(money), True, C_GOLD)
         surf.blit(ms, (mx_off, money_cy - ms.get_height() // 2))
 
         # ── Slot cards ───────────────────────────────────────────────────────
@@ -1753,7 +1776,7 @@ class UI:
             txt(surf,u.NAME,(mx_m+10,strip_y+4),(210,190,255),font_lg)
             txt(surf,f"Level: {u.level}",(mx_m+10,strip_y+26),(140,130,175),font_md)
             td_s=font_md.render(f"Total Damage:",True,(160,155,185))
-            td_n=font_lg.render(str(int(u.total_damage)),True,(240,220,100))
+            td_n=font_lg.render(fmt_num(int(u.total_damage)),True,(240,220,100))
             surf.blit(td_s,(mx_m+mw-10-max(td_s.get_width(),td_n.get_width()),strip_y+4))
             surf.blit(td_n,(mx_m+mw-10-td_n.get_width(),strip_y+22))
 
@@ -1778,7 +1801,11 @@ class UI:
                 btns["bomb_ice"]      =pygame.Rect(mx_m+8+(btn_w+2),       bomb_btn_y, btn_w, btn_h)
                 btns["bomb_poison"]   =pygame.Rect(mx_m+8+(btn_w+2)*2,     bomb_btn_y, btn_w, btn_h)
                 btns["bomb_confusion"]=pygame.Rect(mx_m+8+(btn_w+2)*3,     bomb_btn_y, btn_w, btn_h)
-                btns["upgrade"]=pygame.Rect(mx_m+6,strip_y_actual+54+btn_h+6,mw-12,44)
+                # At lv4 dual: two rows of bomb buttons
+                if u.level >= 4 and u._dual:
+                    btns["upgrade"]=pygame.Rect(mx_m+6,strip_y_actual+54+(btn_h+6)*2+16,mw-12,44)
+                else:
+                    btns["upgrade"]=pygame.Rect(mx_m+6,strip_y_actual+54+btn_h+6,mw-12,44)
             up_rect=btns["upgrade"]
             can_up=bool(cost and money>=cost)
             if can_up:
@@ -1880,6 +1907,9 @@ class UI:
                     ("poison",    "Poison",  (80,220,60),   (140,255,80),  3),
                     ("confusion", "Confuse", (200,80,255),  (230,140,255), 4),
                 ]
+                # Row 1 — primary bomb (bomb_mode), always shown
+                _row1_label_s = font_sm.render("Bomb 1:", True, (160,155,185))
+                surf.blit(_row1_label_s, (mx_m+8, bomb_btn_y - 14))
                 for mode_key, mode_label, col_active, col_border, req_lv in _jbomb_modes:
                     br=btns.get(f"bomb_{mode_key}")
                     if not br: continue
@@ -1898,6 +1928,32 @@ class UI:
                     if locked:
                         lock_s=pygame.font.SysFont("consolas",9).render(f"Lv{req_lv}",True,(90,80,120))
                         surf.blit(lock_s,(br.right-lock_s.get_width()-2, br.y+2))
+                # Row 2 — second bomb (bomb_mode2), only at lv4
+                if u.level >= 4 and u._dual:
+                    bomb_btn2_y = bomb_btn_y + btn_h + 6
+                    _row2_label_s = font_sm.render("Bomb 2:", True, (160,155,185))
+                    surf.blit(_row2_label_s, (mx_m+8, bomb_btn2_y - 14))
+                    for i,(mode_key, mode_label, col_active, col_border, req_lv) in enumerate(_jbomb_modes):
+                        br2 = pygame.Rect(mx_m+8+(btn_w+2)*i, bomb_btn2_y, btn_w, btn_h)
+                        btns[f"bomb2_{mode_key}"] = br2
+                        is_sel2 = (u.bomb_mode2 == mode_key) if u.bomb_mode2 else (u.bomb_mode == mode_key and u.bomb_mode2 is None and mode_key == u.bomb_mode)
+                        # "None" = same as bomb1 — highlight bomb1 type
+                        if u.bomb_mode2 is None:
+                            is_sel2 = (mode_key == u.bomb_mode)
+                        locked2 = (u.level < req_lv)
+                        if locked2:
+                            bg2=(22,22,35); brd2=(55,50,75); tcol2=(80,75,100)
+                        elif is_sel2:
+                            bg2=tuple(max(0,c-90) for c in col_active); brd2=col_border; tcol2=col_border
+                        else:
+                            bg2=(30,28,48); brd2=(70,65,100); tcol2=(140,135,180)
+                        pygame.draw.rect(surf,bg2,br2,border_radius=4)
+                        pygame.draw.rect(surf,brd2,br2,1 if not is_sel2 else 2,border_radius=4)
+                        lbl_s2=font_sm.render(mode_label,True,tcol2)
+                        surf.blit(lbl_s2,lbl_s2.get_rect(center=br2.center))
+                        if locked2:
+                            lock_s2=pygame.font.SysFont("consolas",9).render(f"Lv{req_lv}",True,(90,80,120))
+                            surf.blit(lock_s2,(br2.right-lock_s2.get_width()-2, br2.y+2))
 
             if changing:
                 pygame.draw.line(surf,(48,44,70),(mx_m+8,ch_y-5),(mx_m+mw-8,ch_y-5),1)
@@ -3351,27 +3407,27 @@ class LoadoutScreen:
         # Coins
         coins  = self.save_data.get("coins", 0)
         ico_c  = load_icon("coin_ico", 22)
-        coin_s = font_lg.render(f" {coins}", True, C_GOLD)
+        coin_s = font_lg.render(f" {fmt_num(coins)}", True, C_GOLD)
         tcw    = (ico_c.get_width() if ico_c else 0) + coin_s.get_width()
         ccx    = SCREEN_W - 14 - tcw
         if ico_c:
             surf.blit(ico_c,  (ccx, 18 + (coin_s.get_height() - ico_c.get_height()) // 2))
             surf.blit(coin_s, (ccx + ico_c.get_width(), 18))
         else:
-            txt(surf, f"Coins: {coins}", (SCREEN_W - 14, 18), C_GOLD, font_lg, right=True)
+            txt(surf, f"Coins: {fmt_num(coins)}", (SCREEN_W - 14, 18), C_GOLD, font_lg, right=True)
 
         # Shards (shown to the left of coins)
         shards   = self.save_data.get("shards", 0)
         ico_sh   = load_icon("shard_ico", 22)
         shard_col = (140, 220, 255)
-        shard_s  = font_lg.render(f" {shards}", True, shard_col)
+        shard_s  = font_lg.render(f" {fmt_num(shards)}", True, shard_col)
         tsw      = (ico_sh.get_width() if ico_sh else 0) + shard_s.get_width()
         scx      = ccx - tsw - 24
         if ico_sh:
             surf.blit(ico_sh,  (scx, 18 + (shard_s.get_height() - ico_sh.get_height()) // 2))
             surf.blit(shard_s, (scx + ico_sh.get_width(), 18))
         else:
-            shard_lbl = font_lg.render(f"◆ {shards}", True, shard_col)
+            shard_lbl = font_lg.render(f"◆ {fmt_num(shards)}", True, shard_col)
             surf.blit(shard_lbl, shard_lbl.get_rect(right=ccx - 24, centery=29))
 
         # Back button
@@ -3859,6 +3915,7 @@ class Game:
         self.ach_mgr = AchievementManager()
         self._wave_coin_accum = 0.0  # fractional coin accumulator for per-wave rewards
         self._last_coin_wave = 0  # last wave number for which profile coins were paid
+        self._last_shard_wave = 0  # last wave milestone for which endless shards were paid
         # track if easy-mode boss was let through (free_pass ach)
         self._easy_boss_leaked = False
         self._easy_boss_let_through = False  # boss reached end with hp < player hp
@@ -3929,6 +3986,17 @@ class Game:
             self._end_coin_reward += whole
             self.save_data["coins"] = self.save_data.get("coins", 0) + whole
             write_save(self.save_data)
+        # ── Endless: +5 shards every 5 waves ─────────────────────────────────
+        if self.mode == "endless":
+            milestone = (wave_num // 5) * 5
+            if milestone > 0 and milestone > self._last_shard_wave:
+                milestones_hit = (milestone - self._last_shard_wave) // 5
+                self._last_shard_wave = milestone
+                if milestones_hit > 0:
+                    earned = milestones_hit * 5
+                    self.save_data["shards"] = self.save_data.get("shards", 0) + earned
+                    write_save(self.save_data)
+                    self._show_msg(f"+{earned} ◆ shards! (wave {wave_num})")
 
     def _apply_stun(self, unit, duration):
         unit._stun_timer = max(getattr(unit,"_stun_timer",0), duration)
@@ -4499,10 +4567,13 @@ class Game:
                         else:
                             e.x += _dx / _d * _step
                             e.y += _dy / _d * _step
-                        # Kill if walked back off screen start
+                        # If enemy reached path start while confused — cancel confusion, send forward
                         _start = _path[0]
                         if math.hypot(e.x - _start[0], e.y - _start[1]) < 5 and _wp <= 1:
-                            e.alive = False; continue
+                            e._reversed = False
+                            e._jester_conf_timer = 0.0
+                            e._wp_index = 1
+                            continue
                         # Collide with other enemies
                         for other in self.enemies:
                             if other is e or not other.alive: continue
@@ -4560,6 +4631,19 @@ class Game:
                         if reward>0 and self.mode != "easy":
                             self.money+=reward
                             self.effects.append(FloatingText(e.x, e.y-e.radius-10, f"+{reward}"))
+
+                # Global tick: jester confusion CD and timer (runs regardless of Jester alive/on field)
+                for e in self.enemies:
+                    if not e.alive: continue
+                    _cd = getattr(e, '_jester_conf_cd', 0.0)
+                    if _cd > 0:
+                        e._jester_conf_cd = max(0.0, _cd - dt)
+                    _ct = getattr(e, '_jester_conf_timer', 0.0)
+                    if _ct > 0:
+                        e._jester_conf_timer = _ct - dt
+                        if e._jester_conf_timer <= 0:
+                            e._reversed = False
+                            e._jester_conf_timer = 0.0
     
                 # Frost Spirit: reward per 2.5% hp lost (12_500 each step)
                 if self.mode != "easy":
@@ -5393,7 +5477,7 @@ class MainMenu(_OrigMainMenu):
         # ── Coin counter (top right) ───────────────────────────────────────────
         coins = self.save_data.get("coins", 0)
         ico_m = load_icon("coin_ico", 28)
-        coin_s = pygame.font.SysFont("segoeui", 22, bold=True).render(f" {coins}", True, C_GOLD)
+        coin_s = pygame.font.SysFont("segoeui", 22, bold=True).render(f" {fmt_num(coins)}", True, C_GOLD)
         total_cw = (ico_m.get_width() if ico_m else 0) + coin_s.get_width() + 16
         coin_bg = pygame.Rect(SCREEN_W - total_cw - 10, 8, total_cw, 34)
         draw_rect_alpha(surf, (20, 20, 10), (coin_bg.x, coin_bg.y, coin_bg.w, coin_bg.h), 160, 8)
@@ -5408,7 +5492,7 @@ class MainMenu(_OrigMainMenu):
         shards = self.save_data.get("shards", 0)
         ico_sh = load_icon("shard_ico", 28)
         shard_col2 = (140, 220, 255)
-        shard_s2 = pygame.font.SysFont("segoeui", 22, bold=True).render(f" {shards}", True, shard_col2)
+        shard_s2 = pygame.font.SysFont("segoeui", 22, bold=True).render(f" {fmt_num(shards)}", True, shard_col2)
         total_sw = (ico_sh.get_width() if ico_sh else 0) + shard_s2.get_width() + 16
         shard_bg = pygame.Rect(coin_bg.x - total_sw - 8, 8, total_sw, 34)
         draw_rect_alpha(surf, (5, 20, 30), (shard_bg.x, shard_bg.y, shard_bg.w, shard_bg.h), 160, 8)
@@ -5417,7 +5501,7 @@ class MainMenu(_OrigMainMenu):
             surf.blit(ico_sh, (shard_bg.x + 8, shard_bg.y + (34 - ico_sh.get_height()) // 2))
             surf.blit(shard_s2, (shard_bg.x + 8 + ico_sh.get_width(), shard_bg.y + (34 - shard_s2.get_height()) // 2))
         else:
-            shard_lbl2 = pygame.font.SysFont("segoeui", 22, bold=True).render(f"◆ {shards}", True, shard_col2)
+            shard_lbl2 = pygame.font.SysFont("segoeui", 22, bold=True).render(f"◆ {fmt_num(shards)}", True, shard_col2)
             surf.blit(shard_lbl2, shard_lbl2.get_rect(midleft=(shard_bg.x + 8, shard_bg.centery)))
 
         # ── Version (bottom left) ─────────────────────────────────────────────

@@ -189,7 +189,7 @@ UNIT_LIMITS = {
     "Snowballer":     4,
     "Commando":       4,
     "hacker_laser_effects_test": 1,
-    "Caster":         1,
+    "Caster":         3,
     "Warlock":        4,
     "Jester":         8,
 }
@@ -208,6 +208,24 @@ def write_save(data):
             json.dump(data, f)
     except: pass
 
+
+def fmt_num(n):
+    """Format a number as compact string: 1k, 10k, 1.5M, 1B, etc."""
+    n = int(n)
+    if n < 1000:
+        return str(n)
+    elif n < 1_000_000:
+        v = n / 1000
+        s = f"{v:.1f}" if v != int(v) else str(int(v))
+        return s + "k"
+    elif n < 1_000_000_000:
+        v = n / 1_000_000
+        s = f"{v:.1f}" if v != int(v) else str(int(v))
+        return s + "M"
+    else:
+        v = n / 1_000_000_000
+        s = f"{v:.1f}" if v != int(v) else str(int(v))
+        return s + "B"
 
 def dist(a, b):
     return math.hypot(a[0]-b[0], a[1]-b[1])

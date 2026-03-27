@@ -44,7 +44,6 @@ class WhirlwindAbility:
         hd=getattr(self.owner,'hidden_detection',False)
         for e in enemies:
             if e.alive and dist((e.x,e.y),(ox,oy))<=r:
-                if getattr(e,'_reversed',False): continue
                 if e.IS_HIDDEN and not hd: continue
                 e.take_damage(self.damage)
         effects.append(WhirlwindEffect(ox,oy,self.owner.range_tiles))
@@ -80,7 +79,6 @@ class Unit:
         r=self.range_tiles*TILE; pool=[]
         for e in enemies:
             if not e.alive: continue
-            if getattr(e,'_reversed',False): continue
             if e.IS_HIDDEN and not self.hidden_detection and not getattr(e,"_exposed",False): continue
             if dist((e.x,e.y),(self.px,self.py))<=r: pool.append(e)
         if not pool: return []
@@ -1691,7 +1689,6 @@ class Sledger(Unit):
         pool = []
         for e in enemies:
             if not e.alive: continue
-            if getattr(e, '_reversed', False): continue
             # No hidden detection — but at lv1+ pierce can hit hidden indirectly
             # (we just don't target them; collateral hits handled below)
             if e.IS_HIDDEN and not self.hidden_detection: continue
@@ -1781,7 +1778,7 @@ class Sledger(Unit):
             # need at least one valid target
             r = self.range_tiles * TILE
             has_target = any(
-                e.alive and not getattr(e,'_reversed',False)
+                e.alive
                 and not (e.IS_HIDDEN and not self.hidden_detection)
                 and dist((e.x,e.y),(self.px,self.py)) <= r
                 for e in enemies
@@ -1993,7 +1990,6 @@ class Gladiator(Unit):
         pool = []
         for e in enemies:
             if not e.alive: continue
-            if getattr(e, '_reversed', False): continue
             if e.IS_HIDDEN and not self.hidden_detection: continue
             dx = e.x - self.px; dy = e.y - self.py
             d  = math.hypot(dx, dy)
@@ -2057,7 +2053,6 @@ class Gladiator(Unit):
             r = self.range_tiles * TILE
             has_target = any(
                 e.alive
-                and not getattr(e, '_reversed', False)
                 and not (e.IS_HIDDEN and not self.hidden_detection)
                 and dist((e.x, e.y), (self.px, self.py)) <= r
                 for e in enemies
@@ -2557,7 +2552,7 @@ class Slasher(Unit):
         if self.cd_left <= 0:
             r = self.range_tiles * TILE
             has = any(
-                e.alive and not getattr(e,'_reversed',False)
+                e.alive
                 and not (e.IS_HIDDEN and not self.hidden_detection)
                 and dist((e.x,e.y),(self.px,self.py)) <= r
                 for e in enemies
@@ -4672,7 +4667,6 @@ class Warlock(Unit):
         out = []
         for e in enemies:
             if not e.alive: continue
-            if getattr(e, '_reversed', False): continue
             if e.IS_HIDDEN and not self.hidden_detection: continue
             if dist((e.x, e.y), (self.px, self.py)) <= r:
                 out.append(e)
@@ -4954,14 +4948,16 @@ _JESTER_MAX_DEFDROP     = 0.50  # max defense drop (ice chill drop)
 
 
 class JesterBomb:
-    """Projectile arc from Jester to target position, then explodes."""
+    """Projectile arc from Jester to target position, then explodes.
+    Tracks the target enemy so it cannot miss fast-moving enemies."""
     TRAVEL_SPEED = 480.0   # px per second
 
-    def __init__(self, ox, oy, tx, ty, bomb_type, jester):
+    def __init__(self, ox, oy, tx, ty, bomb_type, jester, target_enemy=None):
         self.ox = float(ox); self.oy = float(oy)
         self.tx = float(tx); self.ty = float(ty)
         self.bomb_type = bomb_type  # "fire", "ice", "poison", "confusion"
         self.jester = jester        # ref to owning unit for stats
+        self._target_enemy = target_enemy  # live enemy ref for homing
         dx = self.tx - ox; dy = self.ty - oy
         d = math.hypot(dx, dy) or 1
         self.vx = dx / d; self.vy = dy / d
@@ -4981,6 +4977,14 @@ class JesterBomb:
 
     def update(self, dt, enemies, effects, total_damage_ref):
         if not self.alive: return
+        # Home toward live target so bomb never misses fast enemies
+        if self._target_enemy is not None and self._target_enemy.alive:
+            self.tx = self._target_enemy.x
+            self.ty = self._target_enemy.y
+            dx = self.tx - self.x; dy = self.ty - self.y
+            d = math.hypot(dx, dy) or 1
+            self.vx = dx / d; self.vy = dy / d
+            self._total_dist = self._traveled + d  # recalculate remaining dist
         step = self.TRAVEL_SPEED * dt
         self.x += self.vx * step
         self.y += self.vy * step
@@ -5051,7 +5055,6 @@ class JesterBomb:
         candidates = []
         for e in enemies:
             if not e.alive: continue
-            if getattr(e, '_reversed', False): continue
             if e.IS_HIDDEN and not j.hidden_detection: continue
             if dist((e.x, e.y), (self.tx, self.ty)) <= expl_px:
                 candidates.append(e)
@@ -5188,7 +5191,8 @@ class Jester(Unit):
         self._bombs    = []    # active bomb projectiles
         self._puddles  = []    # active poison puddles (dicts)
         self._puddle_vfx = []  # JesterPuddleEffect instances
-        self.bomb_mode = "fire"
+        self.bomb_mode  = "fire"
+        self.bomb_mode2 = None   # second bomb type for lv4 dual (None = same as bomb_mode)
         self._apply_level()
 
     def _apply_level(self):
@@ -5223,17 +5227,17 @@ class Jester(Unit):
         self.cd_left = self.firerate
         t0 = targets[0]
 
-        bomb_type = self.bomb_mode
-        # For ice bomb: use ice explosion range
-        self._throw_bomb(t0.x, t0.y, bomb_type, effects)
+        bomb_type  = self.bomb_mode
+        bomb_type2 = self.bomb_mode2 if (self._dual and self.bomb_mode2 and self.bomb_mode2 != self.bomb_mode) else bomb_type
+        self._throw_bomb(t0.x, t0.y, bomb_type, effects, t0)
         if self._dual:
-            # Second bomb targets same or next enemy
+            # Second bomb: different type if bomb_mode2 set, else same type different target
             t2_list = self._get_targets(enemies, 2)
             t2 = t2_list[1] if len(t2_list) >= 2 else t0
-            self._throw_bomb(t2.x, t2.y, bomb_type, effects)
+            self._throw_bomb(t2.x, t2.y, bomb_type2, effects, t2)
 
-    def _throw_bomb(self, tx, ty, bomb_type, effects):
-        b = JesterBomb(self.px, self.py, tx, ty, bomb_type, self)
+    def _throw_bomb(self, tx, ty, bomb_type, effects, target_enemy=None):
+        b = JesterBomb(self.px, self.py, tx, ty, bomb_type, self, target_enemy)
         self._bombs.append(b)
 
     def update(self, dt, enemies, effects, money):
@@ -5277,17 +5281,8 @@ class Jester(Unit):
                     e._jester_ice_orig_spd = None
                     e._jester_ice_slow = 0.0
 
-        # Tick confusion reversal
-        for e in enemies:
-            if not e.alive: continue
-            if getattr(e, '_jester_conf_cd', 0.0) > 0:
-                e._jester_conf_cd -= dt
-            conf_timer = getattr(e, '_jester_conf_timer', 0.0)
-            if conf_timer > 0:
-                e._jester_conf_timer = conf_timer - dt
-                if e._jester_conf_timer <= 0:
-                    e._reversed = False
-                    e._jester_conf_timer = 0.0
+        # Confusion CD/timer ticking is handled globally in Game loop (game.py)
+        # to avoid double-ticking and ensure it works even if Jester is sold
 
         # Tick puddles
         new_puddles = []
