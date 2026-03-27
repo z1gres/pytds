@@ -5364,26 +5364,20 @@ class MainMenu(_OrigMainMenu):
 
         # ── Buttons ────────────────────────────────────────────────────────────
         def draw_fancy_btn(rect, label, hov, accent=(80, 120, 255), icon_col=None):
-            # Background gradient effect via two rects
             bg_dark  = (18, 22, 38) if not hov else (28, 36, 62)
             bg_light = (28, 35, 58) if not hov else (42, 55, 90)
-            # Top half
             pygame.draw.rect(surf, bg_light,
                              pygame.Rect(rect.x, rect.y, rect.w, rect.h // 2),
                              border_top_left_radius=12, border_top_right_radius=12)
-            # Bottom half
             pygame.draw.rect(surf, bg_dark,
                              pygame.Rect(rect.x, rect.y + rect.h // 2, rect.w, rect.h - rect.h // 2),
                              border_bottom_left_radius=12, border_bottom_right_radius=12)
-            # Accent border
             brd_alpha = 200 if hov else 130
             brd_col = tuple(min(255, int(c * (1.3 if hov else 1.0))) for c in accent)
             pygame.draw.rect(surf, brd_col, rect, 2, border_radius=12)
-            # Left accent stripe
             stripe = pygame.Surface((4, rect.h - 8), pygame.SRCALPHA)
             stripe.fill((*accent, brd_alpha))
             surf.blit(stripe, (rect.x + 2, rect.y + 4))
-            # Label
             lf = pygame.font.SysFont("segoeui", 26, bold=True)
             ls2 = lf.render(label, True, C_WHITE if hov else (200, 210, 230))
             surf.blit(ls2, ls2.get_rect(center=rect.center))

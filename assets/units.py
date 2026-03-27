@@ -5301,7 +5301,7 @@ class Jester(Unit):
                 for e in enemies:
                     if not e.alive: continue
                     if e.IS_HIDDEN and not self.hidden_detection: continue
-                    if dist((e.x, e.y), (p["x"], p["y"])) <= p["r"]:
+                    if dist((e.x, e.y), (p["x"], p["y"])) <= p["r"] * 0.29:
                         e.take_damage(p["dmg"])
                         self.total_damage += p["dmg"]
             if p["timer"] > 0:
@@ -5369,31 +5369,14 @@ class Jester(Unit):
         self._draw_puddles_only(surf)
 
     def _draw_puddles_only(self, surf):
-        """Draw poison puddles: bright neon-green organic blob filling the road
-        height, soft outer glow, random satellite dots that CAN exit the road."""
-        import game_core as _gc
-        is_frosty = getattr(_gc, 'CURRENT_MAP', 'straight') == 'frosty'
-
+        """Draw poison puddles: bright neon-green organic blob, no road clipping."""
         for p in self._puddles:
             frac = p["timer"] / max(0.01, self._poison_time)
 
-            # ── Radius: blob should roughly fill road height (PATH_H ≈ 42px)
-            # Use explosion radius but cap so it doesn't dwarf the road.
-            r = int(min(p["r"] * 0.58, PATH_H * 0.82))
+            # 2x smaller than original (was 0.58 capped to PATH_H*0.82)
+            r = int(p["r"] * 0.29)
             if r < 6:
                 continue
-
-            # ── Clip strip ──────────────────────────────────────────────────
-            path_horiz = p.get("_path_horiz", True)
-            if is_frosty and not path_horiz:
-                strip_center = int(p["x"])
-                clip_axis    = "x"
-            else:
-                strip_center = int(p["y"])
-                clip_axis    = "y"
-            strip_half = PATH_H // 2 + 2
-            strip_lo   = strip_center - strip_half
-            strip_hi   = strip_center + strip_half
 
             # ── Bake random geometry once per puddle ────────────────────────
             if "_blob_norm" not in p:
@@ -5425,7 +5408,7 @@ class Jester(Unit):
             alpha_q    = alpha_main & ~7   # quantise to reduce cache churn
 
             # ── Build / reuse cached SRCALPHA surface for main blob ──────────
-            cache_key = alpha_q
+            cache_key = (alpha_q, r)
             if p.get("_surf_key") != cache_key:
                 # Extra margin for the outer glow ring
                 half = int(r * 1.45) + 8
@@ -5477,19 +5460,8 @@ class Jester(Unit):
             dest_x = int(p["x"]) - half
             dest_y = int(p["y"]) - half
 
-            # ── Blit main blob clipped to road strip ─────────────────────────
-            if clip_axis == "y":
-                blit_top = max(dest_y, strip_lo)
-                blit_bot = min(dest_y + size, strip_hi)
-                if blit_top < blit_bot:
-                    surf.blit(ps, (dest_x, blit_top),
-                              pygame.Rect(0, blit_top - dest_y, size, blit_bot - blit_top))
-            else:
-                blit_lft = max(dest_x, strip_lo)
-                blit_rgt = min(dest_x + size, strip_hi)
-                if blit_lft < blit_rgt:
-                    surf.blit(ps, (blit_lft, dest_y),
-                              pygame.Rect(blit_lft - dest_x, 0, blit_rgt - blit_lft, size))
+            # ── Blit main blob — no clipping ─────────────────────────────────
+            surf.blit(ps, (dest_x, dest_y))
 
             # ── Satellite dots drawn WITHOUT road clipping ───────────────────
             px0 = int(p["x"])
