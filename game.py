@@ -3046,6 +3046,144 @@ class SettingsScreen:
 
 
 # ── Main Menu ───────────────────────────────────────────────────────────────────
+class PigeonMailNotification:
+    """One-time popup on game launch: pigeon mail notification with text input."""
+
+    _SECRET     = "я хвайт, где фикс"
+    _SECRET_RESP = "привет хвайт держи хвайт"
+
+    def __init__(self, screen):
+        self.screen  = screen
+        self.t       = 0.0
+        self.input   = ""
+        self.secret_shown   = False
+        self.secret_timer   = 0.0
+        self.crash_pending  = False
+        self.done    = False
+        self._cursor_blink  = 0.0
+
+        # Popup dimensions
+        pw, ph   = 700, 320
+        self.rect = pygame.Rect((SCREEN_W - pw) // 2, (SCREEN_H - ph) // 2, pw, ph)
+
+    def handle_event(self, ev):
+        if self.crash_pending:
+            return
+        if ev.type == pygame.KEYDOWN:
+            if ev.key == pygame.K_BACKSPACE:
+                self.input = self.input[:-1]
+            elif ev.key == pygame.K_RETURN:
+                self._check_secret()
+            elif ev.unicode and len(self.input) < 60:
+                self.input += ev.unicode
+        if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            close_r = pygame.Rect(self.rect.right - 48, self.rect.y + 8, 40, 40)
+            if close_r.collidepoint(ev.pos):
+                self.done = True
+            confirm_r = pygame.Rect(self.rect.centerx - 80, self.rect.bottom - 56, 160, 38)
+            if confirm_r.collidepoint(ev.pos):
+                self._check_secret()
+
+    def _check_secret(self):
+        if self.input.strip().lower() == self._SECRET:
+            self.secret_shown  = True
+            self.secret_timer  = 3.0
+            self.crash_pending = True
+        else:
+            self.done = True
+
+    def update(self, dt):
+        self.t += dt
+        self._cursor_blink = (self._cursor_blink + dt) % 1.0
+        if self.crash_pending and self.secret_shown:
+            self.secret_timer -= dt
+            if self.secret_timer <= 0:
+                # Crash the game
+                raise RuntimeError("хвайт получил фикс")
+
+    def draw(self):
+        # Dim background
+        dim = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+        dim.fill((0, 0, 0, 160))
+        self.screen.blit(dim, (0, 0))
+
+        r = self.rect
+        # Panel
+        pygame.draw.rect(self.screen, (22, 28, 44), r, border_radius=14)
+        pygame.draw.rect(self.screen, (100, 140, 220), r, 2, border_radius=14)
+
+        # Pigeon icon (text fallback)
+        pigeon_f = pygame.font.SysFont("segoeui", 42)
+        pig_s = pigeon_f.render("🕊", True, C_WHITE)
+        self.screen.blit(pig_s, pig_s.get_rect(centerx=r.centerx, top=r.y + 14))
+
+        # Title
+        title_f = pygame.font.SysFont("segoeui", 22, bold=True)
+        title_s = title_f.render("Голубиная почта", True, (140, 200, 255))
+        self.screen.blit(title_s, title_s.get_rect(centerx=r.centerx, top=r.y + 64))
+
+        if self.secret_shown:
+            # Secret response
+            resp_f = pygame.font.SysFont("segoeui", 26, bold=True)
+            resp_s = resp_f.render(self._SECRET_RESP, True, (80, 255, 160))
+            self.screen.blit(resp_s, resp_s.get_rect(center=(r.centerx, r.centery + 10)))
+            # Countdown
+            cnt_f = pygame.font.SysFont("segoeui", 16)
+            secs  = max(0.0, self.secret_timer)
+            cnt_s = cnt_f.render(f"игра закроется через {secs:.1f}с...", True, (220, 80, 80))
+            self.screen.blit(cnt_s, cnt_s.get_rect(centerx=r.centerx, top=r.centery + 50))
+        else:
+            # Message text
+            msg_f = pygame.font.SysFont("segoeui", 17)
+            msg   = "вам прислали по голубиной почте всех юнитов"
+            msg2  = "с новым годом! 🎉"
+            msg_s  = msg_f.render(msg,  True, (200, 210, 230))
+            msg2_s = msg_f.render(msg2, True, (255, 220, 80))
+            self.screen.blit(msg_s,  msg_s.get_rect(centerx=r.centerx,  top=r.y + 98))
+            self.screen.blit(msg2_s, msg2_s.get_rect(centerx=r.centerx, top=r.y + 122))
+
+            # Input field
+            field_r = pygame.Rect(r.x + 40, r.y + 168, r.w - 80, 40)
+            pygame.draw.rect(self.screen, (30, 36, 55), field_r, border_radius=7)
+            pygame.draw.rect(self.screen, (80, 100, 160), field_r, 1, border_radius=7)
+            cursor = "|" if self._cursor_blink < 0.5 else " "
+            inp_f  = pygame.font.SysFont("segoeui", 17)
+            inp_s  = inp_f.render(self.input + cursor, True, C_WHITE)
+            self.screen.blit(inp_s, inp_s.get_rect(midleft=(field_r.x + 10, field_r.centery)))
+
+            # Confirm button
+            confirm_r = pygame.Rect(r.centerx - 80, r.bottom - 56, 160, 38)
+            mx, my = pygame.mouse.get_pos()
+            hov = confirm_r.collidepoint(mx, my)
+            pygame.draw.rect(self.screen, (50, 100, 60) if hov else (35, 70, 45), confirm_r, border_radius=8)
+            pygame.draw.rect(self.screen, (80, 200, 100), confirm_r, 1, border_radius=8)
+            btn_f = pygame.font.SysFont("segoeui", 17, bold=True)
+            btn_s = btn_f.render("Подтвердить", True, C_WHITE)
+            self.screen.blit(btn_s, btn_s.get_rect(center=confirm_r.center))
+
+        # Close button (X)
+        close_r = pygame.Rect(r.right - 48, r.y + 8, 40, 40)
+        mx, my  = pygame.mouse.get_pos()
+        hov_c   = close_r.collidepoint(mx, my)
+        pygame.draw.rect(self.screen, (80, 40, 40) if hov_c else (50, 25, 25), close_r, border_radius=6)
+        close_s = pygame.font.SysFont("segoeui", 20, bold=True).render("✕", True, (220, 100, 100))
+        self.screen.blit(close_s, close_s.get_rect(center=close_r.center))
+
+    def run(self):
+        clock = pygame.time.Clock()
+        while not self.done:
+            dt = clock.tick(60) / 1000.0
+            for ev in pygame.event.get():
+                if ev.type == pygame.QUIT:
+                    pygame.quit(); sys.exit()
+                self.handle_event(ev)
+            self.update(dt)
+            # Draw whatever background is already on screen, then overlay
+            self.screen.fill(C_BG)
+            self.draw()
+            pygame.display.flip()
+
+
 class MainMenu:
     def __init__(self, screen, save_data=None):
         self.screen = screen
@@ -5516,6 +5654,9 @@ if __name__ == "__main__":
     pygame.display.set_caption("Tower Defense")
     save_data = load_save()
     print("save_data loaded:", list(save_data.keys()))
+
+    # One-time pigeon mail popup on launch
+    PigeonMailNotification(screen).run()
 
     while True:
         print("Creating MainMenu...")
