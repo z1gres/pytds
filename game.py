@@ -130,6 +130,7 @@ from units import (
     Commando, COMMANDO_LEVELS,
     C_COMMANDO, C_COMMANDO_DARK,
     Caster, C_HACKER, C_HACKER_DARK, CASTER_LEVELS, LIGHTNING_THRESHOLD,
+    HackerLaserTest, LIGHTNING_DAMAGE,
     DoubleAccelerator, C_DACCEL, C_DACCEL_DARK, DACCEL_LEVELS,
     Warlock, WarlockUnit, C_WARLOCK, C_WARLOCK_DARK, WARLOCK_LEVELS,
     Jester, JESTER_LEVELS, C_JESTER, C_JESTER_DARK,
@@ -1658,6 +1659,22 @@ class UI:
                 if nxt and nxt.get("ConfBomb"):
                     stats.append(("ConfBomb_unlock", None, "Unlocks Confusion Bomb"))
                 if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
+            elif cls==HackerLaserTest:
+                hd_now  = u.hidden_detection
+                hd_next = bool(nxt and nxt.get("HidDet") and not hd_now)
+                stats   = []
+                if hd_now: stats.append(("HidDet","Hidden Detection",None))
+                stats += [
+                    ("Damage",  u.damage,            nxt.get("Damage")   if nxt else None),
+                    ("Firerate",f"{u.firerate:.2f}",  f"{nxt['Firerate']:.2f}" if nxt else None),
+                    ("Range",   u.range_tiles,         nxt.get("Range")    if nxt else None),
+                    ("Targets", "∞",                  None),
+                ]
+                if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
+                if u.level >= 2:
+                    stats.append(("Lightning",
+                        f"{int(u._charge)}/{LIGHTNING_THRESHOLD} ({LIGHTNING_DAMAGE} dmg)",
+                        None))
             else:
                 stats=[(k,v,None) for k,v in u.get_info().items()]
 
@@ -4822,6 +4839,11 @@ class Game:
         self.draw_map(offset=shake)
         can_detect=any(getattr(u,'hidden_detection',False) for u in self.units)
         mx,my=pygame.mouse.get_pos()
+
+        # Draw poison puddles FIRST (under everything)
+        for u in self.units:
+            if hasattr(u, '_draw_puddles_only'):
+                u._draw_puddles_only(self.screen)
 
         for u in self.units: u.draw(self.screen)
         # Draw peer (other player's) units in the same pass for correct layering

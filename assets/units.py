@@ -9,7 +9,7 @@ if _HERE not in sys.path:
 
 import game_core as _game_core_ref
 from game_core import (
-    SCREEN_W, SCREEN_H, PATH_Y, SLOT_AREA_Y, TILE,
+    SCREEN_W, SCREEN_H, PATH_Y, PATH_H, SLOT_AREA_Y, TILE,
     C_WHITE, C_BLACK, C_GOLD, C_ASSASSIN, C_ACCEL,
     font_sm, font_md, font_lg,
     get_map_path, dist, txt, draw_rect_alpha, load_icon,
@@ -4400,6 +4400,7 @@ class HackerLaserTest(Unit):
             for t in targets:
                 t.take_damage(self.damage)
                 dmg_dealt += self.damage
+            self.total_damage += dmg_dealt
             # Charge lightning (lv2+)
             if self.level >= 2:
                 self._charge += dmg_dealt
@@ -5000,14 +5001,26 @@ class JesterBomb:
         bt = self.bomb_type
 
         if bt == "poison":
-            # create a puddle — no splash damage, just register on all enemies in range
+            # Detect path orientation at puddle location for correct clip on Frosty map
+            _path_horiz = True
+            best_d = 1e9
+            for _e in enemies:
+                _ed = math.hypot(_e.x - self.tx, _e.y - self.ty)
+                if _ed < best_d:
+                    best_d = _ed
+                    _ep = getattr(_e, '_frosty_path', None)
+                    if _ep and len(_ep) >= 2:
+                        _ddx = abs(_ep[-1][0] - _ep[0][0])
+                        _ddy = abs(_ep[-1][1] - _ep[0][1])
+                        _path_horiz = _ddx >= _ddy
             j._puddles.append({
                 "x": self.tx, "y": self.ty,
                 "r": expl_px,
                 "timer": ptm,
                 "tick_t": ptk,
                 "dmg": pdmg,
-                "def_drop_done": {},  # enemy id → total defense dropped so far
+                "def_drop_done": {},
+                "_path_horiz": _path_horiz,
             })
             # Poison puddle explosion VFX
             effects.append(_JesterExplosionEffect(self.tx, self.ty, expl_px, (60, 200, 40)))
@@ -5351,43 +5364,153 @@ class Jester(Unit):
         for v in self._puddle_vfx:
             v.draw(surf)
 
-        # Draw active puddles — stretched along path direction
-        import game_core as _gc_ref2
-        _map_path = _gc_ref2.get_map_path()
-        # Determine path direction angle at puddle position
-        def _puddle_path_angle(px2, py2):
-            """Find the path segment closest to (px2,py2) and return its angle in degrees."""
-            best_angle = 0.0
-            best_dist = float('inf')
-            path = _map_path
-            for i in range(len(path) - 1):
-                ax, ay = path[i]; bx, by = path[i+1]
-                # Midpoint of segment
-                mx2 = (ax+bx)/2; my2 = (ay+by)/2
-                d = math.hypot(px2-mx2, py2-my2)
-                if d < best_dist:
-                    best_dist = d
-                    best_angle = math.degrees(math.atan2(by-ay, bx-ax))
-            return best_angle
+        # Draw active puddles (via shared helper, so game loop can call it
+        # before unit bodies to keep units visually on top)
+        self._draw_puddles_only(surf)
+
+    def _draw_puddles_only(self, surf):
+        """Draw poison puddles: bright neon-green organic blob filling the road
+        height, soft outer glow, random satellite dots that CAN exit the road."""
+        import game_core as _gc
+        is_frosty = getattr(_gc, 'CURRENT_MAP', 'straight') == 'frosty'
 
         for p in self._puddles:
             frac = p["timer"] / max(0.01, self._poison_time)
-            r_long = int(p["r"])        # long axis = full radius along path
-            r_short = int(p["r"] * 0.38)  # short axis = squished across path
-            alpha = int(80 * frac + 20)
-            angle_deg = _puddle_path_angle(p["x"], p["y"])
-            # Draw rotated ellipse via Surface + rotate
-            surf_w = r_long * 2 + 4; surf_h = r_long * 2 + 4
-            ps = pygame.Surface((surf_w, surf_h), pygame.SRCALPHA)
-            # Draw axis-aligned ellipse (long along X, short along Y) then rotate
-            ex = surf_w // 2; ey = surf_h // 2
-            pygame.draw.ellipse(ps, (40, 180, 20, alpha),
-                                (ex - r_long, ey - r_short, r_long * 2, r_short * 2))
-            pygame.draw.ellipse(ps, (80, 255, 40, min(180, alpha + 40)),
-                                (ex - r_long, ey - r_short, r_long * 2, r_short * 2), 2)
-            ps_rot = pygame.transform.rotate(ps, -angle_deg)
-            rr = ps_rot.get_rect(center=(int(p["x"]), int(p["y"])))
-            surf.blit(ps_rot, rr.topleft)
+
+            # ── Radius: blob should roughly fill road height (PATH_H ≈ 42px)
+            # Use explosion radius but cap so it doesn't dwarf the road.
+            r = int(min(p["r"] * 0.58, PATH_H * 0.82))
+            if r < 6:
+                continue
+
+            # ── Clip strip ──────────────────────────────────────────────────
+            path_horiz = p.get("_path_horiz", True)
+            if is_frosty and not path_horiz:
+                strip_center = int(p["x"])
+                clip_axis    = "x"
+            else:
+                strip_center = int(p["y"])
+                clip_axis    = "y"
+            strip_half = PATH_H // 2 + 2
+            strip_lo   = strip_center - strip_half
+            strip_hi   = strip_center + strip_half
+
+            # ── Bake random geometry once per puddle ────────────────────────
+            if "_blob_norm" not in p:
+                rng    = random.Random(id(p))
+                n_pts  = rng.randint(11, 16)
+                norm_pts = []
+                for i in range(n_pts):
+                    a     = (i / n_pts) * math.pi * 2
+                    # Y squish so blob fits road: 0.55 factor keeps it flat-ish
+                    spoke = rng.uniform(0.70, 1.25)
+                    norm_pts.append((math.cos(a) * spoke,
+                                     math.sin(a) * spoke * 0.55))
+                # Satellite drops: 2-4, spread outside so they exit road edges
+                n_sat    = rng.randint(2, 4)
+                norm_sats = []
+                for _ in range(n_sat):
+                    a  = rng.uniform(0, math.pi * 2)
+                    d  = rng.uniform(1.15, 1.75)
+                    sr = rng.uniform(0.07, 0.16)
+                    norm_sats.append((math.cos(a) * d,
+                                      math.sin(a) * d * 0.55,
+                                      sr))
+                p["_blob_norm"] = (norm_pts, norm_sats)
+
+            norm_pts, norm_sats = p["_blob_norm"]
+
+            # ── Alpha — stay mostly opaque, fade gently at end ───────────────
+            alpha_main = max(30, min(240, int(230 * frac + 20)))
+            alpha_q    = alpha_main & ~7   # quantise to reduce cache churn
+
+            # ── Build / reuse cached SRCALPHA surface for main blob ──────────
+            cache_key = alpha_q
+            if p.get("_surf_key") != cache_key:
+                # Extra margin for the outer glow ring
+                half = int(r * 1.45) + 8
+                size = half * 2
+                bx = by = half   # blob centre inside surface
+
+                ps = pygame.Surface((size, size), pygame.SRCALPHA)
+
+                def sc(nx, ny):
+                    return (int(bx + nx * r), int(by + ny * r))
+
+                outer_px = [sc(nx * 1.35, ny * 1.35) for nx, ny in norm_pts]
+                main_px  = [sc(nx,        ny       ) for nx, ny in norm_pts]
+                inner_px = [sc(nx * 0.60, ny * 0.60) for nx, ny in norm_pts]
+                core_px  = [sc(nx * 0.28, ny * 0.28) for nx, ny in norm_pts]
+
+                # 1. Diffuse outer glow (large, very transparent)
+                if len(outer_px) >= 3:
+                    pygame.draw.polygon(ps,
+                        (80, 255, 40, max(0, min(255, alpha_q // 4))), outer_px)
+
+                # 2. Main body — full-opacity bright green
+                if len(main_px) >= 3:
+                    pygame.draw.polygon(ps,
+                        (30, 230, 20, alpha_q), main_px)
+
+                # 3. Inner lighter zone
+                if len(inner_px) >= 3:
+                    pygame.draw.polygon(ps,
+                        (120, 255, 70, min(255, alpha_q + 40)), inner_px)
+
+                # 4. Bright core highlight
+                if len(core_px) >= 3:
+                    pygame.draw.polygon(ps,
+                        (200, 255, 160, min(255, alpha_q + 80)), core_px)
+
+                # 5. Crisp neon outline
+                if len(main_px) >= 3:
+                    pygame.draw.polygon(ps,
+                        (170, 255, 100, min(255, alpha_q + 70)), main_px, 2)
+
+                p["_surf_cache"] = ps
+                p["_surf_key"]   = cache_key
+
+            ps   = p["_surf_cache"]
+            size = ps.get_width()
+            half = size // 2
+
+            dest_x = int(p["x"]) - half
+            dest_y = int(p["y"]) - half
+
+            # ── Blit main blob clipped to road strip ─────────────────────────
+            if clip_axis == "y":
+                blit_top = max(dest_y, strip_lo)
+                blit_bot = min(dest_y + size, strip_hi)
+                if blit_top < blit_bot:
+                    surf.blit(ps, (dest_x, blit_top),
+                              pygame.Rect(0, blit_top - dest_y, size, blit_bot - blit_top))
+            else:
+                blit_lft = max(dest_x, strip_lo)
+                blit_rgt = min(dest_x + size, strip_hi)
+                if blit_lft < blit_rgt:
+                    surf.blit(ps, (blit_lft, dest_y),
+                              pygame.Rect(blit_lft - dest_x, 0, blit_rgt - blit_lft, size))
+
+            # ── Satellite dots drawn WITHOUT road clipping ───────────────────
+            px0 = int(p["x"])
+            py0 = int(p["y"])
+            for nx, ny, nr in norm_sats:
+                scx2 = px0 + int(nx * r)
+                scy2 = py0 + int(ny * r)
+                sr2  = max(3, int(nr * r))
+                ds   = sr2 * 2 + 4
+                dot_s = pygame.Surface((ds, ds), pygame.SRCALPHA)
+                dc    = ds // 2
+                # Glow halo
+                pygame.draw.circle(dot_s,
+                    (80, 255, 40, max(0, alpha_q // 3)), (dc, dc), sr2 + 2)
+                # Body
+                pygame.draw.circle(dot_s,
+                    (30, 230, 20, alpha_q), (dc, dc), sr2)
+                # Bright rim
+                pygame.draw.circle(dot_s,
+                    (170, 255, 100, min(255, alpha_q + 60)), (dc, dc), sr2, 1)
+                surf.blit(dot_s, (scx2 - dc, scy2 - dc))
 
     def draw_range(self, surf):
         r = int(self.range_tiles * TILE)
