@@ -2206,17 +2206,6 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
     pygame.draw.rect(s_card, (*border_col, 255), (0, 0, w, h), 3, border_radius=18)
     surf.blit(s_card, (bx, by))
 
-    # Rarity badge top-right — bigger font and badge
-    rlab = rd["label"]
-    badge_col = rd["border"]
-    badge_f = pygame.font.SysFont("consolas", 15, bold=True)
-    bs = badge_f.render(rlab, True, rd["text_col"])
-    bsw = bs.get_width() + 14
-    badge_rect = pygame.Rect(bx + w - bsw - 6, by + 6, bsw, 26)
-    pygame.draw.rect(surf, (*base_col, 240), badge_rect, border_radius=6)
-    pygame.draw.rect(surf, badge_col, badge_rect, 1, border_radius=6)
-    surf.blit(bs, (badge_rect.x + 7, badge_rect.y + 5))
-
     # Unit icon — bigger circles
     icon_cx, icon_cy = cx, cy - 30
     if unit_name == "Accelerator":
@@ -3140,13 +3129,28 @@ def grant_skin(skin_id):
 
 # ── Skin Picker Screen ─────────────────────────────────────────────────────────
 class SkinPickerScreen:
-    """Mini overlay to pick a skin for a unit, or unequip."""
+    """Overlay to pick a skin for a unit. Default skin shown as first card."""
     def __init__(self, screen, unit_name, skin_defs):
         self.screen    = screen
         self.unit_name = unit_name
         self.skins     = skin_defs   # only owned skins passed in
         self.running   = True
         self.t         = 0.0
+        # Build full list: default first, then owned skins
+        # Each entry: {"id": None = default, or skin_id, "name": ..., ...}
+        self._all_options = [{"id": None, "name": "Дефолтный"}] + list(skin_defs)
+        # Layout
+        self._cw = 200
+        self._ch = 280
+        self._gap = 20
+        # Panel size based on number of options
+        n = len(self._all_options)
+        self._pw = self._gap + n * (self._cw + self._gap)
+        self._ph = 80 + self._ch + 60
+        self._px = SCREEN_W // 2 - self._pw // 2
+        self._py = SCREEN_H // 2 - self._ph // 2
+        # Close button — top-right of panel
+        self._close_r = pygame.Rect(self._px + self._pw - 44, self._py + 8, 36, 36)
 
     def run(self):
         clock = pygame.time.Clock()
@@ -3163,104 +3167,138 @@ class SkinPickerScreen:
             self._draw()
             pygame.display.flip()
 
+    def _card_rect(self, idx):
+        x = self._px + self._gap + idx * (self._cw + self._gap)
+        y = self._py + 56
+        return pygame.Rect(x, y, self._cw, self._ch)
+
     def _handle_click(self, pos):
         # Close button
-        close_r = pygame.Rect(SCREEN_W // 2 + 240, SCREEN_H // 2 - 220, 36, 36)
-        if close_r.collidepoint(pos):
+        if self._close_r.collidepoint(pos):
             self.running = False; return
-        # Default skin button
-        def_btn = pygame.Rect(SCREEN_W // 2 - 240, SCREEN_H // 2 + 160, 200, 40)
-        if def_btn.collidepoint(pos):
-            unequip_skin(self.unit_name); self.running = False; return
-        # Skin option buttons
-        for i, skin in enumerate(self.skins):
-            btn = pygame.Rect(SCREEN_W // 2 - 240 + i * 220, SCREEN_H // 2 - 100, 200, 260)
-            if btn.collidepoint(pos):
-                cur = get_equipped_skin(self.unit_name)
-                if cur == skin["id"]:
+        # Click outside panel — close
+        panel = pygame.Rect(self._px, self._py, self._pw, self._ph)
+        if not panel.collidepoint(pos):
+            self.running = False; return
+        # Card clicks
+        cur = get_equipped_skin(self.unit_name)
+        for i, opt in enumerate(self._all_options):
+            if self._card_rect(i).collidepoint(pos):
+                if opt["id"] is None:
                     unequip_skin(self.unit_name)
                 else:
-                    equip_skin(self.unit_name, skin["id"])
+                    if cur == opt["id"]:
+                        unequip_skin(self.unit_name)
+                    else:
+                        equip_skin(self.unit_name, opt["id"])
                 self.running = False; return
 
     def _draw(self):
         surf = self.screen
+        t    = self.t
         # Dim background
         dim = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
-        dim.fill((0, 0, 0, 200))
+        dim.fill((0, 0, 0, 210))
         surf.blit(dim, (0, 0))
-        cx = SCREEN_W // 2
-        t  = self.t
+
+        px2, py2 = self._px, self._py
+        pw, ph   = self._pw, self._ph
+        cx = px2 + pw // 2
+
         # Panel
-        pw, ph = 520, 500
-        px2 = cx - pw // 2
-        py2 = SCREEN_H // 2 - ph // 2
-        draw_rect_alpha(surf, (16, 20, 34), (px2, py2, pw, ph), 245, 16)
-        pygame.draw.rect(surf, (80, 140, 220), pygame.Rect(px2, py2, pw, ph), 2, border_radius=16)
+        draw_rect_alpha(surf, (16, 20, 34), (px2, py2, pw, ph), 248, 18)
+        pygame.draw.rect(surf, (80, 140, 220), pygame.Rect(px2, py2, pw, ph), 2, border_radius=18)
+
         # Title
-        tf = pygame.font.SysFont("segoeui", 24, bold=True)
-        ts2 = tf.render(f"Скины: {self.unit_name}", True, (200, 220, 255))
-        surf.blit(ts2, ts2.get_rect(center=(cx, py2 + 28)))
-        # Close btn
-        close_r = pygame.Rect(cx + 240, py2 - 220 + SCREEN_H // 2, 36, 36)
-        # (recalc)
-        close_r = pygame.Rect(px2 + pw - 44, py2 + 8, 36, 36)
+        tf = pygame.font.SysFont("segoeui", 22, bold=True)
+        ts = tf.render(f"Скины: {self.unit_name}", True, (200, 220, 255))
+        surf.blit(ts, ts.get_rect(center=(cx, py2 + 28)))
+
+        # Close button
         mx2, my2 = pygame.mouse.get_pos()
-        c_hov = close_r.collidepoint(mx2, my2)
-        pygame.draw.rect(surf, (100, 40, 40) if c_hov else (60, 30, 30), close_r, border_radius=6)
-        pygame.draw.rect(surf, C_BORDER, close_r, 1, border_radius=6)
-        xs = pygame.font.SysFont("consolas", 16, bold=True).render("✕", True, (220, 100, 100))
-        surf.blit(xs, xs.get_rect(center=close_r.center))
-        # "Default" option
-        def_btn = pygame.Rect(px2 + 20, py2 + ph - 72, 200, 40)
-        cur_eq  = get_equipped_skin(self.unit_name)
-        is_def  = (cur_eq is None)
-        def_bg  = (20, 80, 20) if is_def else (25, 35, 55)
-        def_brd = (80, 220, 80) if is_def else C_BORDER
-        d_hov   = def_btn.collidepoint(mx2, my2)
-        if d_hov: def_bg = tuple(min(255, c + 20) for c in def_bg)
-        pygame.draw.rect(surf, def_bg, def_btn, border_radius=8)
-        pygame.draw.rect(surf, def_brd, def_btn, 2, border_radius=8)
-        dlbl = ("✓ Дефолтный" if is_def else "Дефолтный")
-        ds2 = pygame.font.SysFont("segoeui", 16, bold=True).render(dlbl, True, C_WHITE)
-        surf.blit(ds2, ds2.get_rect(center=def_btn.center))
-        # Skin cards
-        for i, skin in enumerate(self.skins):
-            cw2, ch2 = 200, 260
-            cx3 = px2 + 20 + i * (cw2 + 16)
-            cy3 = py2 + 56
-            card = pygame.Rect(cx3, cy3, cw2, ch2)
-            is_eq = (cur_eq == skin["id"])
-            rd2   = RARITY_DATA.get(skin["rarity"], RARITY_DATA["exclusive"])
-            brd3  = (255, 220, 50) if is_eq else rd2["border"]
-            draw_rect_alpha(surf, rd2["color"], (cx3, cy3, cw2, ch2), 220, 12)
-            pygame.draw.rect(surf, brd3, card, 3 if is_eq else 2, border_radius=12)
-            # Star Archer preview
-            if skin["id"] == "archer_star":
-                pcx = cx3 + cw2 // 2
-                pcy = cy3 + 90
-                pygame.draw.circle(surf, (30, 20, 50), (pcx, pcy), 36)
-                pygame.draw.circle(surf, (200, 160, 40), (pcx, pcy), 28)
+        c_hov = self._close_r.collidepoint(mx2, my2)
+        pygame.draw.rect(surf, (120, 40, 40) if c_hov else (70, 30, 30), self._close_r, border_radius=7)
+        pygame.draw.rect(surf, (200, 80, 80), self._close_r, 2, border_radius=7)
+        xs = pygame.font.SysFont("consolas", 18, bold=True).render("✕", True, (240, 120, 120))
+        surf.blit(xs, xs.get_rect(center=self._close_r.center))
+
+        cur_eq = get_equipped_skin(self.unit_name)
+
+        for i, opt in enumerate(self._all_options):
+            card = self._card_rect(i)
+            cx3, cy3 = card.x, card.y
+            cw2, ch2 = self._cw, self._ch
+            is_default = (opt["id"] is None)
+            is_eq = (cur_eq is None) if is_default else (cur_eq == opt["id"])
+
+            # Card background
+            if is_default:
+                bg_col = (30, 38, 55)
+                brd_col = (255, 220, 50) if is_eq else (80, 100, 140)
+            else:
+                rd2 = RARITY_DATA.get(opt.get("rarity", "exclusive"), RARITY_DATA["exclusive"])
+                bg_col = rd2["color"]
+                brd_col = (255, 220, 50) if is_eq else rd2["border"]
+
+            card_s = pygame.Surface((cw2, ch2), pygame.SRCALPHA)
+            pygame.draw.rect(card_s, (*bg_col, 230), (0, 0, cw2, ch2), border_radius=14)
+            surf.blit(card_s, (cx3, cy3))
+            pygame.draw.rect(surf, brd_col, card, 3 if is_eq else 2, border_radius=14)
+
+            # Preview area
+            pcx = cx3 + cw2 // 2
+            pcy = cy3 + 100
+
+            if is_default:
+                # Default — show plain unit circle
+                _col_map2 = {
+                    "Archer": C_ARCHER, "Assassin": C_ASSASSIN,
+                    "Accelerator": C_ACCEL, "Lifestealer": C_LIFESTEALER,
+                }
+                uc = _col_map2.get(self.unit_name, (120, 120, 160))
+                pygame.draw.circle(surf, (20, 15, 35), (pcx, pcy), 38)
+                pygame.draw.circle(surf, uc, (pcx, pcy), 30)
+                pygame.draw.circle(surf, (255, 255, 255), (pcx, pcy), 30, 2)
+                df2 = pygame.font.SysFont("segoeui", 13)
+                ds3 = df2.render("стандартный", True, (140, 150, 180))
+                surf.blit(ds3, ds3.get_rect(center=(pcx, pcy + 48)))
+            elif opt["id"] == "archer_star":
+                # Star Archer preview
+                pygame.draw.circle(surf, (30, 20, 50), (pcx, pcy), 38)
+                pygame.draw.circle(surf, (200, 160, 40), (pcx, pcy), 30)
                 pygame.draw.circle(surf, (255, 220, 80), (pcx, pcy), 20)
                 for si3 in range(5):
                     sa3 = math.radians(t * 100 + si3 * 72)
-                    ssx2 = pcx + int(math.cos(sa3) * 34)
-                    ssy2 = pcy + int(math.sin(sa3) * 34)
-                    pygame.draw.circle(surf, (255, 220, 60), (ssx2, ssy2), 4)
+                    ssx2 = pcx + int(math.cos(sa3) * 38)
+                    ssy2 = pcy + int(math.sin(sa3) * 38)
+                    # mini star
+                    spts = []
+                    for pi2 in range(10):
+                        r2 = 5 if pi2 % 2 == 0 else 2
+                        a2 = math.radians(-90 + pi2 * 36)
+                        spts.append((ssx2 + int(math.cos(a2)*r2), ssy2 + int(math.sin(a2)*r2)))
+                    pygame.draw.polygon(surf, (255, 220, 60), spts)
+
             # Name
-            sf3 = pygame.font.SysFont("segoeui", 15, bold=True)
-            sns = sf3.render(skin["name"], True, C_WHITE)
-            surf.blit(sns, sns.get_rect(center=(cx3 + cw2 // 2, cy3 + ch2 - 56)))
-            # Status
-            st_lbl = "✓ НАДЕТ" if is_eq else "Нажми чтобы надеть"
-            st_col = (100, 255, 100) if is_eq else (160, 170, 200)
-            stf = pygame.font.SysFont("segoeui", 12)
-            sts2 = stf.render(st_lbl, True, st_col)
-            surf.blit(sts2, sts2.get_rect(center=(cx3 + cw2 // 2, cy3 + ch2 - 36)))
+            nf2 = pygame.font.SysFont("segoeui", 16, bold=True)
+            ns2 = nf2.render(opt["name"], True, C_WHITE)
+            surf.blit(ns2, ns2.get_rect(center=(pcx, cy3 + ch2 - 52)))
+
+            # Status label
+            if is_eq:
+                st_lbl = "✓ ВЫБРАН"
+                st_col = (100, 255, 120)
+            else:
+                st_lbl = "нажми чтобы выбрать"
+                st_col = (130, 140, 170)
+            stf2 = pygame.font.SysFont("segoeui", 12)
+            sts3 = stf2.render(st_lbl, True, st_col)
+            surf.blit(sts3, sts3.get_rect(center=(pcx, cy3 + ch2 - 30)))
+
             # Hover highlight
             if card.collidepoint(mx2, my2):
                 hov_s = pygame.Surface((cw2, ch2), pygame.SRCALPHA)
-                pygame.draw.rect(hov_s, (255, 255, 255, 20), (0, 0, cw2, ch2), border_radius=12)
+                pygame.draw.rect(hov_s, (255, 255, 255, 18), (0, 0, cw2, ch2), border_radius=14)
                 surf.blit(hov_s, (cx3, cy3))
 
 
@@ -4055,7 +4093,7 @@ class LoadoutScreen:
             if uname:
                 rarity = next((u["rarity"] for u in ALL_UNITS_POOL if u["name"] == uname), "starter")
                 rd     = RARITY_DATA[rarity]
-                icx, icy = sr.centerx, sr.centery - 16
+                icx, icy = sr.centerx, sr.centery - 10
                 # Show skin visual if equipped
                 eq_skin_id = get_equipped_skin(uname)
                 skin_def = next((s for s in ALL_SKIN_DEFS if s["id"] == eq_skin_id), None) if eq_skin_id else None
@@ -4080,26 +4118,9 @@ class LoadoutScreen:
                     pygame.draw.circle(surf, (30,20,50), (icx, icy), 22)
                     pygame.draw.circle(surf, uc,         (icx, icy), 18)
                     pygame.draw.circle(surf, rd["border"],(icx, icy), 18, 2)
-                txt(surf, uname, (sr.centerx, sr.bottom - 28), C_WHITE, font_sm, center=True)
+                txt(surf, uname, (sr.centerx, sr.bottom - 20), C_WHITE, font_sm, center=True)
                 rs2 = font_sm.render(rd["label"], True, rd["text_col"])
-                surf.blit(rs2, rs2.get_rect(center=(sr.centerx, sr.bottom - 15)))
-                # Skin button — tiny at bottom of slot
-                unit_skins = [s for s in ALL_SKIN_DEFS if s["unit_name"] == uname and own_skin(s["id"])]
-                if unit_skins:
-                    skin_btn_w = sr.w - 8
-                    skin_btn_h = 14
-                    skin_btn = pygame.Rect(sr.x + 4, sr.bottom - 14, skin_btn_w, skin_btn_h)
-                    hov_sk = skin_btn.collidepoint(mx, my)
-                    sk_bg = (30, 60, 100) if hov_sk else (20, 40, 70)
-                    pygame.draw.rect(surf, sk_bg, skin_btn, border_radius=3)
-                    pygame.draw.rect(surf, (80, 140, 220), skin_btn, 1, border_radius=3)
-                    sk_lbl = "★ СКИН" if not eq_skin_id else "★ НАДЕТ"
-                    sk_col = (255, 220, 60) if eq_skin_id else (140, 200, 255)
-                    skf = pygame.font.SysFont("segoeui", 10, bold=True)
-                    sks = skf.render(sk_lbl, True, sk_col)
-                    surf.blit(sks, sks.get_rect(center=skin_btn.center))
-                    if not hasattr(self, '_skin_btns'): self._skin_btns = []
-                    self._skin_btns.append((skin_btn, uname))
+                surf.blit(rs2, rs2.get_rect(center=(sr.centerx, sr.bottom - 7)))
             else:
                 txt(surf, f"SLOT {si+1}", (sr.centerx, sr.centery), (60,70,100), font_sm, center=True)
 
@@ -4170,6 +4191,21 @@ class LoadoutScreen:
 
                 if is_owned:
                     self._card_hits.append((card_r, rarity, i))
+                    # ── Skin button — top-right corner of card ────────────────
+                    unit_skins = [s for s in ALL_SKIN_DEFS if s["unit_name"] == u["name"] and own_skin(s["id"])]
+                    if unit_skins:
+                        sk_btn = pygame.Rect(card_r.right - 32, card_r.top + 4, 28, 28)
+                        sk_hov = sk_btn.collidepoint(mx, my)
+                        eq_sk  = get_equipped_skin(u["name"])
+                        sk_bg  = (180, 140, 0) if eq_sk else (40, 30, 60)
+                        sk_bg  = tuple(min(255, c + 25) for c in sk_bg) if sk_hov else sk_bg
+                        sk_brd = (255, 220, 60) if eq_sk else (140, 100, 220)
+                        pygame.draw.rect(surf, sk_bg, sk_btn, border_radius=6)
+                        pygame.draw.rect(surf, sk_brd, sk_btn, 2, border_radius=6)
+                        star_f = pygame.font.SysFont("segoeui", 15, bold=True)
+                        star_s = star_f.render("★", True, (255, 230, 60) if eq_sk else (180, 140, 255))
+                        surf.blit(star_s, star_s.get_rect(center=sk_btn.center))
+                        self._skin_btns.append((sk_btn, u["name"]))
                 else:
                     dim = pygame.Surface((self._CW, self._CH), pygame.SRCALPHA)
                     dim.fill((0, 0, 0, 160))
