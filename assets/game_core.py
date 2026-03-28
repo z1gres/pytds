@@ -360,7 +360,15 @@ class BloodSlashEffect:
             surf.blit(ps,(int(p[0])-4,int(p[1])-4))
 
 # ── Enemy base ─────────────────────────────────────────────────────────────────
-SETTINGS = {"colored_range": False}
+SETTINGS = {
+    "colored_range": False,
+    "sfx_volume":    0.7,
+    "sfx_muted":     False,
+    "show_fps":      False,
+    "screen_shake":  True,
+    "particles":     True,
+    "show_damage":   True,
+}
 
 # ── Skill Tree global multipliers (set by Game.__init__ from save_data) ──────
 # Fight Dirty: debuff durations multiplier (1.0 = no bonus)

@@ -2943,9 +2943,15 @@ class AchievementsScreen:
 
 # ── Global settings ──────────────────────────────────────────────────────────
 SETTINGS = {
-    "music_volume": 0.7,
-    "music_muted": False,
-    "colored_range": False,
+    "music_volume":   0.7,
+    "music_muted":    False,
+    "colored_range":  False,
+    "sfx_volume":     0.7,
+    "sfx_muted":      False,
+    "show_fps":       False,
+    "screen_shake":   True,
+    "particles":      True,
+    "show_damage":    True,
 }
 
 def _apply_audio_settings():
@@ -2991,9 +2997,51 @@ class SettingsScreen:
     def __init__(self, screen):
         self.screen = screen; self.t = 0.0; self.running = True
         cx = SCREEN_W // 2
-        self.btn_back = pygame.Rect(cx - 130, SCREEN_H - 90, 260, 50)
-        self._drag_vol = False
+        self.btn_back = pygame.Rect(cx - 130, SCREEN_H - 72, 260, 48)
+        self._drag_music = False
+        self._drag_sfx   = False
+        # Layout constants
+        self._cx = cx
+        self._col_w = 340   # width of each column
+        self._col_gap = 40
+        self._left_x  = cx - self._col_w - self._col_gap // 2
+        self._right_x = cx + self._col_gap // 2
 
+    # ── slider helpers ──────────────────────────────────────────────────────
+    def _music_bar(self):  return pygame.Rect(self._left_x, 195, self._col_w, 16)
+    def _sfx_bar(self):    return pygame.Rect(self._right_x, 195, self._col_w, 16)
+
+    def _set_music_vol(self, mx):
+        bar = self._music_bar()
+        SETTINGS["music_volume"] = round(max(0.0, min(1.0, (mx - bar.x) / bar.w)), 2)
+        if not SETTINGS["music_muted"]: _apply_audio_settings()
+
+    def _set_sfx_vol(self, mx):
+        bar = self._sfx_bar()
+        SETTINGS["sfx_volume"] = round(max(0.0, min(1.0, (mx - bar.x) / bar.w)), 2)
+
+    # ── toggle rects (left column) ──────────────────────────────────────────
+    def _toggle_rects_left(self):
+        x = self._left_x; tw = self._col_w; th = 44; gap = 14; y0 = 270
+        keys = [
+            ("music_muted",  "Мут музыки"),
+            ("colored_range","Цветной рейндж"),
+            ("screen_shake", "Тряска экрана"),
+        ]
+        return [(pygame.Rect(x, y0 + i*(th+gap), tw, th), k, lbl) for i,(k,lbl) in enumerate(keys)]
+
+    # ── toggle rects (right column) ─────────────────────────────────────────
+    def _toggle_rects_right(self):
+        x = self._right_x; tw = self._col_w; th = 44; gap = 14; y0 = 270
+        keys = [
+            ("sfx_muted",    "Мут SFX"),
+            ("particles",    "Партикли/эффекты"),
+            ("show_damage",  "Числа урона/денег"),
+            ("show_fps",     "Показывать FPS"),
+        ]
+        return [(pygame.Rect(x, y0 + i*(th+gap), tw, th), k, lbl) for i,(k,lbl) in enumerate(keys)]
+
+    # ── event handling ───────────────────────────────────────────────────────
     def run(self):
         clock = pygame.time.Clock()
         while self.running:
@@ -3002,68 +3050,105 @@ class SettingsScreen:
                 if ev.type == pygame.QUIT: pygame.quit(); sys.exit()
                 if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE: self.running = False
                 if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1: self._handle_click(ev.pos)
-                if ev.type == pygame.MOUSEBUTTONUP and ev.button == 1: self._drag_vol = False
-                if ev.type == pygame.MOUSEMOTION and self._drag_vol: self._set_vol_from_x(ev.pos[0])
+                if ev.type == pygame.MOUSEBUTTONUP   and ev.button == 1:
+                    self._drag_music = False; self._drag_sfx = False
+                if ev.type == pygame.MOUSEMOTION:
+                    if self._drag_music: self._set_music_vol(ev.pos[0])
+                    if self._drag_sfx:   self._set_sfx_vol(ev.pos[0])
             self._draw(); pygame.display.flip()
         save_settings()
 
-    def _vol_bar_rect(self): return pygame.Rect(SCREEN_W//2 - 200, 320, 400, 18)
-
-    def _set_vol_from_x(self, mx):
-        bar = self._vol_bar_rect()
-        SETTINGS["music_volume"] = round(max(0.0, min(1.0, (mx-bar.x)/bar.w)), 2)
-        if not SETTINGS["music_muted"]: _apply_audio_settings()
-
     def _handle_click(self, pos):
-        cx = SCREEN_W // 2
         if self.btn_back.collidepoint(pos): self.running = False; return
-        if pygame.Rect(cx-110, 380, 220, 44).collidepoint(pos):
-            SETTINGS["music_muted"] = not SETTINGS["music_muted"]; _apply_audio_settings(); return
-        if pygame.Rect(cx-110, 450, 220, 44).collidepoint(pos):
-            SETTINGS["colored_range"] = not SETTINGS["colored_range"]; return
-        bar = self._vol_bar_rect()
-        if pygame.Rect(bar.x, bar.y-10, bar.w, bar.h+20).collidepoint(pos):
-            self._drag_vol = True; self._set_vol_from_x(pos[0])
+        # music slider
+        bar_m = self._music_bar()
+        if pygame.Rect(bar_m.x, bar_m.y-10, bar_m.w, bar_m.h+20).collidepoint(pos):
+            self._drag_music = True; self._set_music_vol(pos[0]); return
+        # sfx slider
+        bar_s = self._sfx_bar()
+        if pygame.Rect(bar_s.x, bar_s.y-10, bar_s.w, bar_s.h+20).collidepoint(pos):
+            self._drag_sfx = True; self._set_sfx_vol(pos[0]); return
+        # toggles
+        for rect, key, _ in self._toggle_rects_left() + self._toggle_rects_right():
+            if rect.collidepoint(pos):
+                SETTINGS[key] = not SETTINGS[key]
+                if key == "music_muted": _apply_audio_settings()
+                return
+
+    # ── drawing helpers ──────────────────────────────────────────────────────
+    def _draw_slider(self, surf, bar, vol, muted, label, accent):
+        lf = pygame.font.SysFont("segoeui", 20, bold=True)
+        ls = lf.render(label, True, (200, 210, 240))
+        surf.blit(ls, ls.get_rect(midleft=(bar.x, bar.y - 18)))
+        pygame.draw.rect(surf, (35, 40, 58), bar, border_radius=8)
+        fw = int(bar.w * vol)
+        col = accent if not muted else (70, 70, 90)
+        if fw > 0:
+            pygame.draw.rect(surf, col, pygame.Rect(bar.x, bar.y, fw, bar.h), border_radius=8)
+        pygame.draw.rect(surf, C_BORDER, bar, 2, border_radius=8)
+        kx = bar.x + fw
+        pygame.draw.circle(surf, (210, 225, 255), (kx, bar.centery), 11)
+        pygame.draw.circle(surf, C_BORDER,        (kx, bar.centery), 11, 2)
+        pf = pygame.font.SysFont("consolas", 15, bold=True)
+        ps = pf.render(f"{int(vol*100)}%", True, C_GOLD)
+        surf.blit(ps, ps.get_rect(midright=(bar.right, bar.bottom + 16)))
 
     def _draw_toggle(self, surf, rect, label, active):
-        pygame.draw.rect(surf, (50,160,80) if active else (60,60,80), rect, border_radius=10)
-        pygame.draw.rect(surf, (80,220,100) if active else (90,90,120), rect, 2, border_radius=10)
-        f = pygame.font.SysFont("segoeui", 20, bold=True)
-        s = f.render(f"{label}: {'ВКЛ' if active else 'ВЫКЛ'}", True, (255,255,255))
-        surf.blit(s, s.get_rect(center=rect.center))
+        bg  = (45, 140, 70) if active else (55, 55, 75)
+        brd = (75, 210, 95) if active else (85, 85, 110)
+        pygame.draw.rect(surf, bg,  rect, border_radius=10)
+        pygame.draw.rect(surf, brd, rect, 2, border_radius=10)
+        # indicator dot
+        dot_x = rect.right - 24
+        dot_col = (120, 255, 140) if active else (80, 80, 100)
+        pygame.draw.circle(surf, dot_col, (dot_x, rect.centery), 8)
+        f = pygame.font.SysFont("segoeui", 19, bold=True)
+        txt_col = (235, 255, 235) if active else (160, 160, 180)
+        s = f.render(f"{label}:  {'ВКЛ' if active else 'ВЫКЛ'}", True, txt_col)
+        surf.blit(s, s.get_rect(midleft=(rect.x + 14, rect.centery)))
 
     def _draw(self):
-        surf = self.screen; surf.fill(C_BG); cx = SCREEN_W // 2
+        surf = self.screen; cx = self._cx
+        # background
+        surf.fill(C_BG)
         random.seed(44)
-        for _ in range(160):
-            sx=random.randint(0,SCREEN_W); sy=random.randint(0,SCREEN_H)
-            br=int(abs(math.sin(self.t+sx*0.012))*150+50)
-            pygame.draw.circle(surf,(br,br,br),(sx,sy),1)
+        for _ in range(180):
+            sx = random.randint(0, SCREEN_W); sy = random.randint(0, SCREEN_H)
+            br = int(abs(math.sin(self.t + sx * 0.012)) * 150 + 50)
+            pygame.draw.circle(surf, (br, br, min(255, br+20)), (sx, sy), 1)
         random.seed()
-        pygame.draw.rect(surf, C_PANEL, (0,0,SCREEN_W,70))
-        pygame.draw.line(surf, C_BORDER, (0,70),(SCREEN_W,70),2)
-        hs = pygame.font.SysFont("segoeui",36,bold=True).render("НАСТРОЙКИ",True,(180,200,255))
-        surf.blit(hs, hs.get_rect(center=(cx,35)))
-        vl = pygame.font.SysFont("segoeui",22,bold=True).render("Громкость музыки",True,(200,210,240))
-        surf.blit(vl, vl.get_rect(center=(cx,285)))
-        bar = self._vol_bar_rect()
-        pygame.draw.rect(surf,(40,45,65),bar,border_radius=8)
-        fw = int(bar.w*SETTINGS["music_volume"])
-        if fw > 0:
-            pygame.draw.rect(surf,(60,160,255) if not SETTINGS["music_muted"] else (80,80,80),
-                             pygame.Rect(bar.x,bar.y,fw,bar.h),border_radius=8)
-        pygame.draw.rect(surf,C_BORDER,bar,2,border_radius=8)
-        kx = bar.x + fw
-        pygame.draw.circle(surf,(200,220,255),(kx,bar.centery),12)
-        pygame.draw.circle(surf,C_BORDER,(kx,bar.centery),12,2)
-        ps = pygame.font.SysFont("consolas",16,bold=True).render(f"{int(SETTINGS['music_volume']*100)}%",True,C_GOLD)
-        surf.blit(ps, ps.get_rect(center=(cx,bar.bottom+18)))
-        self._draw_toggle(surf, pygame.Rect(cx-110,380,220,44), "Мут", SETTINGS["music_muted"])
-        self._draw_toggle(surf, pygame.Rect(cx-110,450,220,44), "Цветной рейндж", SETTINGS["colored_range"])
-        mx,my=pygame.mouse.get_pos(); hov=self.btn_back.collidepoint(mx,my)
-        pygame.draw.rect(surf,(80,50,50) if hov else (50,35,35),self.btn_back,border_radius=10)
-        pygame.draw.rect(surf,C_BORDER,self.btn_back,2,border_radius=10)
-        bs = pygame.font.SysFont("segoeui",24,bold=True).render("← НАЗАД",True,C_WHITE)
+        # header
+        pygame.draw.rect(surf, C_PANEL, (0, 0, SCREEN_W, 70))
+        pygame.draw.line(surf, C_BORDER, (0, 70), (SCREEN_W, 70), 2)
+        hs = pygame.font.SysFont("segoeui", 36, bold=True).render("НАСТРОЙКИ", True, (180, 200, 255))
+        surf.blit(hs, hs.get_rect(center=(cx, 35)))
+
+        # column headers
+        hf = pygame.font.SysFont("segoeui", 22, bold=True)
+        lh = hf.render("♪  Музыка", True, (120, 160, 255))
+        rh = hf.render("⚙  Графика / Звуки", True, (120, 200, 160))
+        surf.blit(lh, lh.get_rect(midleft=(self._left_x, 108)))
+        surf.blit(rh, rh.get_rect(midleft=(self._right_x, 108)))
+        pygame.draw.line(surf, (50,55,80), (self._left_x,  128), (self._left_x  + self._col_w, 128), 1)
+        pygame.draw.line(surf, (50,65,70), (self._right_x, 128), (self._right_x + self._col_w, 128), 1)
+
+        # sliders
+        self._draw_slider(surf, self._music_bar(), SETTINGS["music_volume"],
+                          SETTINGS["music_muted"], "Громкость музыки", (60, 160, 255))
+        self._draw_slider(surf, self._sfx_bar(),   SETTINGS["sfx_volume"],
+                          SETTINGS["sfx_muted"],   "Громкость SFX",    (80, 200, 140))
+
+        # toggles
+        for rect, key, lbl in self._toggle_rects_left():
+            self._draw_toggle(surf, rect, lbl, SETTINGS[key])
+        for rect, key, lbl in self._toggle_rects_right():
+            self._draw_toggle(surf, rect, lbl, SETTINGS[key])
+
+        # back button
+        mx, my = pygame.mouse.get_pos(); hov = self.btn_back.collidepoint(mx, my)
+        pygame.draw.rect(surf, (80,50,50) if hov else (50,35,35), self.btn_back, border_radius=10)
+        pygame.draw.rect(surf, C_BORDER, self.btn_back, 2, border_radius=10)
+        bs = pygame.font.SysFont("segoeui", 24, bold=True).render("← НАЗАД", True, C_WHITE)
         surf.blit(bs, bs.get_rect(center=self.btn_back.center))
 
 
@@ -4468,7 +4553,8 @@ class Game:
         self.screen=pygame.display.set_mode((SCREEN_W,SCREEN_H))
         pygame.display.set_caption("Tower Defense")
         self.clock=pygame.time.Clock(); self.running=True
-        self._elapsed=0.0  # total play time in seconds
+        self._elapsed=0.0      # total play time in seconds (affected by speed)
+        self._real_elapsed=0.0  # real wall-clock play time (unaffected by speed)
         self._end_coin_reward=0  # coins earned this run
         self.player_hp=100; self.player_maxhp=100; self.money=600
         self.enemies=[]; self.units=[]; self.effects=[]
@@ -4783,8 +4869,8 @@ class Game:
 
     def run(self):
         while self.running:
-            dt = min(self.clock.tick(FPS) / 1000.0, 0.05)
-            dt *= getattr(self.ui.admin_panel, '_game_speed', 1.0)
+            raw_dt = min(self.clock.tick(FPS) / 1000.0, 0.05)
+            dt = raw_dt * getattr(self.ui.admin_panel, '_game_speed', 1.0)
             dt *= self.ui._SPEED_STEPS[self.ui._speed_idx]
 
             for ev in pygame.event.get():
@@ -4929,7 +5015,8 @@ class Game:
                             _new_u.range_tiles = _new_u.range_tiles * (1.0 + self._sk_range_bonus)
 
             if not self.game_over and not self.win:
-                self._elapsed += dt
+                self._elapsed += raw_dt
+                self._real_elapsed += raw_dt
             prev_wave = self.wave_mgr.wave
             if not self.paused and not self.game_over and not self.win:
                 if not getattr(self,'natural_spawn_stopped',False):
@@ -5220,21 +5307,7 @@ class Game:
                             e._jester_conf_timer = 0.0
                             e._wp_index = 1
                             continue
-                        # Collide with other enemies
-                        for other in self.enemies:
-                            if other is e or not other.alive: continue
-                            if getattr(other,'_reversed',False): continue
-                            if dist((e.x,e.y),(other.x,other.y)) < e.radius + other.radius + 2:
-                                dmg = min(e.hp, other.hp)
-                                other.take_damage(dmg)
-                                e.hp -= dmg
-                                if not other.alive and not getattr(other,'_reward_paid',False) and not getattr(other,'free_kill',False):
-                                    other._reward_paid=True
-                                    if self.mode != "easy":
-                                        self.money+=other.KILL_REWARD
-                                        self.effects.append(FloatingText(other.x,other.y-other.radius-10,f"+{other.KILL_REWARD}"))
-                                if e.hp <= 0:
-                                    e.alive = False; break
+
                         continue
     
                     if e.update(dt):
@@ -5276,7 +5349,8 @@ class Game:
                                 reward = int(reward * 1.5)
                         if reward>0 and self.mode != "easy":
                             self.money+=reward
-                            self.effects.append(FloatingText(e.x, e.y-e.radius-10, f"+{reward}"))
+                            if SETTINGS.get("show_damage", True):
+                                self.effects.append(FloatingText(e.x, e.y-e.radius-10, f"+{reward}"))
 
                 # Global tick: jester confusion CD and timer (runs regardless of Jester alive/on field)
                 for e in self.enemies:
@@ -5303,7 +5377,8 @@ class Game:
                             fs._reward_steps_paid = steps
                             amt = 12500 * delta
                             self.money += amt
-                            self.effects.append(FloatingText(fs.x, fs.y-fs.radius-18, f"+{amt}"))
+                            if SETTINGS.get("show_damage", True):
+                                self.effects.append(FloatingText(fs.x, fs.y-fs.radius-18, f"+{amt}"))
     
                 _x5k = getattr(self,"_x5000_dmg",False)
                 for u in self.units:
@@ -5350,7 +5425,8 @@ class Game:
                         earned=u.collect_income()
                         if earned>0:
                             self.money+=earned
-                            self.effects.append(FloatingText(u.px,u.py-30,f"+${earned}",(255,220,60)))
+                            if SETTINGS.get("show_damage", True):
+                                self.effects.append(FloatingText(u.px,u.py-30,f"+${earned}",(255,220,60)))
     
                 # Kill rewards (second pass — catches kills from unit attacks this tick)
                 for e in self.enemies:
@@ -5359,7 +5435,8 @@ class Game:
                         reward=e.KILL_REWARD
                         if reward>0 and self.mode != "easy":
                             self.money+=reward
-                            self.effects.append(FloatingText(e.x, e.y-e.radius-10, f"+{reward}"))
+                            if SETTINGS.get("show_damage", True):
+                                self.effects.append(FloatingText(e.x, e.y-e.radius-10, f"+{reward}"))
     
                 new_enemies=[]
                 for e in self.enemies:
@@ -5581,6 +5658,11 @@ class Game:
                 self.draw()
             if self.game_over or self.win:
                 self._draw_end_screen()
+            if SETTINGS.get("show_fps", False):
+                _fps_val = int(self.clock.get_fps())
+                _fps_col = (80,255,80) if _fps_val>=55 else ((255,200,40) if _fps_val>=30 else (255,60,60))
+                _fps_s = pygame.font.SysFont("consolas", 18, bold=True).render(f"FPS: {_fps_val}", True, _fps_col)
+                self.screen.blit(_fps_s, (8, 8))
             pygame.display.flip()
         # Reset skill tree globals so they dont bleed into menu
         game_core.DEBUFF_MULT = 1.0
@@ -5588,7 +5670,7 @@ class Game:
 
     def draw(self):
         fk_shake=(0,0)
-        if self._fallen_king_shake>0:
+        if self._fallen_king_shake>0 and SETTINGS.get("screen_shake", True):
             intensity=min(20, self._fallen_king_shake*16)
             fk_shake=(random.randint(-int(intensity),int(intensity)),
                       random.randint(-int(intensity),int(intensity)))
@@ -5612,27 +5694,102 @@ class Game:
             hov=dist((e.x,e.y),(mx,my))<e.radius+5
             if hov: continue
             e.draw(self.screen,detected=can_detect)
-        # Draw fire effect on burning enemies
+        # Draw fire effect on burning enemies (Archer flame + Jester fire bomb)
         _ft=pygame.time.get_ticks()*0.001
         for e in self.enemies:
             if not e.alive: continue
-            if getattr(e,'_fire_timer',0)>0:
-                cx,cy=int(e.x),int(e.y)
-                fs=pygame.Surface((60,60),pygame.SRCALPHA)
-                for i in range(6):
-                    a=math.radians(i*60+_ft*200)
-                    flick=abs(math.sin(_ft*14+i*1.1))
-                    fx=30+int(math.cos(a)*(e.radius-4+flick*4))
-                    fy=30+int(math.sin(a)*(e.radius-4+flick*4))
-                    r2=int(4+flick*4)
-                    pygame.draw.circle(fs,(255,int(60+flick*100),0,200),(fx,fy),r2)
-                    pygame.draw.circle(fs,(255,220,50,120),(fx,fy),r2-2)
-                self.screen.blit(fs,(cx-30,cy-30))
-                # Small timer bar
+            has_archer_fire = getattr(e,'_fire_timer',0) > 0
+            has_jester_fire = getattr(e,'_jester_burn_dur',0.0) > 0
+            if not has_archer_fire and not has_jester_fire: continue
+            cx,cy=int(e.x),int(e.y)
+            fs=pygame.Surface((60,60),pygame.SRCALPHA)
+            for i in range(6):
+                a=math.radians(i*60+_ft*200)
+                flick=abs(math.sin(_ft*14+i*1.1))
+                fx=30+int(math.cos(a)*(e.radius-4+flick*4))
+                fy=30+int(math.sin(a)*(e.radius-4+flick*4))
+                r2=int(4+flick*4)
+                pygame.draw.circle(fs,(255,int(60+flick*100),0,200),(fx,fy),r2)
+                pygame.draw.circle(fs,(255,220,50,120),(fx,fy),r2-2)
+            self.screen.blit(fs,(cx-30,cy-30))
+            # Timer bar
+            if has_jester_fire:
+                jburn_max = getattr(e,'_jester_burn_dur',0)+0.001
+                frac=max(0,min(1,e._jester_burn_dur/max(1,jburn_max+e._jester_burn_dur*0+4.0)))
+                # just show remaining out of original duration (4s default)
+                frac=max(0,min(1,getattr(e,'_jester_burn_dur',0)/4.0))
+            else:
                 frac=max(0,min(1,e._fire_timer/3.0))
-                bw=e.radius*2+4; bx2=cx-bw//2; by2=cy-e.radius-14
-                pygame.draw.rect(self.screen,(60,20,0),(bx2,by2,bw,4),border_radius=2)
-                pygame.draw.rect(self.screen,(255,100,0),(bx2,by2,int(bw*frac),4),border_radius=2)
+            bw=e.radius*2+4; bx2=cx-bw//2; by2=cy-e.radius-14
+            pygame.draw.rect(self.screen,(60,20,0),(bx2,by2,bw,4),border_radius=2)
+            pygame.draw.rect(self.screen,(255,100,0),(bx2,by2,int(bw*frac),4),border_radius=2)
+
+        # Draw Jester ice bomb slow overlay
+        _jt = pygame.time.get_ticks() * 0.001
+        for e in self.enemies:
+            if not e.alive: continue
+            itimer = getattr(e, '_jester_ice_timer', 0.0)
+            if itimer <= 0: continue
+            cx2, cy2 = int(e.x), int(e.y)
+            frac = max(0.0, min(1.0, itimer / 3.0))
+            alpha = int(frac * 150) + 40
+            ice_s = pygame.Surface((80, 80), pygame.SRCALPHA)
+            pygame.draw.circle(ice_s, (100, 180, 255, alpha), (40, 40), e.radius + 7)
+            pygame.draw.circle(ice_s, (200, 240, 255, alpha // 2), (40, 40), e.radius + 3, 2)
+            # Spinning snowflake spokes
+            spin = _jt * 60
+            for i in range(6):
+                a = math.radians(spin + i * 60)
+                x1 = 40 + int(math.cos(a) * 4);  y1 = 40 + int(math.sin(a) * 4)
+                x2 = 40 + int(math.cos(a) * (e.radius + 6)); y2 = 40 + int(math.sin(a) * (e.radius + 6))
+                pygame.draw.line(ice_s, (180, 230, 255, min(255, alpha + 60)), (x1, y1), (x2, y2), 1)
+                # Cross-bars
+                mid_x = 40 + int(math.cos(a) * (e.radius // 2 + 3))
+                mid_y = 40 + int(math.sin(a) * (e.radius // 2 + 3))
+                pa2 = -math.sin(a); pb2 = math.cos(a)
+                pygame.draw.line(ice_s, (180, 230, 255, alpha),
+                    (int(mid_x + pa2*4), int(mid_y + pb2*4)),
+                    (int(mid_x - pa2*4), int(mid_y - pb2*4)), 1)
+            self.screen.blit(ice_s, (cx2 - 40, cy2 - 40))
+            # Timer bar
+            bw = e.radius * 2 + 8; bx3 = cx2 - bw // 2; by3 = cy2 - e.radius - 14
+            pygame.draw.rect(self.screen, (20, 60, 120), (bx3, by3, bw, 4), border_radius=2)
+            pygame.draw.rect(self.screen, (100, 200, 255), (bx3, by3, int(bw * frac), 4), border_radius=2)
+
+        # Draw Jester confusion overlay — purple aura + fast flickering ? marks
+        _jqt = pygame.time.get_ticks() * 0.001
+        _jqt_ms = pygame.time.get_ticks()
+        _qf = pygame.font.SysFont("consolas", 15, bold=True)
+        for e in self.enemies:
+            if not e.alive: continue
+            ctimer = getattr(e, '_jester_conf_timer', 0.0)
+            if ctimer <= 0: continue
+            cx2, cy2 = int(e.x), int(e.y)
+            ca2 = int(min(1.0, ctimer / 2.0) * 160) + 40
+            cs3 = pygame.Surface((70, 70), pygame.SRCALPHA)
+            pygame.draw.circle(cs3, (180, 40, 255, ca2), (35, 35), e.radius + 9)
+            pygame.draw.circle(cs3, (220, 100, 255, ca2 // 2), (35, 35), e.radius + 4, 2)
+            self.screen.blit(cs3, (cx2 - 35, cy2 - 35))
+            # Fast flickering ? marks — 6 marks, each blinks independently at ~8-12 Hz
+            _qf2 = pygame.font.SysFont("consolas", 14, bold=True)
+            for qi in range(6):
+                # Each mark has its own random-ish phase so they flicker out of sync
+                phase_ms = (qi * 137 + id(e) // 100) % 1000
+                blink_period = 80 + qi * 15  # 80-155 ms period per mark
+                if ((_jqt_ms + phase_ms) % blink_period) < (blink_period // 2):
+                    continue  # this mark is "off" this frame
+                # Scatter positions randomly but reproducibly per enemy+qi
+                _seed_val = (id(e) + qi * 31 + int(_jqt * 8)) % 1000
+                random.seed(_seed_val)
+                scatter_r = e.radius + random.randint(8, 20)
+                scatter_a = math.radians(random.randint(0, 359))
+                random.seed()
+                qx = cx2 + int(math.cos(scatter_a) * scatter_r)
+                qy = cy2 + int(math.sin(scatter_a) * scatter_r)
+                q_col = random.choice([(230, 120, 255), (255, 80, 220), (200, 60, 255)])
+                qs2 = _qf2.render("?", True, q_col)
+                qs2.set_alpha(min(255, ca2 + 60))
+                self.screen.blit(qs2, qs2.get_rect(center=(qx, qy)))
         # Draw frost effects from Frostcelerators
         for u in self.units:
             if isinstance(u, Frostcelerator):
@@ -5761,20 +5918,31 @@ class Game:
                 pygame.draw.circle(es2, (255, 240, 60, pulse2), (30, 30), e.radius + 6)
                 pygame.draw.circle(es2, (255, 255, 120, 80), (30, 30), e.radius + 2, 2)
                 self.screen.blit(es2, (cx2 - 30, cy2 - 30))
-            # Confusion overlay — purple spinning ?
+            # Confusion overlay — purple aura + fast flickering ? marks
             if getattr(e, '_confused', False):
                 cs3 = pygame.Surface((70, 70), pygame.SRCALPHA)
                 ct2 = getattr(e, '_confused_timer', 0.0)
                 ca3 = int(min(1.0, ct2 / 0.5) * 160) + 40
                 pygame.draw.circle(cs3, (180, 60, 255, ca3), (35, 35), e.radius + 8)
                 self.screen.blit(cs3, (cx2 - 35, cy2 - 35))
-                # Spinning ? marks
+                # Fast flickering ? marks
+                _conf_ms = pygame.time.get_ticks()
+                _conf_t = _conf_ms * 0.001
                 qf2 = pygame.font.SysFont("consolas", 14, bold=True)
-                for i in range(3):
-                    qa = math.radians(_sp_t * 200 + i * 120)
-                    qx = cx2 + int(math.cos(qa) * (e.radius + 10))
-                    qy = cy2 + int(math.sin(qa) * (e.radius + 10))
-                    qs2 = qf2.render("?", True, (220, 100, 255))
+                for i in range(6):
+                    phase_ms2 = (i * 113 + id(e) // 100) % 1000
+                    blink_p2 = 75 + i * 18
+                    if ((_conf_ms + phase_ms2) % blink_p2) < (blink_p2 // 2):
+                        continue
+                    _seed2 = (id(e) + i * 29 + int(_conf_t * 8)) % 1000
+                    random.seed(_seed2)
+                    sc_r = e.radius + random.randint(8, 20)
+                    sc_a = math.radians(random.randint(0, 359))
+                    random.seed()
+                    qx = cx2 + int(math.cos(sc_a) * sc_r)
+                    qy = cy2 + int(math.sin(sc_a) * sc_r)
+                    q_c = random.choice([(220, 100, 255), (255, 60, 200), (190, 50, 255)])
+                    qs2 = qf2.render("?", True, q_c)
                     qs2.set_alpha(ca3)
                     self.screen.blit(qs2, qs2.get_rect(center=(qx, qy)))
 
@@ -5809,7 +5977,12 @@ class Game:
                 self.screen.blit(gf,(cx2+random.randint(-20,20)-gf.get_width()//2,
                                      cy2-e.radius-18+random.randint(-4,4)))
 
-        for ef in self.effects: ef.draw(self.screen)
+        if SETTINGS.get("particles", True):
+            for ef in self.effects: ef.draw(self.screen)
+        else:
+            # When particles off, still draw FloatingText (money/damage numbers), skip visual effects
+            for ef in self.effects:
+                if isinstance(ef, FloatingText): ef.draw(self.screen)
 
         extra_bars=None
 

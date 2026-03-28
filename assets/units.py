@@ -4412,8 +4412,8 @@ class HackerLaserTest(Unit):
 
     def _get_sfx_vol(self):
         from game_core import SETTINGS
-        if SETTINGS.get("music_muted"): return 0.0
-        return max(0.0, SETTINGS.get("music_volume", 0.7) / 6.0)
+        if SETTINGS.get("sfx_muted"): return 0.0
+        return max(0.0, SETTINGS.get("sfx_volume", 0.7) / 6.0)
 
     def _find_densest_spot(self, enemies):
         """Return (x,y) of the spot with most enemies within LIGHTNING_RADIUS."""
