@@ -792,10 +792,24 @@ class ArcherArrow:
                 if self.pierce_left<=0:
                     self.alive=False; return
                 # After hitting primary target, keep flying straight — no retarget
-    def draw(self, surf):
+    def draw(self, surf, star_skin=False):
         if not self.alive: return
         tail_x=self.x-self.vx*12; tail_y=self.y-self.vy*12
-        if self.flame:
+        if star_skin:
+            # Draw a flying 5-pointed star
+            pygame.draw.line(surf,(255,200,40),(int(tail_x),int(tail_y)),(int(self.x),int(self.y)),2)
+            star_pts=[]
+            for pi2 in range(10):
+                r2=6 if pi2%2==0 else 2
+                a2=math.radians(-90+pi2*36)
+                star_pts.append((int(self.x+math.cos(a2)*r2),int(self.y+math.sin(a2)*r2)))
+            pygame.draw.polygon(surf,(255,230,60),star_pts)
+            pygame.draw.polygon(surf,(255,255,180),star_pts,1)
+            # Golden sparkle trail
+            gs=pygame.Surface((20,20),pygame.SRCALPHA)
+            pygame.draw.circle(gs,(255,220,60,80),(10,10),6)
+            surf.blit(gs,(int(tail_x)-10,int(tail_y)-10))
+        elif self.flame:
             pygame.draw.line(surf,(255,120,20),(int(tail_x),int(tail_y)),(int(self.x),int(self.y)),3)
             pygame.draw.circle(surf,(255,200,50),(int(self.x),int(self.y)),4)
         elif self.ice:
@@ -869,58 +883,93 @@ class Archer(Unit):
                     if orig is not None: e.speed=orig
 
     def draw(self, surf):
+        import sys as _sys
+        # Check for Star Archer skin
+        _game_mod = _sys.modules.get('__main__') or _sys.modules.get('game')
+        _star_skin = False
+        try:
+            _star_skin = (_game_mod.get_equipped_skin("Archer") == "archer_star")
+        except Exception:
+            pass
+
         cx,cy=int(self.px),int(self.py)
-        # Base circles
-        pygame.draw.circle(surf,C_ARCHER_DARK,(cx,cy),27)
-        pygame.draw.circle(surf,C_ARCHER,(cx,cy),20)
+        # Base circles — gold if star skin
+        if _star_skin:
+            pygame.draw.circle(surf,(60,40,0),(cx,cy),27)
+            pygame.draw.circle(surf,(200,160,30),(cx,cy),20)
+            pygame.draw.circle(surf,(255,220,80),(cx,cy),20,2)
+            # Spinning star orbits
+            t2=self._anim_t
+            for si2 in range(3):
+                sa2=math.radians(t2*140+si2*120)
+                ssx=cx+int(math.cos(sa2)*24); ssy=cy+int(math.sin(sa2)*24)
+                star_pts=[]
+                for pi2 in range(10):
+                    r2=5 if pi2%2==0 else 2
+                    a2=math.radians(-90+pi2*36)
+                    star_pts.append((ssx+int(math.cos(a2)*r2),ssy+int(math.sin(a2)*r2)))
+                pygame.draw.polygon(surf,(255,220,60),star_pts)
+        else:
+            pygame.draw.circle(surf,C_ARCHER_DARK,(cx,cy),27)
+            pygame.draw.circle(surf,C_ARCHER,(cx,cy),20)
 
         # Draw bow + arrow rotated toward aim angle
-        # Build on a small surface centered at (32,32), then rotate and blit
         SIZE=66
         bow_surf=pygame.Surface((SIZE,SIZE),pygame.SRCALPHA)
-        bx,by=SIZE//2,SIZE//2  # center of bow surface
+        bx,by=SIZE//2,SIZE//2
 
-        # cos/sin for perpendicular (bow arm is perpendicular to arrow direction)
         a=self._aim_angle
         ca=math.cos(a); sa=math.sin(a)
-        # perpendicular direction (90 degrees CCW)
         pa=-sa; pb=ca
 
-        # Arrow shaft: from -14 to +18 along aim direction
+        # Arrow shaft
         ax0=int(bx+ca*(-14)); ay0=int(by+sa*(-14))
         ax1=int(bx+ca*18);    ay1=int(by+sa*18)
-        pygame.draw.line(bow_surf,(210,160,80),(ax0,ay0),(ax1,ay1),2)
+        shaft_col=(255,220,60) if _star_skin else (210,160,80)
+        pygame.draw.line(bow_surf,shaft_col,(ax0,ay0),(ax1,ay1),2)
 
-        # Arrowhead triangle at tip
+        # Arrowhead / star tip
         tip_x=bx+ca*18; tip_y=by+sa*18
         perp_x=pa*5;    perp_y=pb*5
         back_x=bx+ca*12; back_y=by+sa*12
-        pygame.draw.polygon(bow_surf,(255,210,100),[
-            (int(tip_x),int(tip_y)),
-            (int(back_x+perp_x),int(back_y+perp_y)),
-            (int(back_x-perp_x),int(back_y-perp_y))
-        ])
+        if _star_skin:
+            # 5-pointed star at tip
+            star_pts2=[]
+            for pi3 in range(10):
+                r3=6 if pi3%2==0 else 2
+                a3=math.radians(-90+pi3*36)
+                star_pts2.append((int(tip_x+math.cos(a3)*r3),int(tip_y+math.sin(a3)*r3)))
+            pygame.draw.polygon(bow_surf,(255,240,80),star_pts2)
+        else:
+            pygame.draw.polygon(bow_surf,(255,210,100),[
+                (int(tip_x),int(tip_y)),
+                (int(back_x+perp_x),int(back_y+perp_y)),
+                (int(back_x-perp_x),int(back_y-perp_y))
+            ])
 
         # Fletching at tail
         tail_x=bx+ca*(-14); tail_y=by+sa*(-14)
-        pygame.draw.line(bow_surf,(180,120,60),
+        flt_col=(255,200,40) if _star_skin else (180,120,60)
+        pygame.draw.line(bow_surf,flt_col,
             (int(tail_x),int(tail_y)),
             (int(tail_x+pa*6-ca*4),int(tail_y+pb*6-sa*4)),2)
-        pygame.draw.line(bow_surf,(180,120,60),
+        pygame.draw.line(bow_surf,flt_col,
             (int(tail_x),int(tail_y)),
             (int(tail_x-pa*6-ca*4),int(tail_y-pb*6-sa*4)),2)
 
-        # Bow arc: perpendicular to arrow, centered at a point slightly behind aim direction
+        # Bow arc
         bow_cx=int(bx+ca*(-8)); bow_cy=int(by+sa*(-8))
         bow_arm=16
-        pygame.draw.line(bow_surf,(220,170,90),
+        bow_col=(255,200,40) if _star_skin else (220,170,90)
+        pygame.draw.line(bow_surf,bow_col,
             (int(bow_cx+pa*bow_arm),int(bow_cy+pb*bow_arm)),
             (int(bow_cx-pa*bow_arm),int(bow_cy-pb*bow_arm)),3)
         # Bowstring
-        pygame.draw.line(bow_surf,(200,200,180),
+        string_col=(255,255,180) if _star_skin else (200,200,180)
+        pygame.draw.line(bow_surf,string_col,
             (int(bow_cx+pa*bow_arm),int(bow_cy+pb*bow_arm)),
             (int(bx+ca*2),int(by+sa*2)),1)
-        pygame.draw.line(bow_surf,(200,200,180),
+        pygame.draw.line(bow_surf,string_col,
             (int(bow_cx-pa*bow_arm),int(bow_cy-pb*bow_arm)),
             (int(bx+ca*2),int(by+sa*2)),1)
 
@@ -930,7 +979,7 @@ class Archer(Unit):
             pygame.draw.circle(surf,(100,255,100),(cx+21,cy-21),6)
         for i in range(self.level):
             pygame.draw.circle(surf,C_GOLD,(cx-14+i*6,cy+36),3)
-        for a in self._arrows: a.draw(surf)
+        for arr in self._arrows: arr.draw(surf, star_skin=_star_skin)
 
     def get_info(self):
         info={"Damage":self.damage,"Range":self.range_tiles,
@@ -2658,18 +2707,18 @@ C_GCOWBOY_DARK = (80,  60,  10)
 #    the trigger fires anyway — but we only count actual hits for authenticity
 
 GCOWBOY_LEVELS = [
-    # lv0 – place $550
-    (2,  1.008,  9.0, None, 6,  35, 1.7, False),
+    # lv0 – place $550  — NERFED to Assassin tier
+    (2,  0.608,  6.0, None, 8,  20, 1.8, False),
     # lv1 – +$300
-    (2,  0.808,  9.0,  300, 6,  35, 1.7, False),
-    # lv2 – +$400  (hidden detection, +dmg, +range)
-    (4,  0.808, 12.0,  400, 6,  65, 1.7, True),
+    (3,  0.508,  6.0,  300, 8,  20, 1.8, False),
+    # lv2 – +$400
+    (3,  0.508,  8.0,  400, 8,  40, 1.8, True),
     # lv3 – +$1000
-    (12, 0.608, 12.5, 1000, 6,  65, 1.3, True),
+    (7,  0.408,  8.5, 1000, 8,  50, 1.5, True),
     # lv4 – +$3500
-    (15, 0.358, 13.0, 3500, 12, 90, 1.3, True),
+    (10, 0.358,  9.0, 3500, 10, 70, 1.3, True),
     # lv5 – +$12000
-    (18, 0.358, 13.5,12000, 12,160, 1.0, True),
+    (13, 0.358,  9.5,12000, 12,120, 1.0, True),
 ]
 
 
@@ -4045,16 +4094,16 @@ C_COMMANDO_DARK = (20, 55,  20)
 #  - Lv4: dual fire — two bullets per shot toward two closest enemies
 
 COMMANDO_LEVELS = [
-    # lv0  place $900
-    (4,  0.12, 8.0, None, 4,  1.2, 1, False),
+    # lv0  place $900  — NERFED: slower burst, less pierce
+    (3,  0.15, 7.0, None, 3,  1.6, 1, False),
     # lv1  +$600
-    (5,  0.11, 8.5,  600, 5,  1.1, 2, False),
+    (4,  0.13, 7.5,  600, 4,  1.4, 1, False),
     # lv2  +$1500  (grenade)
-    (6,  0.10, 9.0, 1500, 6,  1.0, 2, False),
-    # lv3  +$4000  (hidden det, faster fire)
-    (8,  0.09, 9.5, 4000, 8,  0.9, 3, True),
+    (5,  0.12, 8.0, 1500, 5,  1.3, 2, False),
+    # lv3  +$4000  (hidden det)
+    (6,  0.11, 8.5, 4000, 6,  1.1, 2, True),
     # lv4  +$10000  (dual fire, more pierce)
-    (12, 0.08,10.0,10000, 10, 0.8, 4, True),
+    (9,  0.10, 9.0,10000, 8,  1.0, 3, True),
 ]
 
 _COMMANDO_BULLET_SPEED = 560.0

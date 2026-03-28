@@ -105,14 +105,25 @@ ACHIEVEMENTS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath
 
 # Achievement definitions
 ACHIEVEMENT_DEFS = [
-    {"id": "first_path",   "name": "Первый путь",    "desc": "Пройти Easy режим",                       "color": (80,200,80),   "border": (120,255,120)},
-    {"id": "fallen_angel", "name": "Падший ангел",   "desc": "Пройти Fallen режим",                     "color": (140,40,200),  "border": (200,80,255)},
-    {"id": "frosty_clear", "name": "Ледяной путь",   "desc": "Пройти Frosty режим",                     "color": (80,200,255),  "border": (140,240,255)},
-    {"id": "glitch",       "name": "tH3 GL1tcH",     "desc": "Пройти Hidden Wave. Недоступно",                     "color": (0,200,255),   "border": (80,240,255)},
-    {"id": "king_victim",  "name": "Жертва Короля",  "desc": "Проиграть Fallen King на 40 волне Fallen", "color": (180,20,20),   "border": (255,60,60)},
-    {"id": "true_end",     "name": "Истинный конец", "desc": "Пройти True Fallen",                      "color": (200,150,0),   "border": (255,210,50)},
-    {"id": "free_pass",    "name": "Проходной билет","desc": "Пройти Easy не убив финального босса",    "color": (60,160,220),  "border": (100,210,255)},
-    {"id": "rich",         "name": "Богач",          "desc": "Иметь больше 5000 монет одновременно",    "color": (200,160,20),  "border": (255,220,60)},
+    {"id": "first_path",        "name": "Первый путь",         "desc": "Пройти Easy режим",                            "color": (80,200,80),   "border": (120,255,120)},
+    {"id": "fallen_angel",      "name": "Падший ангел",        "desc": "Пройти Fallen режим",                          "color": (140,40,200),  "border": (200,80,255)},
+    {"id": "frosty_clear",      "name": "Ледяной путь",        "desc": "Пройти Frosty режим",                          "color": (80,200,255),  "border": (140,240,255)},
+    {"id": "glitch",            "name": "tH3 GL1tcH",          "desc": "Пройти Hidden Wave. Недоступно",               "color": (0,200,255),   "border": (80,240,255)},
+    {"id": "king_victim",       "name": "Жертва Короля",       "desc": "Проиграть Fallen King на 40 волне Fallen",     "color": (180,20,20),   "border": (255,60,60)},
+    {"id": "true_end",          "name": "Истинный конец",      "desc": "Пройти True Fallen",                           "color": (200,150,0),   "border": (255,210,50)},
+    {"id": "free_pass",         "name": "Проходной билет",     "desc": "Пройти Easy не убив финального босса",         "color": (60,160,220),  "border": (100,210,255)},
+    {"id": "rich",              "name": "Богач",               "desc": "Иметь больше 5000 монет одновременно",         "color": (200,160,20),  "border": (255,220,60)},
+    # New achievements
+    {"id": "frosty_perfect",    "name": "Ледяная крепость",    "desc": "Пройти Frosty режим без потери HP базы",       "color": (140,240,255), "border": (200,255,255)},
+    {"id": "endless_10",        "name": "Стойкий",             "desc": "Пережить 10 волн в Endless режиме",            "color": (100,100,220), "border": (160,160,255)},
+    {"id": "endless_100",       "name": "Неудержимый",         "desc": "Пережить 100 волн в Endless режиме",           "color": (80,60,220),   "border": (140,120,255)},
+    {"id": "endless_1000",      "name": "Легенда",             "desc": "Пережить 1000 волн в Endless режиме",          "color": (60,20,200),   "border": (120,80,255)},
+    {"id": "last_stand",        "name": "Последний рубеж",     "desc": "Пройти любой режим, оставив базе 1 HP",        "color": (220,60,60),   "border": (255,120,80)},
+    {"id": "collector_10",      "name": "Коллекционер",        "desc": "Разблокировать 10 и более юнитов",             "color": (80,200,120),  "border": (120,255,160)},
+    {"id": "collector_20",      "name": "Мастер коллекций",    "desc": "Разблокировать 20 и более юнитов",             "color": (60,180,100),  "border": (100,240,140)},
+    {"id": "millionaire",       "name": "Миллионер",           "desc": "Иметь 100 000 и более монет",                  "color": (255,200,40),  "border": (255,240,100)},
+    {"id": "shard_500",         "name": "Искристый",           "desc": "Накопить 500 осколков",                        "color": (100,200,255), "border": (180,240,255)},
+    {"id": "shard_1000",        "name": "Кристальный",         "desc": "Накопить 1000 осколков",                       "color": (60,160,255),  "border": (140,220,255)},
 ]
 
 def load_achievements():
