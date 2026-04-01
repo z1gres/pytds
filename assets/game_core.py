@@ -72,11 +72,25 @@ _FROSTY_PATHS = [
     [(_FROSTY_CX + _FROSTY_ARM, _FROSTY_CY),             (_FROSTY_CX, _FROSTY_CY)],
 ]
 
+# ── Event map: S-образный путь с 3 поворотами ─────────────────────────────────
+_EVENT_PATH = [
+    (  -45,  200),           # вход: левый край (верхняя треть)
+    (  480,  200),           # → вправо
+    (  480,  540),           # ↓ вниз к центру
+    (  960,  540),           # → вправо к середине экрана
+    (  960,  320),           # ↑ вверх
+    ( 1440,  320),           # → вправо
+    ( 1440,  700),           # ↓ вниз
+    (SCREEN_W+60, 700),      # выход: правый край (нижняя треть)
+]
+
 def get_map_path():
     if CURRENT_MAP == "zigzag":
         return _ZIGZAG_PATH
     if CURRENT_MAP == "frosty":
         return _FROSTY_PATHS[0]   # default; individual enemies carry their own path
+    if CURRENT_MAP == "event":
+        return _EVENT_PATH
     return [(-30, PATH_Y), (SCREEN_W+40, PATH_Y)]
 
 def get_frosty_path(lane_index):
@@ -203,6 +217,7 @@ UNIT_LIMITS = {
     "Caster":         3,
     "Warlock":        4,
     "Jester":         8,
+    "Rubber Duck":    5,
 }
 
 def load_save():
@@ -240,6 +255,29 @@ def fmt_num(n):
 
 def dist(a, b):
     return math.hypot(a[0]-b[0], a[1]-b[1])
+
+def path_progress(e):
+    """
+    Возвращает расстояние, пройденное врагом по пути от старта.
+    Чем больше значение — тем ближе враг к финишу.
+    Корректно работает на зигзаг/петлях/frosty-картах.
+    """
+    path = getattr(e, '_frosty_path', None) or get_map_path()
+    wp = e._wp_index  # индекс СЛЕДУЮЩЕГО вейпоинта
+
+    # Суммируем длины всех уже пройденных отрезков пути
+    total = 0.0
+    for i in range(1, min(wp, len(path))):
+        px0, py0 = path[i - 1]
+        px1, py1 = path[i]
+        total += math.hypot(px1 - px0, py1 - py0)
+
+    # Добавляем дистанцию от предыдущего вейпоинта до текущей позиции врага
+    if 1 <= wp <= len(path):
+        px0, py0 = path[wp - 1]
+        total += math.hypot(e.x - px0, e.y - py0)
+
+    return total
 
 def txt(surf, text, pos, color=C_WHITE, f=font_md, center=False, right=False):
     s = f.render(str(text), True, color)

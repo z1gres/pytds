@@ -93,6 +93,24 @@ from enemies import (
     FROST_MYSTERY_POOL_SNOWY, FROST_MYSTERY_POOL_FROZEN,
     FROSTY_WAVE_DATA, FROSTY_MAX_WAVES,
 )
+
+# ── Infernal mode enemies ──────────────────────────────────────────────────────
+try:
+    from infernal_enemies import (
+        Wolf, SpeedyWolf, Snowball, SnowCorpse,
+        Ember, Furnace,
+        Untouchable, SpecterEnemy, FateCollector, Stomp,
+        InfernalMystery, InfernalStone,
+        Terpila, Putana, Silyach, Confusilionale, Wheelchair, BlackSquare,
+        FallenChester, FastFallenChester, TowerDestroyer,
+        GrandpaEnemy, GrandmaEnemy, Kolobok,
+        INFERNAL_WAVE_DATA, INFERNAL_MAX_WAVES,
+        CHALLENGER_WAVE_DATA, CHALLENGER_MAX_WAVES,
+        CHALLENGER_WAVE6_HP_DAMAGE,
+    )
+    _INFERNAL_AVAILABLE = True
+except ImportError:
+    _INFERNAL_AVAILABLE = False
 from units import (
     WhirlwindAbility, Unit, TARGET_MODES,
     Assassin, ASSASSIN_LEVELS,
@@ -135,12 +153,14 @@ from units import (
     DoubleAccelerator, C_DACCEL, C_DACCEL_DARK, DACCEL_LEVELS,
     Warlock, WarlockUnit, C_WARLOCK, C_WARLOCK_DARK, WARLOCK_LEVELS,
     Jester, JESTER_LEVELS, C_JESTER, C_JESTER_DARK,
+    SoulWeaver, C_SOULWEAVER, C_SOULWEAVER_DARK, _SW_LEVELS, _SW_SURGE_PARAMS, _sw_tick_buffs,
     SPAWN_MAP, CONSOLE_HELP,
     C_LIFESTEALER, C_LIFESTEALER_DARK,
     C_FROST, C_FROST_DARK, C_FROST_ICE,
     C_XW5YT, C_ARCHER, C_ARCHER_DARK,
     C_FARM, C_FARM_DARK, C_REDBALL, C_REDBALL_DARK,
     draw_xw5yt_icon,
+    RubberDuck, RubberDuckProjectile, DUCK_LEVELS, DUCK_LEVEL_NAMES, C_DUCK, C_DUCK_DARK,
 )
 
 class DevConsole:
@@ -174,9 +194,14 @@ class DevConsole:
             else: self.output_lines.append("  usage: hp <N>")
         elif c=="skip":
             wm=game.wave_mgr
-            if wm.state in ("prep","between"): wm.prep_timer=0.0
-            elif wm.state=="spawning": wm.spawn_queue=[]; wm.state="waiting"
-            elif wm.state=="waiting" and len(game.enemies)==0: wm.state="between"; wm.prep_timer=0.1
+            if wm.state=="prep": wm.prep_timer=0.0
+            elif wm.state=="between": wm.prep_timer=0.0
+            elif wm.state=="spawning":
+                wm.spawn_queue=[]
+                if hasattr(wm, '_wave_timer'): wm._wave_timer=0.0
+                wm.state="waiting"
+            elif wm.state=="waiting":
+                if hasattr(wm, '_wave_timer'): wm._wave_timer=0.0
             self.output_lines.append("  skipped")
         elif c=="spawn_enemy":
             if len(parts)<2:
@@ -483,7 +508,8 @@ class AdminPanel:
                 ("Caster",Caster,C_HACKER),
                 ("Warlock",Warlock,C_WARLOCK),
                 ("Spotlight",SpotlightTech,C_SPOTLIGHT),
-                ("Jester",Jester,C_JESTER),
+                ("SoulWeaver",SoulWeaver,C_SOULWEAVER),
+                ("RubberDuck",RubberDuck,C_DUCK),
             ]
             active_cls=set(s for s in (ui_ref.SLOT_TYPES if ui_ref else []) if s)
             for i,(name,cls,col) in enumerate(unit_list):
@@ -588,7 +614,7 @@ class AdminPanel:
 
 # ── UI ─────────────────────────────────────────────────────────────────────────
 class UI:
-    SLOT_TYPES=[Assassin,Accelerator,None,None,None]
+    SLOT_TYPES=[Assassin,Accelerator,SoulWeaver,None,None]
     # Speed steps: 0.25, 0.50, 1.0, 1.25, 1.50, 2.0
     _SPEED_STEPS = [0.25, 0.50, 1.0, 1.25, 1.50, 2.0]
     def __init__(self):
@@ -599,6 +625,8 @@ class UI:
         # Speed button rect — left of loadout area
         slots_start_x = (SCREEN_W - (5*SLOT_W + 4*8)) // 2
         self._speed_btn = pygame.Rect(slots_start_x - 100, SLOT_AREA_Y + 8, 88, SLOT_H)
+        # Skip button rect — top-left area, right of wave counter
+        self._skip_btn = pygame.Rect(8, 54, 120, 28)
     def _build_slots(self):
         slots=[]; gap=8
         total_w=5*SLOT_W+4*gap
@@ -608,7 +636,15 @@ class UI:
     def show_msg(self,text,dur=2.0): self.msg=text; self.msg_timer=dur
     def update(self,dt):
         if self.msg_timer>0: self.msg_timer-=dt
-    def handle_click(self,pos,units,money,effects,enemies,wave=1,save_data=None,mode="easy"):
+    def handle_click(self,pos,units,money,effects,enemies,wave=1,save_data=None,mode="easy",wave_mgr=None):
+        # Skip button
+        sk_r=getattr(self,'_skip_btn',None)
+        if sk_r and sk_r.collidepoint(pos) and wave_mgr is not None:
+            can_skip=getattr(wave_mgr,'can_skip',lambda:False)()
+            if can_skip:
+                do_skip=getattr(wave_mgr,'do_skip',None)
+                if do_skip: do_skip()
+            return 0
         # Speed button
         if self._speed_btn.collidepoint(pos):
             self._speed_idx = (self._speed_idx + 1) % len(self._SPEED_STEPS)
@@ -939,6 +975,24 @@ class UI:
             pygame.draw.circle(surf,(255,100,30),(cx+int(math.cos(ba)*14),cy+int(math.sin(ba)*9)),4)
             if u.hidden_detection:
                 pygame.draw.circle(surf,(100,255,100),(cx+18,cy-18),5)
+        elif isinstance(u, SoulWeaver):
+            t2 = pygame.time.get_ticks() * 0.001
+            pulse = abs(math.sin(t2 * 1.8))
+            aura_s = pygame.Surface((56, 56), pygame.SRCALPHA)
+            pygame.draw.circle(aura_s, (160, 80, 255, int(30 + pulse * 50)), (28, 28), 27)
+            surf.blit(aura_s, (cx - 28, cy - 28))
+            pygame.draw.circle(surf, C_SOULWEAVER_DARK, (cx, cy), 28)
+            pygame.draw.circle(surf, C_SOULWEAVER,      (cx, cy), 22)
+            ring_s = pygame.Surface((48, 48), pygame.SRCALPHA)
+            pygame.draw.circle(ring_s, (*C_SOULWEAVER, int(120 + pulse * 80)), (24, 24), 22, 2)
+            surf.blit(ring_s, (cx - 24, cy - 24))
+            pygame.draw.ellipse(surf, (220, 180, 255), (cx - 9, cy - 5, 18, 10), 2)
+            pygame.draw.circle(surf, (255, 220, 255), (cx + int(math.sin(t2 * 0.7) * 3), cy), 4)
+            for i, angle in enumerate([t2 * 1.2, t2 * 1.2 + 2.09, t2 * 1.2 + 4.19]):
+                ox = cx + int(math.cos(angle) * 32)
+                oy = cy + int(math.sin(angle) * 32)
+                pygame.draw.circle(surf, (200, 140, 255), (ox, oy), 5)
+                pygame.draw.circle(surf, (255, 220, 255), (ox, oy), 5, 1)
         else:
             pygame.draw.circle(surf,(70,40,100),(cx,cy),28)
             pygame.draw.circle(surf,u.COLOR,(cx,cy),22)
@@ -970,6 +1024,8 @@ class UI:
         elif cls==Commander: levels=COMMANDER_LEVELS; cost_idx=3
         elif cls==Commando: levels=COMMANDO_LEVELS; cost_idx=3
         elif cls==Jester: levels=JESTER_LEVELS; cost_idx=3
+        elif cls==SoulWeaver: levels=_SW_LEVELS; cost_idx=1
+        elif cls==RubberDuck: levels=DUCK_LEVELS; cost_idx=3
         else: levels=[]; cost_idx=3
         for i in range(1,unit.level+1):
             if i<len(levels) and levels[i][cost_idx]: total+=levels[i][cost_idx]
@@ -1160,6 +1216,19 @@ class UI:
             if dual and not unit._dual: result["Dual"]="Throws 2 bombs"
             if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
             return result
+        elif cls==SoulWeaver:
+            if nxt>=len(_SW_LEVELS): return None
+            r2,_,cd2,max_s=_SW_LEVELS[nxt]
+            p2=_SW_SURGE_PARAMS[nxt]
+            return {"Range":r2,"MaxStacks":max_s,"AbilCD":f"{cd2:.0f}s",
+                    "Surge DMG":f"x{p2[0]:.1f}","Surge FR":f"x{p2[1]:.2f}",
+                    "Chain":f"{int(p2[4]*100)}%"}
+        elif cls==RubberDuck:
+            if nxt>=len(DUCK_LEVELS): return None
+            d,fr,r,_,_b,_sr,_sd,hd=DUCK_LEVELS[nxt]
+            result={"Damage":d,"Firerate":f"{fr:.2f}","Range":r}
+            if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
+            return result
         return None
 
     def draw(self,surf,units,money,wave_mgr,player_hp,player_maxhp,enemies,
@@ -1183,7 +1252,40 @@ class UI:
             wave_str="good luck" if gl else (f"WAVE  {wave}" if wave_mgr.max_waves>=999999 else f"WAVE  {wave}/{wave_mgr.max_waves}")
             txt(surf,wave_str,(18,14),C_RED if gl else C_CYAN,font_lg)
             tl=wave_mgr.time_left()
-            if tl is not None and not gl: txt(surf,f"Next: {tl:.1f}s",(210,18),C_GOLD,font_sm)
+            mx_sk,my_sk=pygame.mouse.get_pos()
+            # ── Wave timer display — right of wave counter ───────────────────
+            if tl is not None and not gl:
+                # Format mm:ss
+                tl_ceil=math.ceil(tl); mins=tl_ceil//60; secs=tl_ceil%60
+                timer_str=f"{mins}:{secs:02d}"
+                # Background pill
+                t_surf=font_lg.render(timer_str,True,C_GOLD)
+                tx=210; ty=8; tw=t_surf.get_width()+20; th=34
+                draw_rect_alpha(surf,(20,16,8),(tx,ty,tw,th),180,6)
+                pygame.draw.rect(surf,(120,90,20),pygame.Rect(tx,ty,tw,th),1,border_radius=6)
+                txt(surf,timer_str,(tx+tw//2,ty+th//2),C_GOLD,font_lg,center=True)
+                # ── Skip button ────────────────────────────────────────────
+                can_skip=getattr(wave_mgr,'can_skip',lambda:False)()
+                sk_r=self._skip_btn
+                # position it right of the timer
+                sk_r=pygame.Rect(tx+tw+8,ty,100,th)
+                self._skip_btn=sk_r
+                hov_sk=sk_r.collidepoint(mx_sk,my_sk)
+                if can_skip:
+                    sk_bg=(50,130,50) if hov_sk else (30,80,30)
+                    sk_brd=(80,220,80)
+                    sk_col=(200,255,200)
+                else:
+                    sk_bg=(30,35,55)
+                    sk_brd=(50,55,80)
+                    sk_col=(80,90,110)
+                pygame.draw.rect(surf,sk_bg,sk_r,border_radius=6)
+                pygame.draw.rect(surf,sk_brd,sk_r,2,border_radius=6)
+                skip_f=pygame.font.SysFont("segoeui",16,bold=True)
+                sk_lbl=skip_f.render("SKIP",True,sk_col)
+                surf.blit(sk_lbl,sk_lbl.get_rect(center=sk_r.center))
+            else:
+                self._skip_btn=pygame.Rect(-200,-200,1,1)  # hide off-screen
         # HP bar — center top
         bx_hp=SCREEN_W//2-110; bw_hp=220; bh_hp=22
         ratio=max(0,player_hp/player_maxhp)
@@ -1359,7 +1461,7 @@ class UI:
 
             cls=type(u)
             nxt=self._get_next_stats(u)
-            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,Warlock:WARLOCK_LEVELS}
+            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS}
             lvl_list=levels_map.get(cls,[])
             if cls==Jester: lvl_list=JESTER_LEVELS
             total_lvls=len(lvl_list)
@@ -1731,6 +1833,20 @@ class UI:
                     stats.append(("Lightning",
                         f"{int(u._charge)}/{LIGHTNING_THRESHOLD} ({LIGHTNING_DAMAGE} dmg)",
                         None))
+            elif cls==RubberDuck:
+                nxt_row = DUCK_LEVELS[u.level+1] if u.level+1 < len(DUCK_LEVELS) else None
+                hd_next = nxt_row and nxt_row[7] and not u.hidden_detection
+                stats   = []
+                if u.hidden_detection: stats.append(("HidDet","Hidden Detection",None))
+                stats += [
+                    ("Damage",   u.damage,
+                                 nxt_row[0] if nxt_row else None),
+                    ("Firerate", f"{u.firerate:.2f}",
+                                 f"{nxt_row[1]:.2f}" if nxt_row else None),
+                    ("Range",    u.range_tiles,
+                                 nxt_row[2] if nxt_row else None),
+                ]
+                if hd_next: stats.append(("HidDet_unlock", None, "Hidden Detection"))
             else:
                 stats=[(k,v,None) for k,v in u.get_info().items()]
 
@@ -1941,8 +2057,6 @@ class UI:
                     ("confusion", "Confuse", (200,80,255),  (230,140,255), 4),
                 ]
                 # Row 1 — primary bomb (bomb_mode), always shown
-                _row1_label_s = font_sm.render("Bomb 1:", True, (160,155,185))
-                surf.blit(_row1_label_s, (mx_m+8, bomb_btn_y - 14))
                 for mode_key, mode_label, col_active, col_border, req_lv in _jbomb_modes:
                     br=btns.get(f"bomb_{mode_key}")
                     if not br: continue
@@ -1964,8 +2078,6 @@ class UI:
                 # Row 2 — second bomb (bomb_mode2), only at lv4
                 if u.level >= 4 and u._dual:
                     bomb_btn2_y = bomb_btn_y + btn_h + 6
-                    _row2_label_s = font_sm.render("Bomb 2:", True, (160,155,185))
-                    surf.blit(_row2_label_s, (mx_m+8, bomb_btn2_y - 14))
                     for i,(mode_key, mode_label, col_active, col_border, req_lv) in enumerate(_jbomb_modes):
                         br2 = pygame.Rect(mx_m+8+(btn_w+2)*i, bomb_btn2_y, btn_w, btn_h)
                         btns[f"bomb2_{mode_key}"] = br2
@@ -2486,17 +2598,17 @@ class DifficultyMenu:
         self.t = 0.0
         self.action = None
         self.save_data = save_data or {}
-        card_w, card_h = 160, 240
+        card_w, card_h = 145, 240
         cx = SCREEN_W // 2
         # 5 cards: Easy, Fallen, Frosty, Endless, Sandbox
-        gap = 28
+        gap = 20
         total_cards_w = card_w * 5 + gap * 4
         x0 = cx - total_cards_w // 2
-        self.card_easy    = pygame.Rect(x0,                         220, card_w, card_h)
-        self.card_fallen  = pygame.Rect(x0 + (card_w+gap),         220, card_w, card_h)
-        self.card_frosty  = pygame.Rect(x0 + (card_w+gap)*2,       220, card_w, card_h)
-        self.card_endless = pygame.Rect(x0 + (card_w+gap)*3,       220, card_w, card_h)
-        self.card_sandbox = pygame.Rect(x0 + (card_w+gap)*4,       220, card_w, card_h)
+        self.card_easy     = pygame.Rect(x0,                          220, card_w, card_h)
+        self.card_fallen   = pygame.Rect(x0 + (card_w+gap),          220, card_w, card_h)
+        self.card_frosty   = pygame.Rect(x0 + (card_w+gap)*2,        220, card_w, card_h)
+        self.card_endless  = pygame.Rect(x0 + (card_w+gap)*3,        220, card_w, card_h)
+        self.card_sandbox  = pygame.Rect(x0 + (card_w+gap)*4,        220, card_w, card_h)
 
         btn_w, btn_h = 260, 54
         self.btn_back = pygame.Rect(cx - btn_w//2, 220 + card_h + 20, btn_w, btn_h)
@@ -2512,12 +2624,12 @@ class DifficultyMenu:
                     pygame.quit(); sys.exit()
                 if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                     pos = ev.pos
-                    if self.card_easy.collidepoint(pos):    self.action = "play_easy"
-                    if self.card_fallen.collidepoint(pos):  self.action = "play_fallen"
-                    if self.card_frosty.collidepoint(pos):  self.action = "play_frosty"
-                    if self.card_endless.collidepoint(pos): self.action = "play_endless"
-                    if self.card_sandbox.collidepoint(pos): self.action = "play_sandbox"
-                    if self.btn_back.collidepoint(pos):     self.action = "back"
+                    if self.card_easy.collidepoint(pos):     self.action = "play_easy"
+                    if self.card_fallen.collidepoint(pos):   self.action = "play_fallen"
+                    if self.card_frosty.collidepoint(pos):   self.action = "play_frosty"
+                    if self.card_endless.collidepoint(pos):  self.action = "play_endless"
+                    if self.card_sandbox.collidepoint(pos):  self.action = "play_sandbox"
+                    if self.btn_back.collidepoint(pos):      self.action = "back"
             self._draw()
             pygame.display.flip()
         return self.action
@@ -2585,11 +2697,11 @@ class DifficultyMenu:
         self.screen.blit(ts, ts.get_rect(center=(SCREEN_W//2, 160)))
 
         mx, my = pygame.mouse.get_pos()
-        hov_easy    = self.card_easy.collidepoint(mx, my)
-        hov_fallen  = self.card_fallen.collidepoint(mx, my)
-        hov_frosty  = self.card_frosty.collidepoint(mx, my)
-        hov_endless = self.card_endless.collidepoint(mx, my)
-        hov_sandbox = self.card_sandbox.collidepoint(mx, my)
+        hov_easy     = self.card_easy.collidepoint(mx, my)
+        hov_fallen   = self.card_fallen.collidepoint(mx, my)
+        hov_frosty   = self.card_frosty.collidepoint(mx, my)
+        hov_endless  = self.card_endless.collidepoint(mx, my)
+        hov_sandbox  = self.card_sandbox.collidepoint(mx, my)
 
         self._draw_mode_card(
             self.card_easy, "EASY", "easy_ico", hov_easy,
@@ -2624,10 +2736,10 @@ class DifficultyMenu:
         # ── Coin reward labels under each card ─────────────────────────────
         ico_m = load_icon("coin_ico", 16)
         reward_data = [
-            (self.card_easy,    "200",      (100,220,100)),
-            (self.card_fallen,  "750",      (180,100,255)),
-            (self.card_frosty,  "1500",     (80,200,255)),
-            (self.card_endless, "0.5/wave", (255,130,130)),
+            (self.card_easy,      "200",      (100,220,100)),
+            (self.card_fallen,    "750",      (180,100,255)),
+            (self.card_frosty,    "1500",     (80,200,255)),
+            (self.card_endless,   "0.5/wave", (255,130,130)),
         ]
 
 
@@ -3855,6 +3967,7 @@ ALL_UNITS_POOL = [
     {"name": "Warlock",      "rarity": "epic"},
     {"name": "Caster",       "rarity": "mythic"},
     {"name": "Jester",       "rarity": "mythic"},
+    {"name": "Rubber Duck",  "rarity": "exclusive"},
 ]
 
 # Coin cost to unlock units (None = not purchasable / exclusive)
@@ -3883,6 +3996,7 @@ UNIT_SHOP_PRICES = {
     "Caster": None,
     "Warlock": 3000,
     "Jester": None,
+    "Rubber Duck": None,
 }
 
 class LoadoutScreen:
@@ -3956,6 +4070,7 @@ class LoadoutScreen:
             owned = list(owned) + ["Cowboy"]
         # Migrate old Golden Cowboy save entries to Cowboy
         owned = ["Cowboy" if u == "Golden Cowboy" else u for u in owned]
+        # Rubber Duck — выдаётся только за прохождение ивента ПЕКЛО
         return owned
 
     def _show_msg(self, text, dur=2.5):
@@ -4512,7 +4627,7 @@ class EndlessWaveManager:
             if not self.spawn_queue: self.state = "waiting"
         elif self.state == "waiting":
             if alive_count == 0:
-                self.state = "between"; self.prep_timer = 5.0
+                self.state = "between"; self.prep_timer = 60.0
         elif self.state == "between":
             self.prep_timer -= dt
             if self.prep_timer <= 0: self._start_wave()
@@ -4528,6 +4643,14 @@ class EndlessWaveManager:
     def time_left(self):
         if self.state in ("prep", "between"): return max(0, self.prep_timer)
         return None
+
+    def can_skip(self):
+        tl = self.time_left()
+        return tl is not None and tl <= 19
+
+    def do_skip(self):
+        if self.state in ("prep", "between"):
+            self.prep_timer = 0.0
 
     def wave_lmoney(self):
         idx = self.wave
@@ -4561,17 +4684,30 @@ class Game:
         self.mode=mode
         if mode=="fallen":
             self.wave_mgr=WaveManager(wave_data=FALLEN_WAVE_DATA, max_waves=FALLEN_MAX_WAVES)
+            self.wave_mgr._mode="fallen"
             self.player_hp=150; self.player_maxhp=150
         elif mode=="frosty":
             self.wave_mgr=WaveManager(wave_data=FROSTY_WAVE_DATA, max_waves=FROSTY_MAX_WAVES)
+            self.wave_mgr._mode="frosty"
             self.player_hp=300; self.player_maxhp=300
             self._frosty_lane=0
         elif mode=="endless":
             self.wave_mgr=EndlessWaveManager()
             self.player_hp=450; self.player_maxhp=450
             self.money=900
+        elif mode=="infernal" and _INFERNAL_AVAILABLE:
+            self.wave_mgr=WaveManager(wave_data=INFERNAL_WAVE_DATA, max_waves=INFERNAL_MAX_WAVES)
+            self.wave_mgr._mode="infernal"
+            self.player_hp=250; self.player_maxhp=250
+            self.money=700
+            self._infernal_challenger=False
+            self._challenger_wave_mgr=None
+            self._challenger_radius_applied=False
+            self._challenger_wave6_done=False
+            self._challenger_screen_shown=False
         else:
             self.wave_mgr=WaveManager()
+            self.wave_mgr._mode="easy"
         # ── Apply Skill Tree bonuses ──────────────────────────────────────────
         _sd = save_data or {}
         _st_lvls = _sd.get("skill_tree", {})
@@ -4669,7 +4805,9 @@ class Game:
                         "hacker_laser_effects_test": Caster,
                         "Caster": Caster,
                         "Warlock": Warlock,
-                        "Jester": Jester}
+                        "Jester": Jester,
+                        "Soul Weaver": SoulWeaver,
+                        "Rubber Duck": RubberDuck}
         _loadout = self.save_data.get("loadout", ["Assassin", "Accelerator", None, None, None])
         while len(_loadout) < 5: _loadout.append(None)
         self.ui.SLOT_TYPES = [_name_to_cls.get(n) if n else None for n in _loadout]
@@ -4701,15 +4839,16 @@ class Game:
         pass
 
     def _give_wave_coins(self, wave_num):
-        if self.mode not in ("easy", "fallen", "frosty", "endless"): return
+        if self.mode not in ("easy", "fallen", "frosty", "endless", "infernal"): return
         if wave_num <= self._last_coin_wave: return
         waves_done = wave_num - self._last_coin_wave
         self._last_coin_wave = wave_num
         # Easy: 200 total / 20 waves = 10 per wave
         # Fallen: 750 total / 40 waves = 18.75 per wave
         # Frosty: 1500 total / 40 waves = 37.5 per wave
+        # Infernal: 500 total / 34 waves ≈ 14.7 per wave
         # Endless: 0.5 per wave
-        rate = {"easy": 10.0, "fallen": 18.75, "frosty": 37.5, "endless": 0.5}.get(self.mode, 10.0)
+        rate = {"easy": 10.0, "fallen": 18.75, "frosty": 37.5, "infernal": 14.7, "endless": 0.5}.get(self.mode, 10.0)
         self._wave_coin_accum += waves_done * rate
         whole = int(self._wave_coin_accum)
         if whole > 0:
@@ -4798,6 +4937,60 @@ class Game:
             # End marker at right exit
             pygame.draw.rect(surf,(20,60,20),(SCREEN_W-12+ox,846-PATH_H+oy,12,PATH_H*2))
             txt(surf,"E",(SCREEN_W-6+ox,846-5+oy),C_GREEN,font_sm,center=True)
+        elif game_core.CURRENT_MAP=="event":
+            from game_core import _EVENT_PATH
+            _ep = _EVENT_PATH
+            # Тёмно-красный фон с угольными прожилками — атмосфера ивента
+            # Draw each segment as a road strip
+            _ev_path_col = (80, 30, 55)      # тёмно-пурпурный путь
+            _ev_border_col = (160, 40, 80)   # рубиновые бордюры
+            _ev_dash_col = (120, 50, 90)     # штриховые линии
+            for pi in range(len(_ep)-1):
+                ax,ay=_ep[pi]; bx,by=_ep[pi+1]
+                if ax==bx:  # vertical
+                    rx=ax-PATH_H+ox; ry=min(ay,by)+oy
+                    rw=PATH_H*2; rh=abs(by-ay)
+                else:  # horizontal
+                    rx=min(ax,bx)+ox; ry=ay-PATH_H+oy
+                    rw=abs(bx-ax); rh=PATH_H*2
+                pygame.draw.rect(surf,_ev_path_col,(rx,ry,rw,rh))
+            # Fill corner joints
+            for pi in range(1, len(_ep)-1):
+                cx2,cy2=_ep[pi]
+                pygame.draw.rect(surf,_ev_path_col,
+                    (cx2-PATH_H+ox, cy2-PATH_H+oy, PATH_H*2, PATH_H*2))
+            # Borders and dashes
+            for pi in range(len(_ep)-1):
+                ax,ay=_ep[pi]; bx,by=_ep[pi+1]
+                if ax==bx:  # vertical
+                    top=min(ay,by); bot=max(ay,by)
+                    pygame.draw.line(surf,_ev_border_col,(ax-PATH_H+ox,top+oy),(ax-PATH_H+ox,bot+oy),2)
+                    pygame.draw.line(surf,_ev_border_col,(ax+PATH_H+ox,top+oy),(ax+PATH_H+ox,bot+oy),2)
+                    for y in range(top,bot,40):
+                        pygame.draw.line(surf,_ev_dash_col,(ax+ox,y+oy),(ax+ox,y+20+oy),2)
+                else:  # horizontal
+                    lft=min(ax,bx); rgt=max(ax,bx)
+                    pygame.draw.line(surf,_ev_border_col,(lft+ox,ay-PATH_H+oy),(rgt+ox,ay-PATH_H+oy),2)
+                    pygame.draw.line(surf,_ev_border_col,(lft+ox,ay+PATH_H+oy),(rgt+ox,ay+PATH_H+oy),2)
+                    for x in range(lft,rgt,40):
+                        pygame.draw.line(surf,_ev_dash_col,(x+ox,ay+oy),(x+20+ox,ay+oy),2)
+            # Пылающие декоративные угольки на поворотах
+            _ev_t = pygame.time.get_ticks()*0.001
+            for pi in range(1, len(_ep)-1):
+                cx2,cy2=_ep[pi]
+                for fi in range(4):
+                    fa=math.radians(_ev_t*80+fi*90)
+                    fx=cx2+ox+int(math.cos(fa)*(PATH_H-6))
+                    fy=cy2+oy+int(math.sin(fa)*(PATH_H-6))
+                    fc=int(abs(math.sin(_ev_t*3+fi))*120+80)
+                    pygame.draw.circle(surf,(fc,fc//4,0),(fx,fy),3)
+            # Старт и финиш
+            sx0,sy0=_ep[0]
+            pygame.draw.rect(surf,(60,10,10),(sx0+ox,sy0-PATH_H+oy,12,PATH_H*2))
+            txt(surf,"S",(sx0+6+ox,sy0-5+oy),C_RED,font_sm,center=True)
+            exlast,eylast=_ep[-1]
+            pygame.draw.rect(surf,(10,60,10),(SCREEN_W-12+ox,eylast-PATH_H+oy,12,PATH_H*2))
+            txt(surf,"E",(SCREEN_W-6+ox,eylast-5+oy),C_GREEN,font_sm,center=True)
         elif game_core.CURRENT_MAP=="frosty":
             from game_core import _FROSTY_CX, _FROSTY_CY, _FROSTY_PATHS, _FROSTY_ARM
             cx_f = _FROSTY_CX + ox
@@ -4982,7 +5175,8 @@ class Game:
                         _pre_units_len = len(self.units)
                         delta = self.ui.handle_click(ev.pos, self.units, self.money,
                                                      self.effects, self.enemies,
-                                                     self.wave_mgr.wave, self.save_data, self.mode)
+                                                     self.wave_mgr.wave, self.save_data, self.mode,
+                                                     wave_mgr=self.wave_mgr)
                         # Apply Resourcefulness to sell value
                         if delta > 0 and _pre_open is not None and len(self.units) < _pre_units_len:
                             _res_lvl = self.save_data.get("skill_tree", {}).get("resourcefulness", 0)
@@ -5004,6 +5198,20 @@ class Game:
                                     if self._pokaxw5yt_owner:
                                         self._pokaxw5yt_owner._pokaxw5yt_active = False
                                         self._pokaxw5yt_owner = None
+                                    break
+                        # ── Putana buyout: клик по ней с 1000$ → мгновенная смерть ──
+                        if _INFERNAL_AVAILABLE and self.mode == "infernal":
+                            for e in self.enemies:
+                                if (e.alive and isinstance(e, Putana)
+                                        and dist((e.x, e.y), ev.pos) <= e.radius + 8):
+                                    cost = Putana.BUYOUT_COST
+                                    if self.money >= cost:
+                                        self.money -= cost
+                                        e.instant_kill()
+                                        if SETTINGS.get("show_damage", True):
+                                            self.effects.append(FloatingText(e.x, e.y - 30, f"-${cost} ОТКУП!", (255, 180, 220)))
+                                    else:
+                                        self.ui.show_msg(f"Нужно ${cost} чтобы откупиться!", 2.0)
                                     break
                     if ev.type == pygame.MOUSEBUTTONUP and ev.button == 1:
                         _pre_len = len(self.units)
@@ -5308,6 +5516,14 @@ class Game:
                             e._wp_index = 1
                             continue
 
+                        # Tick confusion timer while reversed so it can expire mid-movement
+                        _ct = getattr(e, '_jester_conf_timer', 0.0)
+                        if _ct > 0:
+                            e._jester_conf_timer = _ct - dt
+                            if e._jester_conf_timer <= 0:
+                                e._reversed = False
+                                e._jester_conf_timer = 0.0
+
                         continue
     
                     if e.update(dt):
@@ -5321,6 +5537,9 @@ class Game:
                 for e in dead_reached:
                     self.player_hp=max(0,self.player_hp-max(1,int(e.hp))); e.alive=False
                     e._reward_paid=True  # reached end — no kill reward
+                    # SpecterEnemy (???) — мгновенное поражение если дойдёт до базы
+                    if _INFERNAL_AVAILABLE and getattr(e, 'INSTANT_DEFEAT', False):
+                        self.player_hp = 0
                 if dead_reached: self._wave_leaked=True
                 if self.player_hp<=0 and dead_reached:
                     self.game_over=True
@@ -5405,7 +5624,15 @@ class Game:
                     if _x5k:
                         _orig_dmg = u.damage
                         u.damage = u.damage * 5000
-                    u.update(dt,self.enemies,self.effects,self.money)
+                    # Silyach debuff: -75% damage for 8s
+                    _sil_db = getattr(u, '_silyach_debuff', 0.0)
+                    if _sil_db > 0 and _INFERNAL_AVAILABLE:
+                        _orig_dmg_sil = u.damage
+                        u.damage = u.damage * Silyach.DEBUFF_DAMAGE_MULT
+                        u.update(dt,self.enemies,self.effects,self.money)
+                        u.damage = _orig_dmg_sil
+                    else:
+                        u.update(dt,self.enemies,self.effects,self.money)
                     if _x5k:
                         u.damage = _orig_dmg
                 # Collect Lifestealer blood money
@@ -5418,6 +5645,32 @@ class Game:
                 for u in self.units:
                     if isinstance(u, Commander):
                         u.update_buff(self.units)
+
+                # SoulWeaver: inject refs, tick kills → stacks, tick buff expirations
+                for u in self.units:
+                    if isinstance(u, SoulWeaver):
+                        u._units_ref = self.units
+                        u._game_ref  = self
+                # Award soul stacks for enemies killed this tick
+                for e in self.enemies:
+                    if not e.alive and not getattr(e, '_sw_counted', False):
+                        e._sw_counted = True
+                        for u in self.units:
+                            if isinstance(u, SoulWeaver):
+                                if dist((e.x, e.y), (u.px, u.py)) <= u.range_tiles * TILE:
+                                    u.notify_kill(e)
+                                    # Check chain explosion
+                                    # find which unit killed it (closest attacker in range)
+                                    killer = None
+                                    best_d = 9999
+                                    for ku in self.units:
+                                        if isinstance(ku, SoulWeaver): continue
+                                        d2 = dist((ku.px, ku.py), (e.x, e.y))
+                                        if d2 <= ku.range_tiles * TILE and d2 < best_d:
+                                            best_d = d2; killer = ku
+                                    if killer:
+                                        u.check_chain(killer, e, self.enemies, self.effects)
+                _sw_tick_buffs(self.units)
     
                 # Collect GoldenCowboy cash shot income
                 for u in self.units:
@@ -5471,8 +5724,131 @@ class Game:
                         inner.x=e.x; inner.y=e.y; inner._wp_index=getattr(e,'_wp_index',1)
                         if hasattr(e,'_frosty_path'): inner._frosty_path=e._frosty_path
                         new_enemies.append(inner)
-    
-                self.enemies=[e for e in self.enemies if e.alive or isinstance(e,(BreakerEnemy,FallenBreaker,PossessedArmor,FrostMystery))]+new_enemies
+
+                    # ── INFERNAL mode death spawns ─────────────────────────────
+                    if _INFERNAL_AVAILABLE and self.mode in ("infernal",):
+                        # Snowball → SnowCorpse
+                        if not e.alive and isinstance(e, Snowball) and not getattr(e,'_spawned_corpse',False):
+                            e._spawned_corpse=True
+                            c=SnowCorpse(self.wave_mgr.wave, e.x, e.y, getattr(e,'_wp_index',1))
+                            c.free_kill=True; new_enemies.append(c)
+                        # Furnace → 3 Embers
+                        if not e.alive and isinstance(e, Furnace) and not getattr(e,'_spawned_embers',False):
+                            e._spawned_embers=True
+                            for _ in range(3):
+                                em=Ember(self.wave_mgr.wave, e.x, e.y, getattr(e,'_wp_index',1))
+                                em.free_kill=True; new_enemies.append(em)
+                        # InfernalMystery → random drop
+                        if not e.alive and isinstance(e, InfernalMystery) and not getattr(e,'_spawned',False):
+                            e._spawned=True
+                            for drop in e.get_mystery_drop():
+                                drop.free_kill=True; new_enemies.append(drop)
+
+                # ── INFERNAL mode active-enemy abilities ──────────────────────
+                if _INFERNAL_AVAILABLE and self.mode == "infernal":
+                    # Furnace: stun units in radius 100 periodically
+                    for f in [e for e in self.enemies if isinstance(e, Furnace) and e.alive]:
+                        if f.should_stun():
+                            for u in self.units:
+                                if math.hypot(u.px-f.x, u.py-f.y) <= 100:
+                                    self._apply_stun(u, 1.5)
+                    # Stomp: stun NEARBY units only
+                    for s in [e for e in self.enemies if isinstance(e, Stomp) and e.alive]:
+                        if s.should_stomp():
+                            for u in self.units:
+                                if math.hypot(u.px-s.x, u.py-s.y) <= s.stomp_radius:
+                                    self._apply_stun(u, 1.2)
+                    # Terpila rage: stun 1 random unit every 3s when in rage
+                    for t in [e for e in self.enemies if isinstance(e, Terpila) and e.alive]:
+                        if t.should_rage_stun() and self.units:
+                            self._apply_stun(random.choice(self.units), 3.0)
+                    # Confusilionale: stun 1 unit (simplified — friendly-fire not implemented yet)
+                    for c in [e for e in self.enemies if isinstance(e, Confusilionale) and e.alive]:
+                        if c.should_confuse() and self.units:
+                            self._apply_stun(random.choice(self.units), 2.5)
+                    # Silyach (Cigarette): debuff damage of random unit for 8s
+                    for s in [e for e in self.enemies if isinstance(e, Silyach) and e.alive]:
+                        if s.should_debuff() and self.units:
+                            u = random.choice(self.units)
+                            u._silyach_debuff = Silyach.DEBUFF_DURATION
+                    # Apply/decay Silyach debuff to units
+                    for u in self.units:
+                        db = getattr(u, '_silyach_debuff', 0.0)
+                        if db > 0:
+                            u._silyach_debuff = db - dt
+                    # Kolobok: jump stun
+                    for k in [e for e in self.enemies if isinstance(e, Kolobok) and e.alive]:
+                        if k.should_jump():
+                            for u in self.units:
+                                if math.hypot(u.px-k.x, u.py-k.y) <= k.jump_radius:
+                                    self._apply_stun(u, 2.0)
+                    # GrandmaEnemy: rolling pin stun
+                    for g in [e for e in self.enemies if isinstance(e, GrandmaEnemy) and e.alive]:
+                        if g.should_stun() and self.units:
+                            for u in self.units:
+                                if math.hypot(u.px-g.x, u.py-g.y) <= g.rolling_pin_radius:
+                                    self._apply_stun(u, 1.8)
+                    # FateCollector reached base → bonus money (handled below in dead_reached)
+                    # Untouchable: block non-allowed unit attacks
+                    # (unit.update already dealt dmg; we cancel it for Untouchable if attacker wrong)
+                    # — complex to fully wire; left as design note; HP=1 so dies fast from allowed units
+
+                    # ── Challenger phase transition ────────────────────────────
+                    if (not self._infernal_challenger
+                            and self.wave_mgr.state == "done"
+                            and not any(e.alive for e in self.enemies)):
+                        self._infernal_challenger = True
+                        self._challenger_wave_mgr = WaveManager(
+                            wave_data=CHALLENGER_WAVE_DATA,
+                            max_waves=CHALLENGER_MAX_WAVES)
+                        # Reduce all unit radii by 10%
+                        if not self._challenger_radius_applied:
+                            self._challenger_radius_applied = True
+                            for u in self.units:
+                                u.range_tiles = u.range_tiles * 0.90
+                        self.ui.show_msg("🔥 БРАТСКАЯ МОГИЛА 🔥  — радиус всех башен -10%!", 6.0)
+
+                    # Switch wave manager to challenger
+                    if self._infernal_challenger and self._challenger_wave_mgr:
+                        self.wave_mgr = self._challenger_wave_mgr
+                        self._challenger_wave_mgr = None
+
+                    # Challenger wave 6: no enemies, just -10 HP
+                    if (self._infernal_challenger
+                            and self.wave_mgr.wave == 6
+                            and not self._challenger_wave6_done
+                            and self.wave_mgr.state == "waiting"):
+                        self._challenger_wave6_done = True
+                        self.player_hp = max(1, self.player_hp - CHALLENGER_WAVE6_HP_DAMAGE)
+                        self.ui.show_msg(f"Волна 6: -10 HP! HP = {self.player_hp}", 4.0)
+
+                # FateCollector reached base → +500$ per collector
+                if _INFERNAL_AVAILABLE:
+                    for e in dead_reached:
+                        if isinstance(e, FateCollector):
+                            self.money += FateCollector.REACH_BONUS
+                            if SETTINGS.get("show_damage", True):
+                                self.effects.append(FloatingText(e.x, e.y-30, f"+{FateCollector.REACH_BONUS}$", (255,220,60)))
+
+                # ── FateCollector kill penalty (-100$) ────────────────────────
+                if _INFERNAL_AVAILABLE:
+                    for e in self.enemies:
+                        if (not e.alive and not getattr(e,'_reward_paid',False)
+                                and isinstance(e, FateCollector)
+                                and not getattr(e,'free_kill',False)):
+                            e._reward_paid = True
+                            # negative reward: player LOSES money
+                            penalty = abs(e.KILL_REWARD)
+                            self.money = max(0, self.money - penalty)
+                            if SETTINGS.get("show_damage", True):
+                                self.effects.append(FloatingText(e.x, e.y-e.radius-10, f"-{penalty}$", (255,80,80)))
+
+                _base_keep = (BreakerEnemy, FallenBreaker, PossessedArmor, FrostMystery)
+                if _INFERNAL_AVAILABLE and self.mode == "infernal":
+                    _keep = _base_keep + (Snowball, Furnace, InfernalMystery)
+                else:
+                    _keep = _base_keep
+                self.enemies=[e for e in self.enemies if e.alive or isinstance(e, _keep)]+new_enemies
     
                 gds=[e for e in self.enemies if isinstance(e,GraveDigger) and e.alive]
                 self._boss_enemy=gds[0] if gds else (
@@ -5520,6 +5896,9 @@ class Game:
                     if self.mode == "frosty":
                         if lm: lm += 150
                         if bm: bm += 150
+                    elif self.mode == "infernal":
+                        if lm: lm += 300
+                        if bm: bm += 300
                     # Apply Stonks skill bonus to wave rewards
                     _sw = getattr(self, "_sk_wave_bonus", 0)
                     if _sw > 0:
@@ -5571,7 +5950,7 @@ class Game:
                         # ── Ensure all waves paid (covers state=done skipping the waiting block) ──
                         self._give_wave_coins(self.wave_mgr.wave)
                         # Flush leftover fractional accumulator (e.g. 0.5 from Fallen odd waves)
-                        if self.mode in ("easy", "fallen", "frosty", "endless") and self._wave_coin_accum >= 0.5:
+                        if self.mode in ("easy", "fallen", "frosty", "endless", "infernal") and self._wave_coin_accum >= 0.5:
                             self._end_coin_reward += 1
                             self.save_data["coins"] = self.save_data.get("coins", 0) + 1
                             self._wave_coin_accum = 0.0
@@ -5598,6 +5977,12 @@ class Game:
                             self.ach_mgr.try_grant("first_path")
                             if getattr(self, "_easy_boss_let_through", False):
                                 self.ach_mgr.try_grant("free_pass")
+                        elif self.mode == "infernal":
+                            # Reward: unlock Rubber Duck
+                            if "Rubber Duck" not in self.save_data.get("owned_units", []):
+                                self.save_data.setdefault("owned_units", []).append("Rubber Duck")
+                                write_save(self.save_data)
+                                self.ui.show_msg("🐥 Rubber Duck разблокирована!", 6.0)
                         # frosty perfect (no leaks)
                         if self.mode == "frosty" and not getattr(self, "_wave_ever_leaked", False):
                             self.ach_mgr.try_grant("frosty_perfect")
@@ -6008,6 +6393,24 @@ class Game:
                 FrostHero:         ("FROST HERO",          (160,230,255)),
                 FrostSpirit:       ("FROST SPIRIT",        (220,248,255)),
             }
+        # ── Infernal boss bars ─────────────────────────────────────────────
+        if _INFERNAL_AVAILABLE and self.mode == "infernal":
+            _bar_cfg.update({
+                Furnace:        ("ПЕЧКА",           (255, 140, 20)),
+                Terpila:        ("ТЕРПИЛА",         (180,  60, 220)),
+                Putana:         ("ПУТАНА",          (255, 120, 180)),
+                Silyach:        ("СИГАРЕТА",        (200, 200, 160)),
+                Confusilionale: ("КОНФУЗИОНАЛЕ",    ( 80, 220, 160)),
+                Wheelchair:     ("ИНВАЛИД",         (100, 160, 240)),
+                Kolobok:        ("КОЛОБОК",         (255, 210,  40)),
+            })
+            for _inf_cls, (_inf_lbl, _inf_col) in list(_bar_cfg.items()):
+                if _inf_cls not in (Furnace, Terpila, Putana, Silyach,
+                                    Confusilionale, Wheelchair, Kolobok): continue
+                _inf_e = next((e for e in self.enemies
+                               if isinstance(e, _inf_cls) and e.alive), None)
+                if _inf_e:
+                    self._fallen_boss_bars[_inf_cls] = _inf_e
         for cls,(label,col) in _bar_cfg.items():
             e=self._fallen_boss_bars.get(cls)
             if e and e.alive:
@@ -6208,6 +6611,8 @@ class MainMenu(_OrigMainMenu):
         self.btn_achievements= pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*4, btn_w, btn_h)
         self.btn_settings    = pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*5, btn_w, btn_h)
         self.btn_quit        = pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*6, btn_w, btn_h)
+        # Event button — bottom left corner
+        self.btn_event       = pygame.Rect(20, SCREEN_H - 90, 220, 70)
 
     def run(self):
         clock = pygame.time.Clock()
@@ -6243,6 +6648,10 @@ class MainMenu(_OrigMainMenu):
                     if self.btn_achievements.collidepoint(pos): self.action = "achievements"
                     if self.btn_settings.collidepoint(pos):     self.action = "settings"
                     if self.btn_quit.collidepoint(pos):         self.action = "quit"
+                    if self.btn_event.collidepoint(pos):
+                        # Ивент всегда использует специальную карту события
+                        game_core.CURRENT_MAP = "event"
+                        self.action = "play_infernal"
             self._draw()
             pygame.display.flip()
         return self.action
@@ -6317,6 +6726,27 @@ class MainMenu(_OrigMainMenu):
         draw_fancy_btn(self.btn_settings,    "SETTINGS",      self.btn_settings.collidepoint(mx, my),     (60, 130, 180))
         draw_fancy_btn(self.btn_quit,        "QUIT",          self.btn_quit.collidepoint(mx, my),         (180, 50, 50))
 
+        # ── Event button (bottom left) ────────────────────────────────────────
+        _ev = self.btn_event
+        _ev_hov = _ev.collidepoint(mx, my)
+        _ev_pulse = int(abs(math.sin(t * 3)) * 40)
+        _ev_bg = (100 + _ev_pulse, 35 + _ev_pulse // 3, 5) if _ev_hov else (80, 22, 10)
+        pygame.draw.rect(surf, _ev_bg, _ev, border_radius=12)
+        _ev_brd = (255, 160, 40) if _ev_hov else (200, 80, 20)
+        pygame.draw.rect(surf, _ev_brd, _ev, 2, border_radius=12)
+        for _fi in range(5):
+            _fa = math.radians(t * 60 + _fi * 72)
+            _fx = _ev.x + 18 + int(math.cos(_fa) * 8)
+            _fy = _ev.y + 28 + int(math.sin(_fa) * 5)
+            _fc = int(abs(math.sin(t * 4 + _fi)) * 80 + 160)
+            pygame.draw.circle(surf, (_fc, _fc // 3, 0), (_fx, _fy), 3)
+        _ef1 = pygame.font.SysFont("segoeui", 16, bold=True)
+        _ef2 = pygame.font.SysFont("segoeui", 12)
+        surf.blit(_ef1.render("очень крутой ивент", True, (255, 180, 60) if _ev_hov else (220, 130, 40)),
+                  (_ev.x + 36, _ev.y + 10))
+        surf.blit(_ef2.render("страшно", True, (180, 100, 40)),
+                  (_ev.x + 10, _ev.y + 36))
+
         # ── Coin counter ──────────────────────────────────────────────────────
         coins = self.save_data.get("coins", 0)
         ico_m = load_icon("coin_ico", 28)
@@ -6348,112 +6778,6 @@ class MainMenu(_OrigMainMenu):
             surf.blit(shard_lbl2, shard_lbl2.get_rect(midleft=(shard_bg.x + 8, shard_bg.centery)))
 
         ver = font_sm.render("v1.3", True, (40, 48, 65))
-        surf.blit(ver, (10, SCREEN_H - 20))
-
-    def _draw(self):
-        surf = self.screen
-        surf.fill((10, 13, 20))
-        t = self.t
-        cx = SCREEN_W // 2
-        mx, my = pygame.mouse.get_pos()
-
-        # ── Animated background: drifting star particles ──────────────────────
-        random.seed(77)
-        for i in range(280):
-            sx = random.randint(0, SCREEN_W)
-            sy = random.randint(0, SCREEN_H)
-            phase = sx * 0.007 + i * 0.3
-            br = int(abs(math.sin(t * 0.8 + phase)) * 140 + 40)
-            size = 1 if i % 3 != 0 else 2
-            pygame.draw.circle(surf, (br, br, min(255, br + 30)), (sx, sy), size)
-        random.seed()
-
-        # ── Decorative horizontal line under title ────────────────────────────
-        line_y = 230
-        for dx2 in range(-500, 501):
-            frac = abs(dx2) / 500
-            alpha = int((1 - frac ** 2) * 80)
-            c_val = int(80 + (1 - frac) * 120)
-            pygame.draw.line(surf, (c_val // 3, c_val // 2, c_val),
-                             (cx + dx2, line_y), (cx + dx2, line_y + 1))
-
-        # ── Title: "TOWER DEFENSE" single render with animated colour ─────────
-        title_font = pygame.font.SysFont("consolas", 64, bold=True)
-        sub_font   = pygame.font.SysFont("segoeui",  22)
-        hue_shift = math.sin(t * 1.1) * 0.5 + 0.5
-        r3 = int(80  + hue_shift * 140)
-        g3 = int(140 + hue_shift * 80)
-        # Glow ellipse behind title
-        glow_alpha = int(abs(math.sin(t * 1.2)) * 60 + 40)
-        glow_s = pygame.Surface((700, 90), pygame.SRCALPHA)
-        pygame.draw.ellipse(glow_s, (r3 // 3, g3 // 3, 80, glow_alpha), (0, 0, 700, 90))
-        surf.blit(glow_s, (cx - 350, 130))
-        title_s = title_font.render("TOWER DEFENSE", True, (r3, g3, 255))
-        surf.blit(title_s, title_s.get_rect(center=(cx, 170)))
-
-        sub_s = sub_font.render("by zigres", True, (60, 70, 100))
-        surf.blit(sub_s, sub_s.get_rect(center=(cx, 215)))
-
-        # ── Buttons ────────────────────────────────────────────────────────────
-        def draw_fancy_btn(rect, label, hov, accent=(80, 120, 255), icon_col=None):
-            bg_dark  = (18, 22, 38) if not hov else (28, 36, 62)
-            bg_light = (28, 35, 58) if not hov else (42, 55, 90)
-            pygame.draw.rect(surf, bg_light,
-                             pygame.Rect(rect.x, rect.y, rect.w, rect.h // 2),
-                             border_top_left_radius=12, border_top_right_radius=12)
-            pygame.draw.rect(surf, bg_dark,
-                             pygame.Rect(rect.x, rect.y + rect.h // 2, rect.w, rect.h - rect.h // 2),
-                             border_bottom_left_radius=12, border_bottom_right_radius=12)
-            brd_alpha = 200 if hov else 130
-            brd_col = tuple(min(255, int(c * (1.3 if hov else 1.0))) for c in accent)
-            pygame.draw.rect(surf, brd_col, rect, 2, border_radius=12)
-            stripe = pygame.Surface((4, rect.h - 8), pygame.SRCALPHA)
-            stripe.fill((*accent, brd_alpha))
-            surf.blit(stripe, (rect.x + 2, rect.y + 4))
-            lf = pygame.font.SysFont("segoeui", 26, bold=True)
-            ls2 = lf.render(label, True, C_WHITE if hov else (200, 210, 230))
-            surf.blit(ls2, ls2.get_rect(center=rect.center))
-
-        draw_fancy_btn(self.btn_play,        "PLAY",         self.btn_play.collidepoint(mx, my),        (60, 160, 255))
-        draw_fancy_btn(self.btn_loadout,     "LOADOUT",      self.btn_loadout.collidepoint(mx, my),     (120, 80, 220))
-        draw_fancy_btn(self.btn_shop,        "SHOP",         self.btn_shop.collidepoint(mx, my),        (255, 180, 40))
-        draw_fancy_btn(self.btn_skilltree,   "SKILL TREE",    self.btn_skilltree.collidepoint(mx, my),   (60, 200, 140))
-        draw_fancy_btn(self.btn_achievements,"ACHIEVEMENTS",   self.btn_achievements.collidepoint(mx, my),(200, 160, 20))
-        draw_fancy_btn(self.btn_settings,    "SETTINGS",      self.btn_settings.collidepoint(mx, my),    (60, 130, 180))
-        draw_fancy_btn(self.btn_quit,        "QUIT",          self.btn_quit.collidepoint(mx, my),        (180, 50, 50))
-
-        # ── Coin counter (top right) ───────────────────────────────────────────
-        coins = self.save_data.get("coins", 0)
-        ico_m = load_icon("coin_ico", 28)
-        coin_s = pygame.font.SysFont("segoeui", 22, bold=True).render(f" {fmt_num(coins)}", True, C_GOLD)
-        total_cw = (ico_m.get_width() if ico_m else 0) + coin_s.get_width() + 16
-        coin_bg = pygame.Rect(SCREEN_W - total_cw - 10, 8, total_cw, 34)
-        draw_rect_alpha(surf, (20, 20, 10), (coin_bg.x, coin_bg.y, coin_bg.w, coin_bg.h), 160, 8)
-        pygame.draw.rect(surf, (160, 120, 20), coin_bg, 1, border_radius=8)
-        if ico_m:
-            surf.blit(ico_m, (coin_bg.x + 8, coin_bg.y + (34 - ico_m.get_height()) // 2))
-            surf.blit(coin_s, (coin_bg.x + 8 + ico_m.get_width(), coin_bg.y + (34 - coin_s.get_height()) // 2))
-        else:
-            surf.blit(coin_s, coin_s.get_rect(midleft=(coin_bg.x + 8, coin_bg.centery)))
-
-        # ── Shard counter (left of coins) ─────────────────────────────────────
-        shards = self.save_data.get("shards", 0)
-        ico_sh = load_icon("shard_ico", 28)
-        shard_col2 = (140, 220, 255)
-        shard_s2 = pygame.font.SysFont("segoeui", 22, bold=True).render(f" {fmt_num(shards)}", True, shard_col2)
-        total_sw = (ico_sh.get_width() if ico_sh else 0) + shard_s2.get_width() + 16
-        shard_bg = pygame.Rect(coin_bg.x - total_sw - 8, 8, total_sw, 34)
-        draw_rect_alpha(surf, (5, 20, 30), (shard_bg.x, shard_bg.y, shard_bg.w, shard_bg.h), 160, 8)
-        pygame.draw.rect(surf, (40, 120, 180), shard_bg, 1, border_radius=8)
-        if ico_sh:
-            surf.blit(ico_sh, (shard_bg.x + 8, shard_bg.y + (34 - ico_sh.get_height()) // 2))
-            surf.blit(shard_s2, (shard_bg.x + 8 + ico_sh.get_width(), shard_bg.y + (34 - shard_s2.get_height()) // 2))
-        else:
-            shard_lbl2 = pygame.font.SysFont("segoeui", 22, bold=True).render(f"◆ {fmt_num(shards)}", True, shard_col2)
-            surf.blit(shard_lbl2, shard_lbl2.get_rect(midleft=(shard_bg.x + 8, shard_bg.centery)))
-
-        # ── Version (bottom left) ─────────────────────────────────────────────
-        ver = font_sm.render("v1.2", True, (40, 48, 65))
         surf.blit(ver, (10, SCREEN_H - 20))
 
 
@@ -6500,11 +6824,12 @@ if __name__ == "__main__":
             ls.run()
             save_data = load_save()
 
-        elif action in ("play_easy", "play_sandbox", "play_fallen", "play_frosty", "play_endless"):
+        elif action in ("play_easy", "play_sandbox", "play_fallen", "play_frosty", "play_endless", "play_infernal"):
             if action == "play_sandbox": mode = "sandbox"
             elif action == "play_fallen": mode = "fallen"
             elif action == "play_frosty": mode = "frosty"
             elif action == "play_endless": mode = "endless"
+            elif action == "play_infernal": mode = "infernal"
             else: mode = "easy"
             print("Starting game mode:", mode)
             try:

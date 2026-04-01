@@ -1926,38 +1926,120 @@ FALLEN_WAVE_DATA = [
 
 # ── WaveManager ────────────────────────────────────────────────────────────────
 class WaveManager:
+    # ── Per-wave DURATION tables ───────────────────────────────────────────────
+    # Format: wave_number -> (wave_duration_seconds, skip_unlock_seconds or None)
+    # wave_duration = how long the wave itself lasts (timer shown DURING the wave)
+    # skip_unlock   = seconds remaining when skip button appears (None = no skip)
+    # Between waves is always a fixed 5 seconds (no skip).
+    _BETWEEN_TIME = 5.0  # fixed gap between every wave
+
+    _EASY_WAVE_TIMES = {
+        **{w: (60, 19) for w in range(1, 16)},       # 1-15:  1:00, skip at 0:19
+        **{w: (90, 19) for w in range(16, 20)},      # 16-19: 1:30, skip at 0:19
+        20: (None, None),                             # wave 20: no auto-timer (GraveDigger)
+    }
+    _FALLEN_WAVE_TIMES = {
+        **{w: (60, 19) for w in range(1, 16)},       # 1-15:  1:00
+        16: (80, 19),                                 # 16:    1:20
+        17: (60, 19),                                 # 17:    1:00
+        **{w: (75, 19) for w in range(18, 20)},      # 18-19: 1:15
+        **{w: (60, 19) for w in range(20, 23)},      # 20-22: 1:00
+        23: (75, 19),                                 # 23:    1:15
+        24: (60, 19),                                 # 24:    1:00
+        25: (70, 19),                                 # 25:    1:10
+        26: (75, 19),                                 # 26:    1:15
+        **{w: (60, 19) for w in range(27, 30)},      # 27-29: 1:00
+        **{w: (80, 19) for w in range(30, 35)},      # 30-34: 1:20
+        35: (20, None),                               # 35:    0:20, no skip
+        36: (35, 19),                                 # 36:    0:35
+        37: (40, 19),                                 # 37:    0:40
+        38: (180, 19),                                # 38:    3:00
+        39: (120, 19),                                # 39:    2:00
+    }
+    _FROSTY_WAVE_TIMES = {
+        **{w: (45, 19) for w in range(1, 15)},       # 1-14:  0:45
+        **{w: (60, 19) for w in range(15, 20)},      # 15-19: 1:00
+        20: (90, 19),                                 # 20:    1:30
+        **{w: (60, 19) for w in range(21, 25)},      # 21-24: 1:00
+        **{w: (60, 19) for w in range(25, 30)},      # 25-29: 1:00
+        35: (130, 19), 36: (130, 19),
+        37: (180, 19), 38: (185, 19), 39: (185, 19),
+        40: (None, None),
+    }
+
     def __init__(self, wave_data=None, max_waves=None):
         self.wave_data = wave_data if wave_data is not None else WAVE_DATA
         self.max_waves = max_waves if max_waves is not None else MAX_WAVES
-        self.wave=0; self.state="prep"; self.prep_timer=5.0
+        self.wave=0; self.state="prep"; self.prep_timer=10.0
         self.spawn_queue=[]; self.spawn_timer=0.0; self.spawn_interval=0.9
         self._bonus_paid=False; self._lmoney_paid=False; self._gd_spawned=False
+        # Which timing table to use (set by Game after construction)
+        self._mode = "easy"
+        # Wave-duration timer: counts down during spawning/waiting, shown to player
+        self._wave_timer = None        # None when not active
+        self._current_wave_time = None # total duration of this wave (for display)
+        self._skip_unlock_at = None    # seconds remaining when skip unlocks
 
     def _build_queue(self, wn):
         if wn<1 or wn>self.max_waves or wn>=len(self.wave_data) or self.wave_data[wn] is None: return []
         groups,_,_=self.wave_data[wn]; q=[]
         for EClass,count in groups:
             for _ in range(count):
-                e=EClass(wn); e._from_wave=True; q.append(e)
+                try:
+                    e=EClass(wn); e._from_wave=True; q.append(e)
+                except Exception as ex:
+                    import traceback; traceback.print_exc()
+                    print(f"[WaveManager] ERROR creating {EClass} for wave {wn}: {ex}")
         random.shuffle(q); return q
+
+    def _get_wave_time(self, wave_num):
+        """Return (wave_duration, skip_unlock) for wave_num."""
+        if self._mode == "fallen":
+            tbl = self._FALLEN_WAVE_TIMES
+        elif self._mode == "frosty":
+            tbl = self._FROSTY_WAVE_TIMES
+        else:
+            tbl = self._EASY_WAVE_TIMES
+        return tbl.get(wave_num, (60, 19))  # default 60s, skip at 19s
 
     def update(self, dt, enemies):
         alive_count=sum(1 for e in enemies if e.alive and not getattr(e,"free_kill",False))
+
         if self.state=="prep":
+            # Initial 5-second countdown before wave 1
             self.prep_timer-=dt
             if self.prep_timer<=0: self._start_wave()
+
         elif self.state=="spawning":
+            # Tick the wave-duration timer
+            if self._wave_timer is not None:
+                self._wave_timer -= dt
+
+            # Spawn enemies
             self.spawn_timer-=dt
             if self.spawn_timer<=0 and self.spawn_queue:
                 self.spawn_timer=self.spawn_interval
                 enemies.append(self.spawn_queue.pop(0))
-            if not self.spawn_queue: self.state="waiting"
+            if not self.spawn_queue and self.spawn_timer<=0:
+                self.state="waiting"
+
         elif self.state=="waiting":
+            # Wave timer still ticking after all enemies are spawned
+            if self._wave_timer is not None:
+                self._wave_timer -= dt
+
             if self.wave==20 and self.max_waves==MAX_WAVES and not self._gd_spawned:
-                if alive_count==0: enemies.append(GraveDigger()); self._gd_spawned=True
+                if alive_count==0:
+                    enemies.append(GraveDigger()); self._gd_spawned=True
             else:
-                if alive_count==0: self.state="between"; self.prep_timer=5.0
+                # As soon as all enemies are dead — start 5s countdown immediately
+                if alive_count==0:
+                    self._wave_timer = None
+                    self.state="between"
+                    self.prep_timer = self._BETWEEN_TIME
+
         elif self.state=="between":
+            # Fixed 5-second gap, no skip
             self.prep_timer-=dt
             if self.prep_timer<=0:
                 if self.wave<self.max_waves: self._start_wave()
@@ -1966,66 +2048,43 @@ class WaveManager:
     def _start_wave(self):
         self.wave+=1; self.state="spawning"
         self.spawn_queue=self._build_queue(self.wave)
-        self.spawn_timer=0; self._bonus_paid=False; self._lmoney_paid=False; self._gd_spawned=False
-
-    def time_left(self):
-        if self.state in ("prep","between"): return max(0,self.prep_timer)
-        return None
-    def wave_lmoney(self):
-        if 1<=self.wave<len(self.wave_data) and self.wave_data[self.wave]: return self.wave_data[self.wave][1]
-        return 0
-    def wave_bmoney(self):
-        if 1<=self.wave<len(self.wave_data) and self.wave_data[self.wave]: return self.wave_data[self.wave][2]
-        return 0
-
-
-# ── WaveManager ────────────────────────────────────────────────────────────────
-class WaveManager:
-    def __init__(self, wave_data=None, max_waves=None):
-        self.wave_data = wave_data if wave_data is not None else WAVE_DATA
-        self.max_waves = max_waves if max_waves is not None else MAX_WAVES
-        self.wave=0; self.state="prep"; self.prep_timer=5.0
-        self.spawn_queue=[]; self.spawn_timer=0.0; self.spawn_interval=0.9
+        self.spawn_timer=self.spawn_interval
         self._bonus_paid=False; self._lmoney_paid=False; self._gd_spawned=False
-
-    def _build_queue(self, wn):
-        if wn<1 or wn>self.max_waves or wn>=len(self.wave_data) or self.wave_data[wn] is None: return []
-        groups,_,_=self.wave_data[wn]; q=[]
-        for EClass,count in groups:
-            for _ in range(count):
-                e=EClass(wn); e._from_wave=True; q.append(e)
-        random.shuffle(q); return q
-
-    def update(self, dt, enemies):
-        alive_count=sum(1 for e in enemies if e.alive and not getattr(e,"free_kill",False))
-        if self.state=="prep":
-            self.prep_timer-=dt
-            if self.prep_timer<=0: self._start_wave()
-        elif self.state=="spawning":
-            self.spawn_timer-=dt
-            if self.spawn_timer<=0 and self.spawn_queue:
-                self.spawn_timer=self.spawn_interval
-                enemies.append(self.spawn_queue.pop(0))
-            if not self.spawn_queue: self.state="waiting"
-        elif self.state=="waiting":
-            if self.wave==20 and self.max_waves==MAX_WAVES and not self._gd_spawned:
-                if alive_count==0: enemies.append(GraveDigger()); self._gd_spawned=True
-            else:
-                if alive_count==0: self.state="between"; self.prep_timer=5.0
-        elif self.state=="between":
-            self.prep_timer-=dt
-            if self.prep_timer<=0:
-                if self.wave<self.max_waves: self._start_wave()
-                else: self.state="done"
-
-    def _start_wave(self):
-        self.wave+=1; self.state="spawning"
-        self.spawn_queue=self._build_queue(self.wave)
-        self.spawn_timer=0; self._bonus_paid=False; self._lmoney_paid=False; self._gd_spawned=False
+        # Start the wave-duration timer for this wave
+        wt, su = self._get_wave_time(self.wave)
+        if wt is not None:
+            self._wave_timer = float(wt)
+            self._current_wave_time = float(wt)
+            self._skip_unlock_at = su
+        else:
+            self._wave_timer = None
+            self._current_wave_time = None
+            self._skip_unlock_at = None
 
     def time_left(self):
-        if self.state in ("prep","between"): return max(0,self.prep_timer)
+        """Returns seconds left on the current timer, or None."""
+        if self.state in ("spawning", "waiting"):
+            if self._wave_timer is not None:
+                return max(0, self._wave_timer)
+        elif self.state in ("prep", "between"):
+            return max(0, self.prep_timer)
         return None
+
+    def can_skip(self):
+        """Returns True if the skip button should be active (only during the wave itself)."""
+        if self.state not in ("spawning", "waiting"): return False
+        tl = self.time_left()
+        if tl is None: return False
+        if self._skip_unlock_at is None: return False
+        return tl <= self._skip_unlock_at
+
+    def do_skip(self):
+        """Skip the remaining wave timer — clears spawn queue and goes to between."""
+        if self.state in ("spawning", "waiting"):
+            self.spawn_queue = []
+            self._wave_timer = None
+            self.state = "between"
+            self.prep_timer = self._BETWEEN_TIME
     def wave_lmoney(self):
         if 1<=self.wave<len(self.wave_data) and self.wave_data[self.wave]: return self.wave_data[self.wave][1]
         return 0

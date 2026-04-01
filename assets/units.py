@@ -12,7 +12,7 @@ from game_core import (
     SCREEN_W, SCREEN_H, PATH_Y, PATH_H, SLOT_AREA_Y, TILE,
     C_WHITE, C_BLACK, C_GOLD, C_ASSASSIN, C_ACCEL,
     font_sm, font_md, font_lg,
-    get_map_path, dist, txt, draw_rect_alpha, load_icon,
+    get_map_path, dist, path_progress, txt, draw_rect_alpha, load_icon,
     UNIT_LIMITS,
     SwordEffect, WhirlwindEffect, FloatingText, BloodSlashEffect,
 )
@@ -49,7 +49,7 @@ class WhirlwindAbility:
         effects.append(WhirlwindEffect(ox,oy,self.owner.range_tiles))
 
 # ── Unit base ──────────────────────────────────────────────────────────────────
-TARGET_MODES = ["First", "Last", "Lowest HP", "Highest HP", "Nearest", "Farthest", "Random"]
+TARGET_MODES = ["First", "Last", "Lowest HP", "Highest HP", "Closest", "Farthest", "Random"]
 
 class Unit:
     hidden_detection=False
@@ -83,12 +83,12 @@ class Unit:
             if dist((e.x,e.y),(self.px,self.py))<=r: pool.append(e)
         if not pool: return []
         mode=getattr(self,'target_mode','First')
-        if mode=="First":       pool.sort(key=lambda e:-e.x)
-        elif mode=="Last":      pool.sort(key=lambda e:e.x)
-        elif mode=="Lowest HP": pool.sort(key=lambda e:e.hp)
-        elif mode=="Highest HP":pool.sort(key=lambda e:-e.hp)
-        elif mode=="Nearest":   pool.sort(key=lambda e:dist((e.x,e.y),(self.px,self.py)))
-        elif mode=="Farthest":  pool.sort(key=lambda e:-dist((e.x,e.y),(self.px,self.py)))
+        if mode=="First":        pool.sort(key=lambda e: -path_progress(e))
+        elif mode=="Last":       pool.sort(key=lambda e:  path_progress(e))
+        elif mode=="Lowest HP":  pool.sort(key=lambda e:  e.hp)
+        elif mode=="Highest HP": pool.sort(key=lambda e: -e.hp)
+        elif mode=="Closest":    pool.sort(key=lambda e:  dist((e.x,e.y),(self.px,self.py)))
+        elif mode=="Farthest":   pool.sort(key=lambda e: -dist((e.x,e.y),(self.px,self.py)))
         return pool[:count]
 
 ASSASSIN_LEVELS=[(4.5,0.608,3,None),(6.5,0.508,3,450),(6.5,0.508,3,550),(16.5,0.358,3,1500),(28.5,0.358,4,2500)]
@@ -777,7 +777,10 @@ class ArcherArrow:
             if not e.alive: continue
             if id(e) in self._hit_ids: continue
             if math.hypot(e.x-self.x, e.y-self.y) < e.radius+6:
-                e.take_damage(self.damage)
+                if getattr(e, 'IMMUNE_UNITS_ONLY', False):
+                    e.take_damage_from(self.damage, "Archer")
+                else:
+                    e.take_damage(self.damage)
                 self._hit_ids.add(id(e))
                 if self.flame:
                     e._fire_timer=3.0*_dm(); e._fire_tick=0.0
@@ -2081,7 +2084,10 @@ class Gladiator(Unit):
         targets = in_arc[:self._max_hits]
 
         for e in targets:
-            e.take_damage(self.damage)
+            if getattr(e, 'IMMUNE_UNITS_ONLY', False):
+                e.take_damage_from(self.damage, "Gladiator")
+            else:
+                e.take_damage(self.damage)
             self.total_damage += self.damage
 
     # ── update ─────────────────────────────────────────────────────────────
@@ -2773,7 +2779,10 @@ class GoldenCowboy(Unit):
                 t = targets[0]
                 self._aim_angle = math.atan2(t.y - self.py, t.x - self.px)
                 self.cd_left = self.firerate
-                t.take_damage(self.damage)
+                if getattr(t, 'IMMUNE_UNITS_ONLY', False):
+                    t.take_damage_from(self.damage, "GoldenCowboy")
+                else:
+                    t.take_damage(self.damage)
                 self.total_damage += self.damage
                 self._shot_count += 1
 
@@ -4980,15 +4989,15 @@ C_JESTER_DARK = (80, 20, 55)
 JESTER_LEVELS = [
     # lv0 – place $650
     # dmg  fr      rng  cost   bdmg btdur bttick  expr  ipct  imax  itm   idd   iexr  pdmg  ptm   ptk   cftm  cfcd  dual  hid
-    (  4, 1.208,   7,   None,   0,   0.0,  1.0,   4,    0.0,  0.0,  0.0,  0.00, 4,    0,    0.0,  0.4,  0.0,  6.0,  False,False),
+    (  4, 1.208,   6.5, None,   0,   0.0,  1.0,   4,    0.0,  0.0,  0.0,  0.00, 4,    0,    0.0,  0.4,  0.0,  6.0,  False,False),
     # lv1 – +$400
-    (  6, 1.008,   9.3, 400,    1,   4.0,  1.0,   4,    0.0,  0.0,  0.0,  0.00, 4,    0,    0.0,  0.4,  0.0,  6.0,  False,False),
+    (  6, 1.008,   7.0, 400,    1,   4.0,  1.0,   4,    0.0,  0.0,  0.0,  0.00, 4,    0,    0.0,  0.4,  0.0,  6.0,  False,False),
     # lv2 – +$670  (unlocks ice bomb)
-    ( 10, 1.008,  10.0, 670,    2,   4.0,  1.0,   4,    0.20, 0.50, 3.0,  0.00, 4,    0,    0.0,  0.4,  0.0,  6.0,  False,False),
+    ( 10, 1.008,   7.6, 670,    2,   4.0,  1.0,   4,    0.20, 0.50, 3.0,  0.00, 4,    0,    0.0,  0.4,  0.0,  6.0,  False,False),
     # lv3 – +$2750 (unlocks poison bomb, hidden det, enhanced ice)
-    ( 30, 1.008,  10.0,2750,    8,   4.0,  1.0,   4,    0.40, 0.50, 3.0,  0.01, 7,    3,   30.0,  0.4,  0.0,  6.0,  False,True),
+    ( 30, 1.008,   7.8,2750,    8,   4.0,  1.0,   4,    0.40, 0.50, 3.0,  0.01, 7,    3,   30.0,  0.4,  2.0,  6.0,  False,True),
     # lv4 – +$8500 (unlocks confusion bomb, dual bombs, faster firerate)
-    ( 50, 0.608,  13.0,8500,   14,   4.0,  1.0,   4,    0.50, 0.50, 3.0,  0.01, 7,    5,   30.0,  0.4,  2.0,  6.0,  True, True),
+    ( 50, 0.608,   8.5,8500,   14,   4.0,  1.0,   4,    0.50, 0.50, 3.0,  0.01, 7,    5,   30.0,  0.4,  2.0,  6.0,  True, True),
 ]
 
 _JESTER_MAX_SPLASH_HITS = 5    # max enemies hit by splash
@@ -5279,8 +5288,8 @@ class Jester(Unit):
         bomb_type  = self.bomb_mode
         bomb_type2 = self.bomb_mode2 if (self._dual and self.bomb_mode2 and self.bomb_mode2 != self.bomb_mode) else bomb_type
         self._throw_bomb(t0.x, t0.y, bomb_type, effects, t0)
-        if self._dual:
-            # Second bomb: different type if bomb_mode2 set, else same type different target
+        if self._dual and bomb_type2 != bomb_type:
+            # Second bomb: only fire if it's a different type
             t2_list = self._get_targets(enemies, 2)
             t2 = t2_list[1] if len(t2_list) >= 2 else t0
             self._throw_bomb(t2.x, t2.y, bomb_type2, effects, t2)
@@ -5552,3 +5561,866 @@ class Jester(Unit):
         if self._conf_time > 0:
             info["Confuse"] = f"{self._conf_time:.0f}s / {self._conf_cd:.0f}s cd"
         return info
+
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Soul Weaver — Exclusive Support Tower ─────────────────────────────────────
+# Не атакует напрямую. Пассивно копит Soul Stacks когда башни в радиусе
+# убивают врагов. Активная способность "Soul Surge" тратит стаки и:
+#   • Даёт всем башням в радиусе x2.0 урона на 8с
+#   • Ускоряет их огонь (делит firerate на 1.5) на 8с
+#   • Восстанавливает HP игроку: +1 за каждый стак
+# Пассивная аура: башни в радиусе имеют 20% шанс цепного взрыва при убийстве.
+# ══════════════════════════════════════════════════════════════════════════════
+
+C_SOULWEAVER      = (160, 80, 255)   # фиолетовый
+C_SOULWEAVER_DARK = (40,  10, 80)
+
+# (range_tiles, upgrade_cost, ability_cooldown, max_stacks)
+_SW_LEVELS = [
+    (4.5, None,  25.0, 8),    # lv0
+    (5.0, 1200,  22.0, 10),   # lv1
+    (5.5, 3500,  18.0, 12),   # lv2
+    (6.0, 8000,  15.0, 15),   # lv3
+    (7.0,18000,  12.0, 20),   # lv4
+]
+
+# Параметры бафф-волны per level
+# (dmg_mult, fr_div, buff_dur, hp_per_stack, chain_chance)
+_SW_SURGE_PARAMS = [
+    (2.0, 1.50,  8.0, 1, 0.20),   # lv0
+    (2.2, 1.60,  9.0, 2, 0.22),   # lv1
+    (2.5, 1.75, 10.0, 2, 0.25),   # lv2
+    (2.8, 1.90, 11.0, 3, 0.28),   # lv3
+    (3.2, 2.00, 12.0, 4, 0.32),   # lv4
+]
+
+# ── Ability ───────────────────────────────────────────────────────────────────
+
+class SoulSurgeAbility:
+    """Spend all Soul Stacks — blast allied towers and heal the player."""
+    name = "Soul Surge"
+
+    def __init__(self, owner):
+        self.owner   = owner
+        self.cd_left = 0.0
+        self._wave_t = 0.0   # ring-wave VFX timer (>0 while animating)
+        self._wave_r = 0.0   # current radius of the ring
+
+    @property
+    def cooldown(self):
+        return _SW_LEVELS[self.owner.level][2]
+
+    def update(self, dt):
+        if self.cd_left > 0:
+            self.cd_left -= dt
+        if self._wave_t > 0:
+            self._wave_t -= dt
+            self._wave_r += dt * 220   # ring expands outward
+
+    def ready(self):
+        return self.cd_left <= 0 and self.owner.soul_stacks > 0
+
+    def activate(self, enemies, effects):
+        if not self.ready():
+            return
+        stacks = self.owner.soul_stacks
+        self.owner.soul_stacks = 0
+        self.cd_left = self.cooldown
+        lv = self.owner.level
+        dmg_m, fr_d, dur, hp_ps, _ = _SW_SURGE_PARAMS[lv]
+
+        # Apply buffs to all towers in range
+        r_px = self.owner.range_tiles * TILE
+        for u in getattr(self.owner, '_units_ref', []):
+            if u is self.owner: continue
+            if dist((u.px, u.py), (self.owner.px, self.owner.py)) > r_px: continue
+            _sw_apply_dmg_buff(u, dmg_m, dur)
+            _sw_apply_fr_buff(u, fr_d, dur)
+
+        # Heal player
+        hp_gain = stacks * hp_ps
+        game_ref = getattr(self.owner, '_game_ref', None)
+        if game_ref is not None:
+            game_ref.player_hp = min(game_ref.player_maxhp, game_ref.player_hp + hp_gain)
+
+        # VFX
+        self._wave_t = 0.6
+        self._wave_r = 0.0
+        label = f"SOUL SURGE! +{hp_gain}HP  x{dmg_m:.1f}DMG"
+        effects.append(FloatingText(self.owner.px, self.owner.py - 48, label, C_SOULWEAVER, 2.5))
+
+    def draw_vfx(self, surf):
+        """Draw expanding soul-wave ring."""
+        if self._wave_t <= 0:
+            return
+        frac = max(0.0, self._wave_t / 0.6)
+        alpha = int(frac * 200)
+        r = int(self._wave_r)
+        if r < 2:
+            return
+        s = pygame.Surface((r * 2 + 4, r * 2 + 4), pygame.SRCALPHA)
+        cx2, cy2 = r + 2, r + 2
+        pygame.draw.circle(s, (*C_SOULWEAVER, alpha), (cx2, cy2), r, 3)
+        pygame.draw.circle(s, (220, 160, 255, alpha // 2), (cx2, cy2), r, 7)
+        surf.blit(s, (int(self.owner.px) - r - 2, int(self.owner.py) - r - 2))
+
+
+# ── Buff helpers ──────────────────────────────────────────────────────────────
+
+def _sw_apply_dmg_buff(unit, mult, duration):
+    now = pygame.time.get_ticks() * 0.001
+    old_mult = getattr(unit, '_sw_dmg_mult', 1.0)
+    unit.damage = max(1, round(unit.damage / old_mult))
+    unit._sw_dmg_mult   = mult
+    unit._sw_dmg_expire = now + duration
+    unit.damage = round(unit.damage * mult)
+
+def _sw_apply_fr_buff(unit, divisor, duration):
+    now = pygame.time.get_ticks() * 0.001
+    old_div = getattr(unit, '_sw_fr_div', 1.0)
+    unit.firerate = unit.firerate * old_div
+    unit._sw_fr_div    = divisor
+    unit._sw_fr_expire = now + duration
+    unit.firerate = unit.firerate / divisor
+
+def _sw_tick_buffs(units):
+    """Expire active SoulWeaver buffs. Call each frame from Game.update."""
+    now = pygame.time.get_ticks() * 0.001
+    for u in units:
+        if getattr(u, '_sw_dmg_expire', 0) > 0 and now >= u._sw_dmg_expire:
+            mult = getattr(u, '_sw_dmg_mult', 1.0)
+            if mult != 1.0:
+                u.damage = max(1, round(u.damage / mult))
+                u._sw_dmg_mult   = 1.0
+                u._sw_dmg_expire = 0
+        if getattr(u, '_sw_fr_expire', 0) > 0 and now >= u._sw_fr_expire:
+            div2 = getattr(u, '_sw_fr_div', 1.0)
+            if div2 != 1.0:
+                u.firerate = u.firerate * div2
+                u._sw_fr_div    = 1.0
+                u._sw_fr_expire = 0
+
+
+# ── Unit class ────────────────────────────────────────────────────────────────
+
+class SoulWeaver(Unit):
+    PLACE_COST       = 1200
+    COLOR            = C_SOULWEAVER
+    NAME             = "Soul Weaver"
+    hidden_detection = True   # видит скрытых врагов (чувствует души)
+    damage           = 0
+    firerate         = 999.0
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self.soul_stacks  = 0      # накопленные стаки
+        self._anim_t      = 0.0
+        self._orb_angles  = [0.0, math.pi * 2/3, math.pi * 4/3]  # 3 orbiting orbs
+        self._chain_flash = []     # list of (x, y, t) for chain explosion VFX
+        self._units_ref   = []
+        self._game_ref    = None
+        self.ability      = SoulSurgeAbility(self)
+        self._apply_level()
+
+    def _apply_level(self):
+        self.range_tiles = _SW_LEVELS[self.level][0]
+        self._max_stacks = _SW_LEVELS[self.level][3]
+        # Update chain chance aura for all in-range towers
+        lv = self.level
+        self._chain_chance = _SW_SURGE_PARAMS[lv][4]
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(_SW_LEVELS): return None
+        return _SW_LEVELS[nxt][1]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(_SW_LEVELS):
+            self.level = nxt
+            self._apply_level()
+
+    # ── Passive: intercept enemy deaths near our towers ───────────────────────
+    def notify_kill(self, enemy):
+        """Called by game when an allied tower kills an enemy in our radius."""
+        if self.soul_stacks < self._max_stacks:
+            self.soul_stacks = min(self._max_stacks, self.soul_stacks + 1)
+
+    # ── Chain explosion aura ──────────────────────────────────────────────────
+    def check_chain(self, killer_unit, dead_enemy, enemies, effects):
+        """20-32% chance to chain-explode nearby enemies when one dies."""
+        if not dist((killer_unit.px, killer_unit.py),
+                    (self.px, self.py)) <= self.range_tiles * TILE:
+            return
+        if random.random() > self._chain_chance:
+            return
+        # AoE splash around dead enemy
+        splash_r = 1.8 * TILE
+        dmg = max(1, getattr(killer_unit, 'damage', 5))
+        for e in enemies:
+            if e is dead_enemy: continue
+            if not e.alive: continue
+            if dist((e.x, e.y), (dead_enemy.x, dead_enemy.y)) <= splash_r:
+                e.take_damage(dmg * 0.5)
+        # VFX
+        self._chain_flash.append([dead_enemy.x, dead_enemy.y, 0.5])
+        effects.append(FloatingText(dead_enemy.x, dead_enemy.y - 24, "CHAIN!", (255, 140, 255), 0.8))
+
+    # ── Update ────────────────────────────────────────────────────────────────
+    def update(self, dt, enemies, effects, money):
+        self._anim_t += dt
+        # Rotate orbiting orbs
+        speed = 1.2 + self.soul_stacks * 0.08
+        for i in range(3):
+            self._orb_angles[i] += dt * speed
+        # Tick ability
+        if self.ability:
+            self.ability.update(dt)
+        # Expire chain flash VFX
+        self._chain_flash = [[x, y, t - dt] for x, y, t in self._chain_flash if t - dt > 0]
+
+    # ── Draw ─────────────────────────────────────────────────────────────────
+    def draw(self, surf):
+        t   = self._anim_t
+        cx, cy = int(self.px), int(self.py)
+        stacks = self.soul_stacks
+        max_s  = self._max_stacks
+
+        # ── Outer soul aura ────────────────────────────────────────────────
+        aura_s = pygame.Surface((80, 80), pygame.SRCALPHA)
+        pulse  = abs(math.sin(t * 1.8))
+        ga     = int(30 + pulse * 50)
+        stack_frac = stacks / max(1, max_s)
+        aura_col   = (
+            int(100 + stack_frac * 100),
+            int(40  + stack_frac * 40),
+            255
+        )
+        pygame.draw.circle(aura_s, (*aura_col, ga), (40, 40), 38)
+        surf.blit(aura_s, (cx - 40, cy - 40))
+
+        # ── Body ──────────────────────────────────────────────────────────
+        pygame.draw.circle(surf, C_SOULWEAVER_DARK, (cx, cy), 27)
+        pygame.draw.circle(surf, C_SOULWEAVER,      (cx, cy), 20)
+        # Inner ring — pulsing
+        ring_al = int(120 + pulse * 80)
+        ring_s  = pygame.Surface((48, 48), pygame.SRCALPHA)
+        pygame.draw.circle(ring_s, (*C_SOULWEAVER, ring_al), (24, 24), 20, 2)
+        surf.blit(ring_s, (cx - 24, cy - 24))
+
+        # ── Eye of the soul (center symbol) ───────────────────────────────
+        # Outer eye
+        pygame.draw.ellipse(surf, (220, 180, 255), (cx - 9, cy - 5, 18, 10), 2)
+        # Pupil — animated
+        pupil_x = cx + int(math.sin(t * 0.7) * 3)
+        pygame.draw.circle(surf, (255, 220, 255), (pupil_x, cy), 4)
+        pygame.draw.circle(surf, (80, 0, 160),    (pupil_x, cy), 2)
+
+        # ── Orbiting soul orbs ────────────────────────────────────────────
+        orb_r    = 32
+        orb_size = 5 + int(stack_frac * 3)
+        for i, angle in enumerate(self._orb_angles):
+            ox = cx + int(math.cos(angle) * orb_r)
+            oy = cy + int(math.sin(angle) * orb_r)
+            # Trail
+            trail_s = pygame.Surface((24, 24), pygame.SRCALPHA)
+            pygame.draw.circle(trail_s, (*C_SOULWEAVER, 50), (12, 12), orb_size + 3)
+            surf.blit(trail_s, (ox - 12, oy - 12))
+            # Orb body
+            col_orb = (200, 140, 255) if stacks > 0 else (100, 60, 160)
+            pygame.draw.circle(surf, col_orb, (ox, oy), orb_size)
+            pygame.draw.circle(surf, (255, 220, 255), (ox, oy), orb_size, 1)
+
+        # ── Soul stack bar ────────────────────────────────────────────────
+        bar_w = 44; bar_h = 6
+        bx = cx - bar_w // 2; by2 = cy - 38
+        pygame.draw.rect(surf, (30, 10, 60),        (bx - 1, by2 - 1, bar_w + 2, bar_h + 2), border_radius=3)
+        if max_s > 0:
+            fill = int(bar_w * stacks / max_s)
+            if fill > 0:
+                bar_col = (180, 80, 255) if stacks < max_s else (255, 200, 80)
+                pygame.draw.rect(surf, bar_col, (bx, by2, fill, bar_h), border_radius=3)
+        pygame.draw.rect(surf, C_SOULWEAVER, (bx - 1, by2 - 1, bar_w + 2, bar_h + 2), 1, border_radius=3)
+        # Stacks label
+        sf2 = pygame.font.SysFont("segoeui", 11, bold=True)
+        stk_s = sf2.render(f"{stacks}/{max_s}", True, (220, 180, 255))
+        surf.blit(stk_s, stk_s.get_rect(center=(cx, by2 - 8)))
+
+        # ── Chain flash VFX ───────────────────────────────────────────────
+        for fx, fy, ft in self._chain_flash:
+            frac = max(0.0, ft / 0.5)
+            r2   = int((1.0 - frac) * 28) + 6
+            fs   = pygame.Surface((r2 * 2 + 4, r2 * 2 + 4), pygame.SRCALPHA)
+            pygame.draw.circle(fs, (255, 140, 255, int(frac * 180)),
+                               (r2 + 2, r2 + 2), r2, 3)
+            surf.blit(fs, (int(fx) - r2 - 2, int(fy) - r2 - 2))
+
+        # ── Ability VFX ──────────────────────────────────────────────────
+        if self.ability:
+            self.ability.draw_vfx(surf)
+
+        # ── Level pips ───────────────────────────────────────────────────
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_SOULWEAVER, (cx - 10 + i * 7, cy + 36), 3)
+
+    def draw_range(self, surf):
+        r   = int(self.range_tiles * TILE)
+        col = (160, 80, 255)
+        s   = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (*col, 18), (r, r), r)
+        pygame.draw.circle(s, (*col, 60), (r, r), r, 2)
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+
+    def get_info(self):
+        lv  = self.level
+        p   = _SW_SURGE_PARAMS[lv]
+        cd  = _SW_LEVELS[lv][2]
+        ab  = self.ability
+        cd_left = max(0.0, ab.cd_left)
+        return {
+            "Type":      "Support / Soul",
+            "Range":     self.range_tiles,
+            "HidDet":    "YES",
+            "Stacks":    f"{self.soul_stacks} / {self._max_stacks}",
+            "AbilCD":    f"{cd:.0f}s (left: {cd_left:.1f}s)",
+            "Surge DMG": f"x{p[0]:.1f} dmg / {p[2]:.0f}s",
+            "Surge FR":  f"x{p[1]:.2f} speed / {p[2]:.0f}s",
+            "HP/Stack":  f"+{p[3]} HP per stack",
+            "Chain":     f"{int(p[4]*100)}% on kill",
+        }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Medic  — Exclusive Support Tower
+# Passive: heals nearby towers by reducing their remaining cooldown each tick.
+# Attack:  shoots healing bolts that deal minor damage AND slow enemies.
+# Aura:    boosts damage of allies within range by a small flat amount.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+C_MEDIC      = (80, 230, 160)
+C_MEDIC_DARK = (20,  80,  50)
+
+# (damage, firerate, range_tiles, upgrade_cost,
+#  slow_pct, slow_dur, heal_rate, dmg_boost, hidden_detection)
+# heal_rate  = fraction of firerate removed from nearby allies per second
+# dmg_boost  = flat damage bonus added to allies in range
+MEDIC_LEVELS = [
+    # lv0  place $0  (exclusive – always free)
+    (  8, 1.80, 5.5, None,  0.08, 2.0, 0.04,  2, False),
+    # lv1  First Aid  +$500
+    ( 12, 1.60, 6.0,  500,  0.12, 2.5, 0.06,  4, False),
+    # lv2  Field Medic  +$1200
+    ( 18, 1.40, 6.5, 1200,  0.15, 3.0, 0.09,  6, True),
+    # lv3  Combat Medic  +$3000
+    ( 28, 1.10, 7.5, 3000,  0.22, 3.5, 0.14, 10, True),
+]
+
+MEDIC_LEVEL_NAMES = [None, "First Aid", "Field Medic", "Combat Medic"]
+
+_MEDIC_BOLT_SPEED = 380.0
+_MEDIC_HEAL_RADIUS = 5.5   # tiles — same as attack range by default
+
+
+class MedicBolt:
+    """Slow homing bolt fired by the Medic at the furthest enemy in range."""
+    def __init__(self, ox, oy, target, damage, slow_pct, slow_dur):
+        self.x = float(ox); self.y = float(oy)
+        self.target   = target
+        self.damage   = damage
+        self.slow_pct = slow_pct
+        self.slow_dur = slow_dur
+        self.alive    = True
+        self._t       = 0.0   # for visual pulse
+
+    def update(self, dt):
+        self._t += dt
+        if not self.target.alive:
+            self.alive = False; return
+        dx = self.target.x - self.x
+        dy = self.target.y - self.y
+        d  = math.hypot(dx, dy)
+        if d < 6:
+            self.target.take_damage(self.damage)
+            # Apply slow
+            prev = getattr(self.target, '_slow_left', 0.0)
+            new_slow = min(getattr(self.target, '_slow_pct', 0.0) + self.slow_pct, 0.70)
+            self.target._slow_pct  = new_slow
+            self.target._slow_left = max(prev, self.slow_dur)
+            self.alive = False
+            return
+        spd = _MEDIC_BOLT_SPEED * dt / max(d, 1)
+        self.x += dx * spd; self.y += dy * spd
+
+    def draw(self, surf):
+        cx, cy = int(self.x), int(self.y)
+        pulse  = int(abs(math.sin(self._t * 12)) * 60) + 100
+        # Outer glow
+        gs = pygame.Surface((28, 28), pygame.SRCALPHA)
+        pygame.draw.circle(gs, (80, 230, 160, pulse // 3), (14, 14), 12)
+        surf.blit(gs, (cx - 14, cy - 14))
+        # Core
+        pygame.draw.circle(surf, (40, 180, 110),  (cx, cy), 6)
+        pygame.draw.circle(surf, (140, 255, 200), (cx, cy), 4)
+        pygame.draw.circle(surf, (220, 255, 240), (cx, cy), 2)
+        # Cross symbol
+        pygame.draw.line(surf, (255, 255, 255), (cx - 4, cy), (cx + 4, cy), 1)
+        pygame.draw.line(surf, (255, 255, 255), (cx, cy - 4), (cx, cy + 4), 1)
+
+
+class Medic(Unit):
+    PLACE_COST       = 0       # free — exclusive starter
+    COLOR            = C_MEDIC
+    NAME             = "Medic"
+    hidden_detection = False
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._anim_t   = 0.0
+        self._bolts    = []
+        self._pulse    = 0.0   # visual heal-pulse timer
+        self._heal_flash = 0.0
+        self._apply_level()
+
+    def _apply_level(self):
+        row = MEDIC_LEVELS[self.level]
+        (self.damage, self.firerate, self.range_tiles, _,
+         self.slow_pct, self.slow_dur,
+         self.heal_rate, self.dmg_boost,
+         self.hidden_detection) = row
+        self.cd_left = 0.0
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(MEDIC_LEVELS): return None
+        return MEDIC_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(MEDIC_LEVELS):
+            self.level = nxt; self._apply_level()
+
+    # ── Support: called each frame by the game loop (same pattern as Commander) ─
+    def update_buff(self, units):
+        """Reduce cd_left of all allies in heal range, and add dmg_boost."""
+        r = _MEDIC_HEAL_RADIUS * TILE
+        for u in units:
+            if u is self: continue
+            if dist((u.px, u.py), (self.px, self.py)) <= r:
+                # Heal cooldown
+                if hasattr(u, 'cd_left') and u.cd_left > 0:
+                    u.cd_left = max(0.0, u.cd_left - self.heal_rate * (1 / 60))
+                # Damage boost tag (checked in get_info; actual dmg done in Unit.take_damage caller)
+                u._medic_dmg_boost = self.dmg_boost
+                u._medic_in_range  = True
+            else:
+                if getattr(u, '_medic_in_range', False):
+                    u._medic_in_range  = False
+                    u._medic_dmg_boost = 0
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t += dt
+        if self._heal_flash > 0: self._heal_flash -= dt
+        if self.cd_left > 0: self.cd_left -= dt
+
+        # Fire bolt at furthest enemy in range
+        if self.cd_left <= 0:
+            targets = self._get_targets(enemies, 9999)
+            if targets:
+                # Pick the furthest target (most advanced)
+                t = max(targets, key=lambda e: e.x)
+                self._bolts.append(MedicBolt(
+                    self.px, self.py, t,
+                    self.damage, self.slow_pct, self.slow_dur))
+                self.cd_left     = self.firerate
+                self._heal_flash = 0.18
+                self.total_damage += self.damage
+
+        # Update bolts
+        for b in self._bolts: b.update(dt)
+        self._bolts = [b for b in self._bolts if b.alive]
+
+    def draw(self, surf):
+        cx, cy = int(self.px), int(self.py)
+        t = self._anim_t
+
+        # ── Heal aura ────────────────────────────────────────────────────────
+        r_px   = int(_MEDIC_HEAL_RADIUS * TILE)
+        pulse_a = int(abs(math.sin(t * 1.8)) * 14 + 8)
+        aura_s  = pygame.Surface((r_px * 2, r_px * 2), pygame.SRCALPHA)
+        pygame.draw.circle(aura_s, (80, 230, 160, pulse_a), (r_px, r_px), r_px)
+        pygame.draw.circle(aura_s, (80, 230, 160, 35),      (r_px, r_px), r_px, 2)
+        surf.blit(aura_s, (cx - r_px, cy - r_px))
+
+        # ── Orbiting cross particles ──────────────────────────────────────────
+        for i in range(4):
+            a  = math.radians(t * 90 + i * 90)
+            ox = cx + int(math.cos(a) * 22)
+            oy = cy + int(math.sin(a) * 22)
+            ps = pygame.Surface((16, 16), pygame.SRCALPHA)
+            fade = int(abs(math.sin(t * 3 + i * 1.57)) * 120 + 80)
+            pygame.draw.line(ps, (120, 255, 190, fade), (2, 8), (14, 8), 2)
+            pygame.draw.line(ps, (120, 255, 190, fade), (8, 2), (8, 14), 2)
+            surf.blit(ps, (ox - 8, oy - 8))
+
+        # ── Body ─────────────────────────────────────────────────────────────
+        pygame.draw.circle(surf, C_MEDIC_DARK, (cx, cy), 26)
+        pygame.draw.circle(surf, C_MEDIC,      (cx, cy), 20)
+        pygame.draw.circle(surf, (160, 255, 210), (cx, cy), 20, 2)
+
+        # Heal flash ring
+        if self._heal_flash > 0:
+            frac = self._heal_flash / 0.18
+            hs   = pygame.Surface((64, 64), pygame.SRCALPHA)
+            pygame.draw.circle(hs, (140, 255, 200, int(180 * frac)), (32, 32), int(24 * frac), 3)
+            surf.blit(hs, (cx - 32, cy - 32))
+
+        # ── Big cross on body ─────────────────────────────────────────────────
+        pygame.draw.rect(surf, (220, 255, 230), (cx - 3, cy - 10, 6, 20))
+        pygame.draw.rect(surf, (220, 255, 230), (cx - 10, cy - 3, 20, 6))
+
+        # ── Hidden detection dot ──────────────────────────────────────────────
+        if self.hidden_detection:
+            pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
+
+        # ── Level pips ───────────────────────────────────────────────────────
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_MEDIC, (cx - 10 + i * 7, cy + 36), 3)
+
+        # ── Draw bolts ───────────────────────────────────────────────────────
+        for b in self._bolts:
+            b.draw(surf)
+
+    def draw_range(self, surf):
+        r   = int(self.range_tiles * TILE)
+        col = C_MEDIC
+        s   = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (*col, 18), (r, r), r)
+        pygame.draw.circle(s, (*col, 60), (r, r), r, 2)
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+        # Heal aura ring
+        rh  = int(_MEDIC_HEAL_RADIUS * TILE)
+        sh  = pygame.Surface((rh * 2, rh * 2), pygame.SRCALPHA)
+        pygame.draw.circle(sh, (80, 230, 160, 14), (rh, rh), rh)
+        pygame.draw.circle(sh, (80, 230, 160, 50), (rh, rh), rh, 2)
+        surf.blit(sh, (int(self.px) - rh, int(self.py) - rh))
+
+    def get_info(self):
+        lvname = MEDIC_LEVEL_NAMES[self.level]
+        info = {
+            "Type":      "Support / Medic",
+            "Damage":    self.damage,
+            "Firerate":  f"{self.firerate:.2f}",
+            "Range":     self.range_tiles,
+            "Slow":      f"{int(self.slow_pct * 100)}% / {self.slow_dur}s",
+            "HealRate":  f"cd -{self.heal_rate:.2f}/s allies",
+            "DmgBoost":  f"+{self.dmg_boost} dmg allies",
+            "HidDet":    "YES" if self.hidden_detection else "no",
+        }
+        if lvname:
+            info["Level"] = lvname
+        return info
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RubberDuck  — April Fools Exclusive
+# Стреляет резиновыми утками. Утка отскакивает между врагами (до N рикошетов),
+# при каждом попадании пищит (визуально), при последнем ударе — взрывается AoE.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+C_DUCK      = (255, 220, 30)
+C_DUCK_DARK = (180, 140, 10)
+
+# (damage, firerate, range_tiles, upgrade_cost, bounces, splash_r, splash_dmg, hidden_det)
+DUCK_LEVELS = [
+    # (damage, firerate, range_tiles, upgrade_cost, bounces, splash_r_tiles, splash_dmg, hidden_det)
+    # lv0  place $500
+    (  8, 4.2, 4.5, None,  1, 1.5,  12, False),
+    # lv1  +$350
+    ( 12, 3.8, 5.0,  350,  2, 1.8,  20, False),
+    # lv2  +$800
+    ( 18, 3.3, 5.5,  800,  3, 2.2,  32, True),
+    # lv3  +$2000
+    ( 26, 2.8, 6.0, 2000,  4, 2.8,  48, True),
+]
+DUCK_LEVEL_NAMES = [None, None, None, None]
+
+_DUCK_SPEED         = 380.0
+_DUCK_BOUNCE_RADIUS = 200.0   # px — max range to find next bounce target
+
+
+class RubberDuckProjectile:
+    """A rubber duck that bounces between enemies and explodes on the last bounce."""
+
+    def __init__(self, ox, oy, target, damage, bounces_left,
+                 splash_r_tiles, splash_dmg, hidden_det, hit_enemies=None):
+        self.x = float(ox); self.y = float(oy)
+        self._target      = target
+        self.damage       = damage
+        self.bounces_left = bounces_left
+        self.splash_r     = splash_r_tiles * TILE
+        self.splash_dmg   = splash_dmg
+        self.hidden_det   = hidden_det
+        self._hit_enemies = hit_enemies or set()   # avoid bouncing back to same enemy
+        dx = target.x - ox; dy = target.y - oy
+        d  = math.hypot(dx, dy) or 1
+        self.vx = dx / d; self.vy = dy / d
+        self.alive    = True
+        self._t       = 0.0   # wobble timer
+        self._squeak_flash = 0.0   # yellow flash on hit
+
+    def update(self, dt, enemies, effects):
+        if not self.alive: return
+        self._t += dt
+        if self._squeak_flash > 0: self._squeak_flash -= dt
+
+        # Home toward target
+        if self._target and self._target.alive:
+            dx = self._target.x - self.x; dy = self._target.y - self.y
+            d  = math.hypot(dx, dy) or 1
+            self.vx = dx / d; self.vy = dy / d
+            if d < 14:
+                self._on_hit(enemies, effects)
+                return
+        else:
+            # Lost target — find nearest alive enemy
+            best = None; best_d = 9999
+            for e in enemies:
+                if not e.alive: continue
+                if e in self._hit_enemies: continue
+                if e.IS_HIDDEN and not self.hidden_det: continue
+                ed = math.hypot(e.x - self.x, e.y - self.y)
+                if ed < best_d:
+                    best_d = ed; best = e
+            if best:
+                self._target = best
+            else:
+                self.alive = False; return
+
+        self.x += self.vx * _DUCK_SPEED * dt
+        self.y += self.vy * _DUCK_SPEED * dt
+
+    def _on_hit(self, enemies, effects):
+        self._squeak_flash = 0.22
+        self._hit_enemies.add(self._target)
+        self._target.take_damage(self.damage)
+
+        if self.bounces_left <= 0:
+            # FINAL HIT — explode AoE
+            self._explode(enemies, effects)
+            self.alive = False
+        else:
+            # Find next bounce target — closest enemy NOT already hit
+            best = None; best_d = 9999
+            for e in enemies:
+                if not e.alive: continue
+                if e in self._hit_enemies: continue
+                if e.IS_HIDDEN and not self.hidden_det: continue
+                ed = math.hypot(e.x - self.x, e.y - self.y)
+                if ed < _DUCK_BOUNCE_RADIUS and ed < best_d:
+                    best_d = ed; best = e
+            if best:
+                self._target      = best
+                self.bounces_left -= 1
+                dx = best.x - self.x; dy = best.y - self.y
+                d  = math.hypot(dx, dy) or 1
+                self.vx = dx / d; self.vy = dy / d
+            else:
+                # No one nearby — just explode
+                self._explode(enemies, effects)
+                self.alive = False
+
+    def _explode(self, enemies, effects):
+        for e in enemies:
+            if not e.alive: continue
+            if math.hypot(e.x - self.x, e.y - self.y) <= self.splash_r:
+                e.take_damage(self.splash_dmg)
+        # Boom VFX: orange-yellow expanding ring
+        effects.append(_DuckExplosionEffect(self.x, self.y, self.splash_r))
+
+    def draw(self, surf):
+        if not self.alive: return
+        cx, cy = int(self.x), int(self.y)
+        t = self._t
+
+        # Wobble angle based on direction
+        angle = math.degrees(math.atan2(self.vy, self.vx))
+        wobble = math.sin(t * 18) * 15   # squish-wobble
+
+        # Flash on squeak
+        body_col = (255, 255, 100) if self._squeak_flash > 0 else C_DUCK
+
+        # Body
+        body = pygame.Surface((28, 22), pygame.SRCALPHA)
+        pygame.draw.ellipse(body, body_col, (0, 4, 28, 16))
+        # Head
+        pygame.draw.circle(body, body_col, (22, 4), 7)
+        # Bill
+        pygame.draw.ellipse(body, (255, 160, 0), (25, 6, 8, 4))
+        # Eye
+        pygame.draw.circle(body, (0, 0, 0), (24, 3), 2)
+        pygame.draw.circle(body, (255, 255, 255), (25, 2), 1)
+
+        import pygame.transform as _pt
+        rot = _pt.rotate(body, -(angle + wobble))
+        surf.blit(rot, rot.get_rect(center=(cx, cy)))
+
+        # Squeak flash ring
+        if self._squeak_flash > 0:
+            frac = self._squeak_flash / 0.22
+            fs = pygame.Surface((48, 48), pygame.SRCALPHA)
+            pygame.draw.circle(fs, (255, 240, 80, int(160 * frac)), (24, 24), int(20 * frac), 3)
+            surf.blit(fs, (cx - 24, cy - 24))
+
+
+class _DuckExplosionEffect:
+    """Yellow-orange kaboom ring effect."""
+    def __init__(self, x, y, radius):
+        self.x = x; self.y = y
+        self.max_r  = radius
+        self.r      = 0.0
+        self._timer = 0.0
+        self._dur   = 0.45
+        self.alive  = True
+
+    def update(self, dt):
+        self._timer += dt
+        self.r = self.max_r * min(1.0, self._timer / self._dur)
+        if self._timer >= self._dur:
+            self.alive = False
+
+    def draw(self, surf):
+        frac = self._timer / self._dur
+        a1 = int((1 - frac) * 180)
+        a2 = int((1 - frac) * 90)
+        cx, cy = int(self.x), int(self.y)
+        r = int(self.r)
+        if r < 2: return
+        s = pygame.Surface((r * 2 + 20, r * 2 + 20), pygame.SRCALPHA)
+        hc = r + 10
+        pygame.draw.circle(s, (255, 200, 30, a2),  (hc, hc), r)
+        pygame.draw.circle(s, (255, 120, 0,  a1),  (hc, hc), r, 4)
+        pygame.draw.circle(s, (255, 255, 180, a1), (hc, hc), max(2, r // 3))
+        # Feathers flying out
+        import random as _r3
+        rng = _r3.Random(int(self.x) + int(self.y))
+        for _ in range(8):
+            fa  = rng.uniform(0, math.pi * 2)
+            fr  = rng.uniform(0.3, 1.0) * r * frac
+            fx  = hc + int(math.cos(fa) * fr)
+            fy  = hc + int(math.sin(fa) * fr)
+            pygame.draw.ellipse(s, (255, 240, 80, a1), (fx - 4, fy - 2, 8, 4))
+        surf.blit(s, (cx - hc, cy - hc))
+
+
+class RubberDuck(Unit):
+    PLACE_COST       = 500
+    COLOR            = C_DUCK
+    NAME             = "Rubber Duck"
+    hidden_detection = False
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._anim_t  = 0.0
+        self._ducks   = []   # active projectiles
+        self._effects = []   # explosion effects
+        self._bob     = 0.0
+        self._apply_level()
+
+    def _apply_level(self):
+        row = DUCK_LEVELS[self.level]
+        (self.damage, self.firerate, self.range_tiles, _,
+         self.bounces, self.splash_r, self.splash_dmg,
+         self.hidden_detection) = row
+        self.cd_left = 0.0
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(DUCK_LEVELS): return None
+        return DUCK_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(DUCK_LEVELS):
+            self.level = nxt; self._apply_level()
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t += dt
+        self._bob     = math.sin(self._anim_t * 3.0) * 3
+        if self.cd_left > 0: self.cd_left -= dt
+
+        # Fire a duck
+        if self.cd_left <= 0:
+            targets = self._get_targets(enemies, 1)
+            if targets:
+                t = targets[0]
+                duck = RubberDuckProjectile(
+                    self.px, self.py, t,
+                    self.damage, self.bounces,
+                    self.splash_r, self.splash_dmg,
+                    self.hidden_detection,
+                )
+                self._ducks.append(duck)
+                self.cd_left = self.firerate
+                self.total_damage += self.damage
+
+        for d in self._ducks:   d.update(dt, enemies, self._effects)
+        for e in self._effects: e.update(dt)
+        # Pass explosion effects up to main list
+        for e in self._effects:
+            effects.append(e)
+        self._effects = []
+        self._ducks   = [d for d in self._ducks   if d.alive]
+
+    def draw(self, surf):
+        cx, cy = int(self.px), int(self.py + self._bob)
+        t = self._anim_t
+
+        # Wavy water ring under duck
+        ring_r = 30
+        ws = pygame.Surface((ring_r * 2 + 4, ring_r * 2 + 4), pygame.SRCALPHA)
+        wa = int(abs(math.sin(t * 2)) * 30 + 20)
+        pygame.draw.ellipse(ws, (80, 180, 255, wa),
+                            (0, ring_r // 2, ring_r * 2 + 4, ring_r))
+        surf.blit(ws, (cx - ring_r - 2, cy - ring_r // 2))
+
+        # Body
+        pygame.draw.ellipse(surf, C_DUCK_DARK, (cx - 22, cy - 10, 44, 26))
+        pygame.draw.ellipse(surf, C_DUCK,      (cx - 20, cy - 8,  40, 22))
+
+        # Head
+        pygame.draw.circle(surf, C_DUCK_DARK, (cx + 14, cy - 12), 14)
+        pygame.draw.circle(surf, C_DUCK,      (cx + 14, cy - 12), 12)
+
+        # Bill
+        pygame.draw.ellipse(surf, (255, 160, 0), (cx + 22, cy - 14, 12, 6))
+
+        # Eye  (wink every ~3s)
+        wink = (int(t) % 3 == 0) and ((t % 1.0) < 0.12)
+        if wink:
+            pygame.draw.line(surf, (0, 0, 0),
+                             (cx + 17, cy - 14), (cx + 21, cy - 14), 2)
+        else:
+            pygame.draw.circle(surf, (0, 0, 0),   (cx + 18, cy - 14), 3)
+            pygame.draw.circle(surf, (255, 255, 255), (cx + 19, cy - 15), 1)
+
+        # Level pips
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_DUCK, (cx - 10 + i * 7, cy + 22), 3)
+
+        # Draw active ducks and effects
+        for d in self._ducks:   d.draw(surf)
+
+    def draw_range(self, surf):
+        r   = int(self.range_tiles * TILE)
+        s   = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (255, 220, 30, 18), (r, r), r)
+        pygame.draw.circle(s, (255, 220, 30, 60), (r, r), r, 2)
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+
+    def get_info(self):
+        return {
+            "Damage":   self.damage,
+            "Firerate": f"{self.firerate:.2f}",
+            "Range":    self.range_tiles,
+        }
