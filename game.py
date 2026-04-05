@@ -76,12 +76,15 @@ from enemies import (
     ArmoredEnemy, SlowBoss, HiddenBoss, Necromancer, GraveDigger, FastBoss,
     OtchimusPrime, BounceCircle,
     AbnormalEnemy, QuickEnemy, SkeletonEnemy,
+    HeftyEnemy, InvisibleEnemy, MysteryEnemy, MegaSlowEnemy,
+    MYSTERY_SPAWN_POOL,
     FallenDreg, FallenSquire, FallenSoul, FallenEnemy, FallenGiant, FallenHazmat,
     PossessedArmorInner, PossessedArmor, FallenNecromancer, CorruptedFallen,
     FallenJester, NecroticSkeleton, FallenBreaker, FallenRusher, FallenHonorGuard,
     FallenShield, FallenHero, FallenKing,
     TrueFallenKing,
     WAVE_DATA, FALLEN_WAVE_DATA, FALLEN_MAX_WAVES,
+    HARDCORE_WAVE_DATA, HARDCORE_MAX_WAVES,
     BREAKER_POOL, FALLEN_BREAKER_POOL,
     WaveManager,
     # Frosty enemies
@@ -307,10 +310,11 @@ ADMIN_ENEMY_LIST = [
     ("Necromancer", Necromancer,      (40,80,160),   80,    55),
     ("GraveDigger", GraveDigger,      (20,60,20),    300,   55),
     ("Fast Boss",   FastBoss,         (200,80,0),    500,   200),
-    ("Optimus Prime",OtchimusPrime,    (80,10,10),    40000, 15),
+    ("Optimus Prime",OtchimusPrime,   (80,10,10),    40000, 15),
     ("Abnormal",    AbnormalEnemy,    (180,60,60),   11,    55),
     ("Quick",       QuickEnemy,       (60,180,140),  12,    140),
     ("Skeleton",    SkeletonEnemy,    (200,200,190), 55,    55),
+    # Fallen
     ("Fallen Dreg", FallenDreg,       (120,50,160),  80,    83),
     ("Fallen Squire",FallenSquire,    (100,40,140),  400,   42),
     ("Fallen Soul", FallenSoul,       (140,80,200),  150,   55),
@@ -328,18 +332,31 @@ ADMIN_ENEMY_LIST = [
     ("F.Shield",    FallenShield,     (60,100,160),  8000,  55),
     ("F.Hero",      FallenHero,       (120,60,160),  2500,  55),
     ("F.King",      FallenKing,       (120,40,160),  150000,8),
-    # Frosty extras
-    ("Frost Undead", FrostUndead,     (60,170,230),  3250,  140),
+    ("TrueFallenKing",TrueFallenKing, (80,10,10),    999999,5),
+    # Frosty
+    ("Frozen",      FrozenEnemy,      (80,200,255),  120,   55),
+    ("Snowy",       SnowyEnemy,       (160,220,255), 80,    83),
+    ("PackedIce",   PackedIceEnemy,   (60,160,220),  300,   42),
+    ("SnowMinion",  SnowMinion,       (140,210,255), 40,    120),
+    ("FrostMystery",FrostMystery,     (30,130,200),  200,   140),
+    ("Frostmite",   Frostmite,        (50,180,230),  60,    180),
+    ("ColdMist",    ColdMist,         (100,190,240), 150,   90),
+    ("Permafrost",  Permafrost,       (40,120,200),  500,   28),
+    ("FrostHunter", FrostHunter,      (30,160,220),  400,   140),
+    ("UnstableIce", UnstableIce,      (80,200,240),  250,   120),
+    ("FrostWraith", FrostWraith,      (60,180,220),  600,   100),
+    ("FrostAcolyte",FrostAcolyte,     (40,150,210),  800,   55),
+    ("Frost Undead",FrostUndead,      (60,170,230),  3250,  140),
     ("Frost Invader",FrostInvader,    (40,120,200),  4000,  55),
-    ("Mega F.Myst.", MegaFrostMystery,(30,130,200),   600,  140),
-    ("Frost Ravager",FrostRavager,    (20,80,170),  25000,  28),
+    ("Mega F.Myst.",MegaFrostMystery, (30,130,200),  600,   140),
+    ("Frost Ravager",FrostRavager,    (20,80,170),   25000, 28),
     ("Trickster Elf",TricksterElf,    (20,70,60),    2500,  28),
-    ("Yeti",         Yeti,            (80,150,220), 12000,  140),
-    ("Frost Mage",   FrostMage,       (20,80,170),  12500,  55),
-    ("Frost Hero",   FrostHero,       (20,90,180),  40000,  28),
-    ("Deep Freeze",  DeepFreeze,      (10,70,160),  12000,  55),
-    ("F.Necromancer",FrostNecromancer,(20,70,160),  30000,  28),
-    ("Frost Spirit", FrostSpirit,     (20,90,180),  500000, 26),
+    ("Yeti",        Yeti,             (80,150,220),  12000, 140),
+    ("Frost Mage",  FrostMage,        (20,80,170),   12500, 55),
+    ("Frost Hero",  FrostHero,        (20,90,180),   40000, 28),
+    ("Deep Freeze", DeepFreeze,       (10,70,160),   12000, 55),
+    ("F.Necromancer",FrostNecromancer,(20,70,160),   30000, 28),
+    ("Frost Spirit",FrostSpirit,      (20,90,180),   500000,26),
 ]
 
 class AdminPanel:
@@ -352,32 +369,50 @@ class AdminPanel:
         self._card_rects=[]
         self._misc_btns=[]
         self._game_speed=1.0
-        self._hp_input=""        # text field value
-        self._hp_input_active=False  # is text field focused
+        self._hp_input=""
+        self._hp_input_active=False
         self._hp_input_rect=pygame.Rect(0,0,0,0)
+        self._money_input=""
+        self._money_input_active=False
+        self._money_input_rect=pygame.Rect(0,0,0,0)
 
-    def toggle(self): self.visible=not self.visible; self.scroll=0; self._hp_input_active=False
+    def toggle(self): self.visible=not self.visible; self.scroll=0; self._hp_input_active=False; self._money_input_active=False
 
     def handle_scroll(self, dy): self.scroll=max(0,self.scroll-dy*25)
 
     def handle_key(self, ev, game_ref):
-        """Handle keyboard input for HP text field."""
-        if not self._hp_input_active or not game_ref: return
-        if ev.key==pygame.K_RETURN:
-            try:
-                val=int(self._hp_input)
-                if val>0:
-                    game_ref.player_hp=val
-                    game_ref.player_maxhp=max(game_ref.player_maxhp,val)
-            except: pass
-            self._hp_input_active=False
-        elif ev.key==pygame.K_BACKSPACE:
-            self._hp_input=self._hp_input[:-1]
-        elif ev.key==pygame.K_ESCAPE:
-            self._hp_input_active=False
-        else:
-            if ev.unicode.isdigit() and len(self._hp_input)<7:
-                self._hp_input+=ev.unicode
+        """Handle keyboard input for HP and money text fields."""
+        if not game_ref: return
+        # HP field
+        if self._hp_input_active:
+            if ev.key==pygame.K_RETURN:
+                try:
+                    val=int(self._hp_input)
+                    if val>0:
+                        game_ref.player_hp=val
+                        game_ref.player_maxhp=max(game_ref.player_maxhp,val)
+                except: pass
+                self._hp_input_active=False; self._hp_input=""
+            elif ev.key==pygame.K_BACKSPACE: self._hp_input=self._hp_input[:-1]
+            elif ev.key==pygame.K_ESCAPE: self._hp_input_active=False; self._hp_input=""
+            else:
+                if ev.unicode.isdigit() and len(self._hp_input)<7:
+                    self._hp_input+=ev.unicode
+            return
+        # Money field
+        if self._money_input_active:
+            if ev.key==pygame.K_RETURN:
+                try:
+                    val=int(self._money_input)
+                    if val>0: game_ref.money+=val
+                except: pass
+                self._money_input_active=False; self._money_input=""
+            elif ev.key==pygame.K_BACKSPACE: self._money_input=self._money_input[:-1]
+            elif ev.key==pygame.K_ESCAPE: self._money_input_active=False; self._money_input=""
+            else:
+                if ev.unicode.isdigit() and len(self._money_input)<10:
+                    self._money_input+=ev.unicode
+            return
 
     def handle_click(self,pos,game_units,game_enemies,wave,save_data,ui_ref=None,game_ref=None):
         if not self.visible: return
@@ -385,14 +420,48 @@ class AdminPanel:
         for key,tr in self._tab_rects.items():
             if tr.collidepoint(pos): self.tab=key; self.scroll=0; self._hp_input_active=False; return
 
+        if self.tab=="map" and game_ref:
+            for rect,action in getattr(self,'_map_btns',[]):
+                if rect.collidepoint(pos):
+                    if action=="map_straight": game_core.CURRENT_MAP="straight"
+                    elif action=="map_zigzag":  game_core.CURRENT_MAP="zigzag"
+                    elif action=="map_frosty":  game_core.CURRENT_MAP="frosty"
+                    elif action=="map_event":   game_core.CURRENT_MAP="event"
+                    return
+
+        if self.tab=="mode" and game_ref:
+            for rect,action in getattr(self,'_mode_btns',[]):
+                if rect.collidepoint(pos):
+                    mode_map={
+                        "restart_easy":"easy","restart_fallen":"fallen",
+                        "restart_frosty":"frosty","restart_endless":"endless",
+                        "restart_sandbox":"sandbox","restart_infernal":"infernal",
+                        "restart_event":"infernal",
+                    }
+                    new_mode=mode_map.get(action)
+                    if new_mode:
+                        if action=="restart_event":
+                            game_core.CURRENT_MAP="event"
+                        game_ref._restart_mode=new_mode
+                        game_ref.running=False
+                    return
+
         if self.tab=="misc" and game_ref:
             # HP input field click
             if self._hp_input_rect.collidepoint(pos):
                 self._hp_input_active=True
+                self._money_input_active=False
                 self._hp_input=""
                 return
-            else:
+            # Money input field click
+            if self._money_input_rect.collidepoint(pos):
+                self._money_input_active=True
                 self._hp_input_active=False
+                self._money_input=""
+                return
+            # Clicking a button deactivates both inputs
+            self._hp_input_active=False
+            self._money_input_active=False
 
             for rect,action in self._misc_btns:
                 if rect.collidepoint(pos):
@@ -410,6 +479,12 @@ class AdminPanel:
                         self._game_speed=2.0; game_ref._admin_speed=2.0
                     elif action=="speed_5":
                         self._game_speed=5.0; game_ref._admin_speed=5.0
+                    elif action=="money_1k":
+                        game_ref.money+=1000
+                    elif action=="money_10k":
+                        game_ref.money+=10000
+                    elif action=="money_100k":
+                        game_ref.money+=100000
                     return
 
         for rect,data in self._card_rects:
@@ -437,55 +512,103 @@ class AdminPanel:
 
     def draw(self,surf,game_units,t,game_ref=None,ui_ref=None):
         if not self.visible: return
-        pw,ph=660,520
-        px,py=SCREEN_W//2-pw//2, 58
-        draw_rect_alpha(surf,(12,15,25),(px,py,pw,ph),245,12)
-        pygame.draw.rect(surf,C_BORDER,(px,py,pw,ph),2,border_radius=12)
+        # ── Full-screen panel ─────────────────────────────────────────────────
+        margin=28; top=52
+        pw=SCREEN_W-margin*2; ph=SCREEN_H-top-margin
+        px=margin; py=top
+        # Backdrop
+        draw_rect_alpha(surf,(8,10,18),(px,py,pw,ph),250,16)
+        # Gradient top strip
+        for _gi in range(40):
+            _ga=int(60*(1-_gi/40))
+            _gs=pygame.Surface((pw,1),pygame.SRCALPHA)
+            _gs.fill((40,80,180,_ga))
+            surf.blit(_gs,(px,py+_gi))
+        pygame.draw.rect(surf,(50,70,130),(px,py,pw,ph),2,border_radius=16)
 
-        self._close_btn=pygame.Rect(px+pw-38,py+6,28,28)
-        pygame.draw.rect(surf,(60,30,30),self._close_btn,border_radius=6)
-        pygame.draw.rect(surf,(180,60,60),self._close_btn,1,border_radius=6)
-        txt(surf,"✕",self._close_btn.center,(220,100,100),font_md,center=True)
+        # ── Title bar ─────────────────────────────────────────────────────────
+        title_f=pygame.font.SysFont("segoeui",22,bold=True)
+        title_s=title_f.render("⚙  SANDBOX ADMIN PANEL",True,(140,200,255))
+        surf.blit(title_s,(px+20,py+10))
 
-        # Tabs
+        mode_lbl=getattr(game_ref,'mode','sandbox') if game_ref else 'sandbox'
+        map_lbl=game_core.CURRENT_MAP if game_ref else 'straight'
+        _MAP_NAMES={"straight":"The Bridge","zigzag":"S-Turn","frosty":"4-lane","event":"AprilFools2026"}
+        info_f=pygame.font.SysFont("segoeui",14)
+        info_s=info_f.render(f"mode: {mode_lbl}   map: {_MAP_NAMES.get(map_lbl,map_lbl)}",True,(80,120,160))
+        surf.blit(info_s,(px+20,py+36))
+
+        # Close button
+        self._close_btn=pygame.Rect(px+pw-44,py+8,36,36)
+        mx_c,my_c=pygame.mouse.get_pos()
+        cb_hov=self._close_btn.collidepoint(mx_c,my_c)
+        pygame.draw.rect(surf,(90,25,25) if cb_hov else (50,20,20),self._close_btn,border_radius=8)
+        pygame.draw.rect(surf,(220,60,60) if cb_hov else (140,40,40),self._close_btn,2,border_radius=8)
+        txt(surf,"✕",self._close_btn.center,(255,120,120),pygame.font.SysFont("segoeui",20,bold=True),center=True)
+
+        # ── Tab bar ───────────────────────────────────────────────────────────
+        tab_y=py+58; tab_h=36
+        tabs=[
+            ("enemy", "☠  ENEMIES",  (160,50,50)),
+            ("units", "🗡  UNITS",    (50,160,80)),
+            ("map",   "🗺  MAP",      (50,120,160)),
+            ("mode",  "🎮  MODE",     (120,60,180)),
+            ("misc",  "⚡  MISC",     (180,120,20)),
+        ]
+        tab_w=(pw-16)//len(tabs)
         self._tab_rects={}
-        tabs=[("enemy","ENEMIES",(40,80,160)),("units","UNITS",(60,120,60)),("misc","MISC",(120,80,20))]
         for i,(key,label,tcol) in enumerate(tabs):
-            tr=pygame.Rect(px+10+i*120,py+8,112,26)
+            tr=pygame.Rect(px+8+i*tab_w,tab_y,tab_w-4,tab_h)
             self._tab_rects[key]=tr
             active=(self.tab==key)
-            bg=tuple(min(255,c+40) for c in tcol) if active else (25,30,50)
-            pygame.draw.rect(surf,bg,tr,border_radius=6)
-            pygame.draw.rect(surf,tcol if active else C_BORDER,tr,1,border_radius=6)
-            txt(surf,label,tr.center,C_WHITE,font_sm,center=True)
+            if active:
+                pygame.draw.rect(surf,tuple(min(255,c+30) for c in tcol),tr,border_radius=8)
+                pygame.draw.rect(surf,tuple(min(255,c+80) for c in tcol),tr,2,border_radius=8)
+            else:
+                hov=tr.collidepoint(mx_c,my_c)
+                pygame.draw.rect(surf,(28,32,50) if not hov else (35,40,62),tr,border_radius=8)
+                pygame.draw.rect(surf,(50,60,90) if not hov else tcol,tr,1,border_radius=8)
+            lf=pygame.font.SysFont("segoeui",15,bold=True)
+            surf.blit(lf.render(label,True,C_WHITE if active else (160,170,200)),
+                      lf.render(label,True,C_WHITE).get_rect(center=tr.center))
 
-        content_top=py+42; content_h=ph-48
-        surf.set_clip(pygame.Rect(px+2,content_top,pw-4,content_h))
+        # ── Content area ──────────────────────────────────────────────────────
+        content_top=tab_y+tab_h+8
+        content_h=py+ph-content_top-8
+        surf.set_clip(pygame.Rect(px+4,content_top,pw-8,content_h))
         self._card_rects=[]
-        cols=5; cw=116; ch=96; gap=7
-        start_x=px+12; start_y=content_top+8
 
         if self.tab=="enemy":
+            # 8 columns, big cards
+            cols=8; cw=(pw-28)//(cols); ch=110; gap=6
+            start_x=px+10; start_y=content_top+6
+            lf=pygame.font.SysFont("segoeui",12,bold=True)
+            sf=pygame.font.SysFont("segoeui",11)
             for i,(label,cls,col,hp,spd) in enumerate(ADMIN_ENEMY_LIST):
                 c=i%cols; r=i//cols
                 cx2=start_x+c*(cw+gap); cy2=start_y+r*(ch+gap)-self.scroll
                 cr=pygame.Rect(cx2,cy2,cw,ch)
                 self._card_rects.append((cr,cls))
                 if cy2+ch<content_top or cy2>content_top+content_h: continue
-                pygame.draw.rect(surf,(20,25,40),cr,border_radius=8)
-                pygame.draw.rect(surf,col,cr,2,border_radius=8)
-                preview_surf=pygame.Surface((40,40),pygame.SRCALPHA)
+                hov=cr.collidepoint(mx_c,my_c)
+                bg=tuple(min(255,c2+15) for c2 in (22,26,44)) if hov else (16,20,34)
+                pygame.draw.rect(surf,bg,cr,border_radius=10)
+                brd=tuple(min(255,c2+40) for c2 in col) if hov else col
+                pygame.draw.rect(surf,brd,cr,2,border_radius=10)
+                # enemy preview
+                preview=pygame.Surface((44,44),pygame.SRCALPHA)
                 try:
-                    tmp=cls(1); tmp.x=20; tmp.y=20; tmp.draw(preview_surf)
-                except: pygame.draw.circle(preview_surf,col,(20,20),12)
-                surf.blit(preview_surf,(cx2+cw//2-20,cy2+4))
-                lf=pygame.font.SysFont("segoeui",12,bold=True)
-                surf.blit(lf.render(label,True,C_WHITE),
-                          pygame.Rect(0,0,cw,14).move(cx2,cy2+46).topleft)
-                sf=pygame.font.SysFont("segoeui",11)
-                hp_str=f"{hp//1000}k" if hp>=1000 else str(hp)
-                surf.blit(sf.render(f"HP {hp_str}",True,(180,180,200)),(cx2+6,cy2+62))
-                surf.blit(sf.render(f"SPD {spd}",True,(140,200,140)),(cx2+6,cy2+76))
+                    tmp=cls(1); tmp.x=22; tmp.y=22; tmp.draw(preview)
+                except: pygame.draw.circle(preview,col,(22,22),14)
+                surf.blit(preview,(cx2+cw//2-22,cy2+4))
+                # name centered
+                ns=lf.render(label,True,C_WHITE if hov else (200,210,230))
+                surf.blit(ns,ns.get_rect(centerx=cx2+cw//2,top=cy2+50))
+                from game_core import fmt_num as _fn
+                hp_s=sf.render(_fn(hp),True,(160,200,255))
+                spd_s=sf.render(f"►{spd}",True,(120,220,120))
+                surf.blit(hp_s,hp_s.get_rect(centerx=cx2+cw//2,top=cy2+66))
+                surf.blit(spd_s,spd_s.get_rect(centerx=cx2+cw//2,top=cy2+80))
 
         elif self.tab=="units":
             unit_list=[
@@ -511,6 +634,9 @@ class AdminPanel:
                 ("SoulWeaver",SoulWeaver,C_SOULWEAVER),
                 ("RubberDuck",RubberDuck,C_DUCK),
             ]
+            cols=8; cw=(pw-28)//cols; ch=100; gap=6
+            start_x=px+10; start_y=content_top+6
+            lf=pygame.font.SysFont("segoeui",12,bold=True)
             active_cls=set(s for s in (ui_ref.SLOT_TYPES if ui_ref else []) if s)
             for i,(name,cls,col) in enumerate(unit_list):
                 c=i%cols; r=i//cols
@@ -519,98 +645,190 @@ class AdminPanel:
                 self._card_rects.append((cr,(cls,name)))
                 if cy2+ch<content_top or cy2>content_top+content_h: continue
                 is_active=cls in active_cls
-                pygame.draw.rect(surf,(30,50,30) if is_active else (20,25,40),cr,border_radius=8)
-                pygame.draw.rect(surf,(80,220,80) if is_active else col,cr,2,border_radius=8)
-                if name=="Accelerator": draw_accel_icon(surf,cx2+cw//2,cy2+26,t,size=18)
-                elif name=="Frostcel.": draw_frost_icon(surf,cx2+cw//2,cy2+26,t,size=18)
-                elif name=="xw5yt": draw_xw5yt_icon(surf,cx2+cw//2,cy2+26,t,size=18)
+                hov=cr.collidepoint(mx_c,my_c)
+                bg=(20,44,20) if is_active else ((24,30,48) if hov else (16,20,34))
+                pygame.draw.rect(surf,bg,cr,border_radius=10)
+                brd=(80,220,80) if is_active else (tuple(min(255,c2+30) for c2 in col) if hov else col)
+                pygame.draw.rect(surf,brd,cr,2,border_radius=10)
+                if name=="Accelerator": draw_accel_icon(surf,cx2+cw//2,cy2+28,t,size=20)
+                elif name=="Frostcel.": draw_frost_icon(surf,cx2+cw//2,cy2+28,t,size=20)
+                elif name=="xw5yt": draw_xw5yt_icon(surf,cx2+cw//2,cy2+28,t,size=20)
                 else:
-                    pygame.draw.circle(surf,(20,15,35),(cx2+cw//2,cy2+26),18)
-                    pygame.draw.circle(surf,col,(cx2+cw//2,cy2+26),14)
-                lf=pygame.font.SysFont("segoeui",12,bold=True)
-                surf.blit(lf.render(name,True,(120,255,120) if is_active else C_WHITE),
-                          pygame.Rect(0,0,cw,14).move(cx2,cy2+48).topleft)
+                    pygame.draw.circle(surf,(16,12,28),(cx2+cw//2,cy2+28),20)
+                    pygame.draw.circle(surf,col,(cx2+cw//2,cy2+28),16)
+                ns=lf.render(name,True,(120,255,120) if is_active else C_WHITE)
+                surf.blit(ns,ns.get_rect(centerx=cx2+cw//2,top=cy2+52))
+                if is_active:
+                    ck=pygame.font.SysFont("segoeui",10).render("IN SLOT",True,(80,200,80))
+                    surf.blit(ck,ck.get_rect(centerx=cx2+cw//2,top=cy2+68))
+
+        elif self.tab=="map":
+            self._map_btns=[]
+            # Two-column layout for map buttons
+            bw=(pw-60)//2; bh=70; gap2=14
+            col_x=[px+20, px+pw//2+10]
+            row_y=content_top+20
+            _MAP_DEFS=[
+                ("The Bridge",   "map_straight",(20,55,28),(50,160,70),  "straight","Прямой путь"),
+                ("S-Turn",       "map_zigzag",  (38,28,65),(100,70,200), "zigzag",  "Зигзагообразный"),
+                ("4-lane",       "map_frosty",  (12,45,80),(50,150,220), "frosty",  "Четыре дорожки"),
+                ("AprilFools2026","map_event",  (70,22,12),(200,70,30),  "event",   "Ивент карта"),
+            ]
+            cur=game_core.CURRENT_MAP if game_ref else "straight"
+            lf=pygame.font.SysFont("segoeui",16,bold=True)
+            sf2=pygame.font.SysFont("segoeui",12)
+            for i,(name,action,col,brd,key,desc) in enumerate(_MAP_DEFS):
+                ci=i%2; ri=i//2
+                bx=col_x[ci]; by=row_y+ri*(bh+gap2)
+                r=pygame.Rect(bx,by,bw,bh)
+                self._map_btns.append((r,action))
+                active=(cur==key)
+                hov=r.collidepoint(mx_c,my_c)
+                bg=tuple(min(255,c2+20) for c2 in col) if (active or hov) else col
+                pygame.draw.rect(surf,bg,r,border_radius=12)
+                brd2=tuple(min(255,c2+80) for c2 in brd) if active else (tuple(min(255,c2+40) for c2 in brd) if hov else brd)
+                pygame.draw.rect(surf,brd2,r,3 if active else 2,border_radius=12)
+                check="✓  " if active else ""
+                ns=lf.render(check+name,True,C_WHITE)
+                ds=sf2.render(desc,True,(160,180,200))
+                surf.blit(ns,ns.get_rect(centerx=r.centerx,top=r.y+12))
+                surf.blit(ds,ds.get_rect(centerx=r.centerx,top=r.y+36))
+
+        elif self.tab=="mode":
+            self._mode_btns=[]
+            # 3-column grid of mode buttons
+            _MODE_DEFS=[
+                ("▶  Easy",            "restart_easy",    (18,52,18),(55,175,55),   "Стандартный режим"),
+                ("▶  Fallen",          "restart_fallen",  (45,12,70),(130,55,195),  "Fallen режим"),
+                ("▶  Frosty",          "restart_frosty",  (12,45,85),(55,150,235),  "Ледяной режим"),
+                ("▶  Endless",         "restart_endless", (12,10,38),(90,55,195),   "Бесконечные волны"),
+                ("▶  Sandbox",         "restart_sandbox", (60,50,25),(170,140,55),  "Режим песочницы"),
+                ("▶  Infernal",        "restart_infernal",(75,12,8),(210,55,25),    "Адский режим"),
+                ("🎭  April Fools",    "restart_event",   (75,8,28),(245,75,115),   "Ивент 2026"),
+            ]
+            cols3=3; bw3=(pw-40)//cols3; bh3=86; gap3=12
+            start_x3=px+12; start_y3=content_top+16
+            lf=pygame.font.SysFont("segoeui",16,bold=True)
+            sf2=pygame.font.SysFont("segoeui",12)
+            cur_mode=getattr(game_ref,'mode','sandbox') if game_ref else 'sandbox'
+            for i,(label,action,col,brd,desc) in enumerate(_MODE_DEFS):
+                ci=i%cols3; ri=i//cols3
+                bx=start_x3+ci*(bw3+gap3); by=start_y3+ri*(bh3+gap3)
+                r=pygame.Rect(bx,by,bw3,bh3)
+                self._mode_btns.append((r,action))
+                key=action.replace("restart_","")
+                active=(cur_mode==key)
+                hov=r.collidepoint(mx_c,my_c)
+                bg=tuple(min(255,c2+18) for c2 in col) if (active or hov) else col
+                pygame.draw.rect(surf,bg,r,border_radius=12)
+                brd2=tuple(min(255,c2+80) for c2 in brd) if active else (tuple(min(255,c2+40) for c2 in brd) if hov else brd)
+                pygame.draw.rect(surf,brd2,r,3 if active else 2,border_radius=12)
+                if active:
+                    gl2=pygame.Surface((bw3,bh3),pygame.SRCALPHA)
+                    pygame.draw.rect(gl2,(*brd,30),(0,0,bw3,bh3),border_radius=12)
+                    surf.blit(gl2,(bx,by))
+                ns=lf.render(("● " if active else "")+label,True,C_WHITE)
+                ds=sf2.render(desc,True,(160,180,210))
+                surf.blit(ns,ns.get_rect(centerx=r.centerx,top=r.y+18))
+                surf.blit(ds,ds.get_rect(centerx=r.centerx,top=r.y+50))
 
         elif self.tab=="misc":
             self._misc_btns=[]
-            mx2,my2=pygame.mouse.get_pos()
-            sf_h=pygame.font.SysFont("segoeui",14,bold=True)
-            sf_s=pygame.font.SysFont("segoeui",13)
-            bw=220; bh=40; gap2=12
-            cx_center=px+pw//2
-            y=content_top+20
+            # Left column: HP + Money. Right column: speed + enemies
+            left_x=px+30; right_x=px+pw//2+20
+            col_w=(pw-80)//2
+            bh=52; gap2=12
+            y_l=content_top+16; y_r=content_top+16
+            lf=pygame.font.SysFont("segoeui",15,bold=True)
+            sf2=pygame.font.SysFont("segoeui",13)
 
-            def mbtn(label,action,col=(35,50,85),brd=(70,110,200)):
-                r=pygame.Rect(cx_center-bw//2,y,bw,bh)
+            def mbtn_misc(label,action,col,brd,x,y,w=None):
+                w2=w or col_w
+                r=pygame.Rect(x,y,w2,bh)
                 self._misc_btns.append((r,action))
-                hov=r.collidepoint(mx2,my2)
-                bg=tuple(min(255,c+25) for c in col) if hov else col
-                pygame.draw.rect(surf,bg,r,border_radius=8)
-                pygame.draw.rect(surf,brd,r,2,border_radius=8)
-                ls=sf_h.render(label,True,C_WHITE)
-                surf.blit(ls,ls.get_rect(center=r.center))
+                hov=r.collidepoint(mx_c,my_c)
+                bg=tuple(min(255,c2+20) for c2 in col) if hov else col
+                pygame.draw.rect(surf,bg,r,border_radius=10)
+                pygame.draw.rect(surf,brd,r,2,border_radius=10)
+                ns=lf.render(label,True,C_WHITE)
+                surf.blit(ns,ns.get_rect(center=r.center))
                 return r
 
-            def slabel(text):
-                ts=sf_s.render(text,True,(100,130,180))
-                surf.blit(ts,(cx_center-bw//2,y))
+            def sec_label(text,x,y):
+                s=pygame.font.SysFont("segoeui",13,bold=True).render(text,True,(80,120,180))
+                surf.blit(s,(x,y))
 
-            # ── HP ──
-            slabel("PLAYER HP")
-            y+=20
-            mbtn("❤  Full HP","hp_full",(25,65,25),(60,180,60))
-            y+=bh+gap2
-            mbtn("☠  Set HP to 1","hp_1",(70,20,20),(200,50,50))
-            y+=bh+gap2
+            def draw_input(inp_text, active, rect, placeholder, hint):
+                self._hp_input_rect if placeholder=="Custom HP..." else None
+                pygame.draw.rect(surf,(20,26,42) if not active else (28,38,62),rect,border_radius=10)
+                pygame.draw.rect(surf,(80,160,255) if active else (45,55,85),rect,2,border_radius=10)
+                disp=inp_text if inp_text else placeholder
+                col_d=(220,230,255) if inp_text else (70,80,110)
+                cursor_s="|" if (active and pygame.time.get_ticks()//500%2==0) else ""
+                hs=lf.render(disp+cursor_s,True,col_d)
+                surf.blit(hs,hs.get_rect(center=rect.center))
+                if active:
+                    ht=sf2.render(hint,True,(70,120,160))
+                    surf.blit(ht,ht.get_rect(centerx=rect.centerx,top=rect.bottom+4))
 
-            # HP text input
-            inp_r=pygame.Rect(cx_center-bw//2,y,bw,bh)
+            # LEFT: HP section
+            sec_label("── PLAYER HP ──", left_x, y_l); y_l+=22
+            mbtn_misc("❤  Full HP",   "hp_full",(20,62,20),(55,175,55),left_x,y_l); y_l+=bh+gap2
+            mbtn_misc("☠  Set HP → 1","hp_1",   (68,18,18),(195,45,45),left_x,y_l); y_l+=bh+gap2
+            # HP custom input
+            inp_r=pygame.Rect(left_x,y_l,col_w,bh)
             self._hp_input_rect=inp_r
-            active=self._hp_input_active
-            pygame.draw.rect(surf,(18,22,35) if not active else (25,35,55),inp_r,border_radius=8)
-            pygame.draw.rect(surf,(80,160,255) if active else (50,60,90),inp_r,2,border_radius=8)
-            disp=self._hp_input if self._hp_input else "Custom HP..."
-            col_d=(220,220,255) if self._hp_input else (80,90,120)
-            cursor_s="|" if (active and pygame.time.get_ticks()//500%2==0) else ""
-            surf.blit(sf_h.render(disp+cursor_s,True,col_d),
-                      sf_h.render(disp+cursor_s,True,col_d).get_rect(center=inp_r.center))
-            if active:
-                hint=sf_s.render("Press ENTER to apply",True,(80,120,160))
-                surf.blit(hint,hint.get_rect(centerx=cx_center,top=inp_r.bottom+4))
-            y+=bh+gap2+24
+            draw_input(self._hp_input, self._hp_input_active, inp_r, "Custom HP...", "ENTER to apply")
+            y_l+=bh+gap2+18
 
-            # ── ENEMIES ──
-            slabel("ENEMIES")
-            y+=20
-            mbtn("💀  Kill All Enemies","kill_all",(70,18,18),(200,50,50))
-            y+=bh+gap2+8
+            # LEFT: Money section
+            sec_label("── MONEY ──", left_x, y_l); y_l+=22
+            # Quick give buttons in a row
+            qbw=(col_w-gap2*2)//3
+            mbtn_misc("+1K","money_1k",(20,50,20),(55,160,55),left_x,y_l,qbw)
+            mbtn_misc("+10K","money_10k",(20,60,30),(55,180,55),left_x+qbw+gap2,y_l,qbw)
+            mbtn_misc("+100K","money_100k",(10,70,40),(40,200,80),left_x+qbw*2+gap2*2,y_l,qbw)
+            y_l+=bh+gap2
+            # Money custom input
+            money_r=pygame.Rect(left_x,y_l,col_w,bh)
+            self._money_input_rect=money_r
+            draw_input(self._money_input, self._money_input_active, money_r, "Custom amount...", "ENTER to add")
+            y_l+=bh+gap2+18
 
-            # ── SPEED ──
-            slabel("GAME SPEED")
-            y+=20
+            # LEFT: Enemies
+            sec_label("── ENEMIES ──", left_x, y_l); y_l+=22
+            mbtn_misc("💀  Kill All","kill_all",(68,16,16),(195,45,45),left_x,y_l); y_l+=bh+gap2
+
+            # RIGHT: Game speed
+            sec_label("── GAME SPEED ──", right_x, y_r); y_r+=22
             spd=self._game_speed
-            for lbl,act,spd_val in [("0.5x","speed_05",0.5),("1x  (normal)","speed_1",1.0),
-                                     ("2x","speed_2",2.0),("5x","speed_5",5.0)]:
+            _spd_defs=[("0.5x","speed_05",0.5,(20,40,80),(50,100,200)),
+                       ("1x  normal","speed_1",1.0,(20,50,20),(55,160,55)),
+                       ("2x","speed_2",2.0,(70,45,10),(190,130,30)),
+                       ("5x","speed_5",5.0,(80,15,10),(220,45,25))]
+            for lbl,act,spd_val,c_off,c_on in _spd_defs:
                 active_spd=(spd==spd_val)
-                mbtn(("✓  " if active_spd else "    ")+lbl, act,
-                     (20,60,20) if active_spd else (30,38,60),
-                     (80,220,80) if active_spd else (60,90,160))
-                y+=bh+gap2
+                col2=c_on if active_spd else c_off
+                brd2=tuple(min(255,c2+60) for c2 in c_on) if active_spd else tuple(min(255,c2+40) for c2 in c_on)
+                full_lbl=("✓  " if active_spd else "    ")+lbl
+                mbtn_misc(full_lbl,act,col2,brd2,right_x,y_r); y_r+=bh+gap2
 
         surf.set_clip(None)
-        # Scrollbar for scrollable tabs
+
+        # ── Scrollbar for enemy/units tabs ────────────────────────────────────
         if self.tab in ("enemy","units"):
-            _sb_cols=5
-            n_items=len(ADMIN_ENEMY_LIST) if self.tab=="enemy" else len(unit_list)
-            rows=((n_items+_sb_cols-1)//_sb_cols)
-            total_h=rows*(ch+gap)
+            _cols=8
+            n_items=len(ADMIN_ENEMY_LIST) if self.tab=="enemy" else 25
+            _ch=110 if self.tab=="enemy" else 100; _gap=6
+            rows=((n_items+_cols-1)//_cols)
+            total_h=rows*(_ch+_gap)
             if total_h>content_h:
                 max_scroll=total_h-content_h
                 self.scroll=min(self.scroll,max_scroll)
-                sb_h=max(20,int(content_h*content_h/total_h))
+                sb_h=max(30,int(content_h*content_h/total_h))
                 sb_y=content_top+int((content_h-sb_h)*self.scroll/max_scroll)
-                pygame.draw.rect(surf,(50,60,90),(px+pw-10,content_top,6,content_h),border_radius=3)
-                pygame.draw.rect(surf,(100,140,220),(px+pw-10,sb_y,6,sb_h),border_radius=3)
+                pygame.draw.rect(surf,(30,36,58),(px+pw-14,content_top,8,content_h),border_radius=4)
+                pygame.draw.rect(surf,(80,120,220),(px+pw-14,sb_y,8,sb_h),border_radius=4)
 
 # ── UI ─────────────────────────────────────────────────────────────────────────
 class UI:
@@ -621,10 +839,15 @@ class UI:
         self.slots=self._build_slots(); self.selected_slot=None
         self.drag_unit=None; self.open_unit=None; self.msg=""; self.msg_timer=0.0
         self.admin_panel=AdminPanel()
+        self.admin_mode = False  # set to True by Game when launched from sandbox
         self._speed_idx = 2   # default 1x
+        self.cost_mult = 1.0  # 1.5 in Hardcore mode
         # Speed button rect — left of loadout area
         slots_start_x = (SCREEN_W - (5*SLOT_W + 4*8)) // 2
         self._speed_btn = pygame.Rect(slots_start_x - 100, SLOT_AREA_Y + 8, 88, SLOT_H)
+        # Admin button rect — right of loadout area (only shown in sandbox)
+        slots_end_x = slots_start_x + 5*SLOT_W + 4*8
+        self._admin_btn_rect = pygame.Rect(slots_end_x + 12, SLOT_AREA_Y + 8, 100, SLOT_H)
         # Skip button rect — top-left area, right of wave counter
         self._skip_btn = pygame.Rect(8, 54, 120, 28)
     def _build_slots(self):
@@ -649,8 +872,8 @@ class UI:
         if self._speed_btn.collidepoint(pos):
             self._speed_idx = (self._speed_idx + 1) % len(self._SPEED_STEPS)
             return 0
-        # Admin panel
-        if mode=="sandbox":
+        # Admin panel — available in sandbox and admin-mode restarts
+        if self.admin_mode:
             if self.admin_panel.visible:
                 self.admin_panel.handle_click(pos,units,enemies,wave,save_data,ui_ref=self,game_ref=getattr(self,'_game_ref',None))
                 return 0
@@ -683,6 +906,8 @@ class UI:
                 units.remove(self.open_unit); self.open_unit=None; return sell_val
             if btns.get("upgrade") and btns["upgrade"].collidepoint(pos):
                 cost=self.open_unit.upgrade_cost()
+                if cost is not None:
+                    cost = int(cost * getattr(self, 'cost_mult', 1.0))
                 if cost and money>=cost:
                     self.open_unit.upgrade()
                     return -cost
@@ -782,7 +1007,8 @@ class UI:
         if (on_path and not (UType and UType.NAME=="Archer")) or my>SLOT_AREA_Y-10 or any(dist((u.px,u.py),pos)<36 for u in units):
             self.show_msg("Can't place here!"); self.drag_unit=None; self.selected_slot=None; return 0
         # Check money
-        if money<UType.PLACE_COST:
+        _place_cost = int(UType.PLACE_COST * getattr(self, 'cost_mult', 1.0))
+        if money < _place_cost:
             self.show_msg("Not enough money!"); self.drag_unit=None; self.selected_slot=None; return 0
         # Check placement limit against OWN units only
         limit=UNIT_LIMITS.get(UType.NAME)
@@ -791,7 +1017,7 @@ class UI:
             if count>=limit:
                 self.show_msg(f"Limit: {limit} {UType.NAME}!"); self.drag_unit=None; self.selected_slot=None; return 0
         u=UType(mx,my); units.append(u)
-        self.drag_unit=None; self.selected_slot=None; return -UType.PLACE_COST
+        self.drag_unit=None; self.selected_slot=None; return -_place_cost
     def _menu_rects(self,unit):
         # Larger card, positioned vertically centered on the right side
         mw,mh=340,520
@@ -1117,8 +1343,7 @@ class UI:
         elif cls==GoldenCowboy:
             if nxt>=len(GCOWBOY_LEVELS): return None
             d,fr,r,_,cs,inc,st,hd=GCOWBOY_LEVELS[nxt]
-            result={"Damage":d,"Firerate":fr,"Range":r,
-                    "CashShot":f"${inc} / {cs} shots","SpinTime":f"{st:.1f}s"}
+            result={"Damage":d,"Firerate":fr,"Range":r,"Income":inc}
             if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
             return result
         elif cls==HallowPunk:
@@ -1238,19 +1463,21 @@ class UI:
         pygame.draw.rect(surf,C_PANEL,(0,0,SCREEN_W,50))
         pygame.draw.line(surf,C_BORDER,(0,50),(SCREEN_W,50),2)
         if is_sandbox:
-            # Admin panel button where wave counter would be
-            ap_r=pygame.Rect(8,8,120,34)
-            mx2,my2=pygame.mouse.get_pos()
-            ap_hov=ap_r.collidepoint(mx2,my2)
-            ap_open=getattr(self,'_admin_open',False)
-            ap_bg=(50,80,130) if (ap_open or ap_hov) else (30,40,65)
-            pygame.draw.rect(surf,ap_bg,ap_r,border_radius=6)
-            pygame.draw.rect(surf,(80,140,255) if ap_open else C_BORDER,ap_r,2,border_radius=6)
-            txt(surf,"⚙ ADMIN",ap_r.center,C_WHITE,font_md,center=True)
-            self._admin_btn_rect=ap_r
+            wave_str="SANDBOX"
+            txt(surf,wave_str,(18,14),(180,150,60),font_lg)
         else:
             wave_str="good luck" if gl else (f"WAVE  {wave}" if wave_mgr.max_waves>=999999 else f"WAVE  {wave}/{wave_mgr.max_waves}")
             txt(surf,wave_str,(18,14),C_RED if gl else C_CYAN,font_lg)
+            # Hardcore BETA badge
+            if mode == "hardcore":
+                _hc_t = pygame.time.get_ticks() * 0.001
+                _pr = min(255, int(180 + abs(math.sin(_hc_t * 2)) * 60))
+                _hf = pygame.font.SysFont("consolas", 14, bold=True)
+                _hs = _hf.render("☠ HARDCORE BETA", True, (_pr, 50, 50))
+                _hbg = pygame.Rect(18, 30, _hs.get_width() + 10, 16)
+                pygame.draw.rect(surf, (30, 5, 5), _hbg, border_radius=3)
+                pygame.draw.rect(surf, (120, 20, 20), _hbg, 1, border_radius=3)
+                surf.blit(_hs, (_hbg.x + 5, _hbg.y + 1))
             tl=wave_mgr.time_left()
             mx_sk,my_sk=pygame.mouse.get_pos()
             # ── Wave timer display — right of wave counter ───────────────────
@@ -1362,7 +1589,7 @@ class UI:
             sel   = (i == self.selected_slot)
             cx2   = slot.centerx
             # Determine availability
-            cant_afford = UType is not None and not gl and not is_sandbox and money < UType.PLACE_COST
+            cant_afford = UType is not None and not gl and not is_sandbox and money < int(UType.PLACE_COST * getattr(self, 'cost_mult', 1.0))
             over_limit  = False
             if UType is not None:
                 lim = UNIT_LIMITS.get(UType.NAME)
@@ -1410,7 +1637,7 @@ class UI:
                     surf.blit(ps, ps.get_rect(centerx=cx2, top=slot.y + 114))
                 else:
                     price_col = (200, 80, 80) if cant_afford else C_GOLD
-                    price_str = str(UType.PLACE_COST)
+                    price_str = str(int(UType.PLACE_COST * getattr(self, 'cost_mult', 1.0)))
                     ps = _slot_font_price.render(price_str, True, price_col)
                     row_w = (ico_coin.get_width() + 3 + ps.get_width()) if ico_coin else ps.get_width()
                     rx = cx2 - row_w // 2
@@ -1446,6 +1673,27 @@ class UI:
         surf.blit(spd_s1, spd_s1.get_rect(centerx=spd_btn.centerx, top=spd_btn.y + 8))
         surf.blit(spd_s2, spd_s2.get_rect(centerx=spd_btn.centerx, centery=spd_btn.centery + 6))
         surf.blit(spd_s3, spd_s3.get_rect(centerx=spd_btn.centerx, bottom=spd_btn.bottom - 6))
+
+        # ── Admin button (sandbox / admin-mode, bottom right of loadout) ──────
+        if self.admin_mode:
+            # Recalculate position every frame so it stays correct at any resolution
+            _slots_start = (SCREEN_W - (5 * SLOT_W + 4 * 8)) // 2
+            _slots_end   = _slots_start + 5 * SLOT_W + 4 * 8
+            self._admin_btn_rect = pygame.Rect(_slots_end + 12, SLOT_AREA_Y + 8, 100, SLOT_H)
+            adm_btn = self._admin_btn_rect
+            mx_a, my_a = pygame.mouse.get_pos()
+            adm_hov = adm_btn.collidepoint(mx_a, my_a)
+            adm_open = self.admin_panel.visible
+            adm_accent = (100, 220, 80) if adm_open else ((120, 180, 255) if adm_hov else (70, 100, 180))
+            adm_bg = (16, 36, 16) if adm_open else ((22, 34, 55) if adm_hov else (14, 18, 32))
+            pygame.draw.rect(surf, adm_bg, adm_btn, border_radius=10)
+            pygame.draw.rect(surf, adm_accent, adm_btn, 2, border_radius=10)
+            adm_lbl1 = pygame.font.SysFont("segoeui", 11).render("ADMIN", True, (90, 170, 90) if adm_open else (100, 130, 160))
+            adm_lbl2 = pygame.font.SysFont("segoeui", 26, bold=True).render("⚙", True, adm_accent)
+            adm_lbl3 = pygame.font.SysFont("segoeui", 10).render("panel", True, (60, 110, 60) if adm_open else (70, 85, 105))
+            surf.blit(adm_lbl1, adm_lbl1.get_rect(centerx=adm_btn.centerx, top=adm_btn.y + 6))
+            surf.blit(adm_lbl2, adm_lbl2.get_rect(centerx=adm_btn.centerx, centery=adm_btn.centery + 4))
+            surf.blit(adm_lbl3, adm_lbl3.get_rect(centerx=adm_btn.centerx, bottom=adm_btn.bottom - 6))
         mx2,my2=pygame.mouse.get_pos()
         for u in units:
             if dist((u.px,u.py),(mx2,my2))<22 and self.open_unit!=u: u.draw_range(surf)
@@ -1681,16 +1929,13 @@ class UI:
             elif cls==GoldenCowboy:
                 hd_now=u.hidden_detection
                 hd_next=bool(nxt and nxt.get("HidDet") and not hd_now)
-                shots_left=u._cash_shot-u._shot_count
                 stats=[]
                 if hd_now: stats.append(("HidDet","Hidden Detection",None))
                 stats+=[
                     ("Damage",   u.damage,            nxt.get("Damage")    if nxt else None),
                     ("Firerate", f"{u.firerate:.3f}",  f"{nxt['Firerate']:.3f}" if nxt else None),
                     ("Range",    u.range_tiles,         nxt.get("Range")    if nxt else None),
-                    ("CashShot", f"${u._income}/{u._cash_shot} shots (in {shots_left})",
-                                  nxt.get("CashShot") if nxt else None),
-                    ("SpinTime", f"{u._spin_time:.1f}s", nxt.get("SpinTime") if nxt else None),
+                    ("Income",   f"${u._income}",       f"${nxt.get('Income','?')}" if nxt else None),
                 ]
                 if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
             elif cls==HallowPunk:
@@ -1931,6 +2176,8 @@ class UI:
 
             # === UPGRADE BUTTON ===
             cost=u.upgrade_cost()
+            if cost is not None:
+                cost = int(cost * getattr(self, 'cost_mult', 1.0))
             strip_y_actual=my_m+top_offset+portrait_size+6
             btns["upgrade"]=pygame.Rect(mx_m+6,strip_y_actual+54,mw-12,44)
             btn_bottom_y=my_m+menu.h-44
@@ -2610,8 +2857,12 @@ class DifficultyMenu:
         self.card_endless  = pygame.Rect(x0 + (card_w+gap)*3,        220, card_w, card_h)
         self.card_sandbox  = pygame.Rect(x0 + (card_w+gap)*4,        220, card_w, card_h)
 
+        # Hardcore BETA card — positioned above the event button area, below the row
+        hc_w, hc_h = 220, 64
+        self.card_hardcore = pygame.Rect(cx - hc_w // 2, 220 + card_h + 110, hc_w, hc_h)
+
         btn_w, btn_h = 260, 54
-        self.btn_back = pygame.Rect(cx - btn_w//2, 220 + card_h + 20, btn_w, btn_h)
+        self.btn_back = pygame.Rect(cx - btn_w//2, 220 + card_h + 40, btn_w, btn_h)
 
     def run(self):
         clock = pygame.time.Clock()
@@ -2629,6 +2880,7 @@ class DifficultyMenu:
                     if self.card_frosty.collidepoint(pos):   self.action = "play_frosty"
                     if self.card_endless.collidepoint(pos):  self.action = "play_endless"
                     if self.card_sandbox.collidepoint(pos):  self.action = "play_sandbox"
+                    if self.card_hardcore.collidepoint(pos): self.action = "play_hardcore"
                     if self.btn_back.collidepoint(pos):      self.action = "back"
             self._draw()
             pygame.display.flip()
@@ -2702,6 +2954,7 @@ class DifficultyMenu:
         hov_frosty   = self.card_frosty.collidepoint(mx, my)
         hov_endless  = self.card_endless.collidepoint(mx, my)
         hov_sandbox  = self.card_sandbox.collidepoint(mx, my)
+        hov_hardcore = self.card_hardcore.collidepoint(mx, my)
 
         self._draw_mode_card(
             self.card_easy, "EASY", "easy_ico", hov_easy,
@@ -2733,14 +2986,47 @@ class DifficultyMenu:
             border_col=(160, 130, 70), border_hov=(220, 185, 100),
             label_bg=(65, 55, 32), fill_icon=True
         )
+
+        # ── Hardcore BETA banner button ──────────────────────────────────────
+        _hc = self.card_hardcore
+        _hc_t = pygame.time.get_ticks() * 0.001
+        _pulse_r = min(255, int(180 + abs(math.sin(_hc_t * 2.5)) * 60))
+        _hc_bg  = (60, 10, 10) if hov_hardcore else (40, 5, 5)
+        _hc_brd = (_pulse_r, 40, 40) if hov_hardcore else (160, 30, 30)
+        pygame.draw.rect(self.screen, _hc_bg,  _hc, border_radius=12)
+        pygame.draw.rect(self.screen, _hc_brd, _hc, 2, border_radius=12)
+        # ☠ skull icon on the left
+        _sf = pygame.font.SysFont("segoeui", 30, bold=True)
+        _skull = _sf.render("☠", True, (_pulse_r, 60, 60))
+        self.screen.blit(_skull, (_hc.x + 12, _hc.centery - _skull.get_height() // 2))
+        # Title
+        _hf1 = pygame.font.SysFont("consolas", 22, bold=True)
+        _hf2 = pygame.font.SysFont("segoeui", 13)
+        _hs1 = _hf1.render("HARDCORE BETA", True, (_pulse_r, 100, 100) if hov_hardcore else (220, 60, 60))
+        _hs2 = _hf2.render("50 волн · 100 HP · 1.5× цены · деньги только за убийства", True, (160, 80, 80))
+        self.screen.blit(_hs1, (_hc.x + 52, _hc.y + 8))
+        self.screen.blit(_hs2, (_hc.x + 52, _hc.y + 34))
+
         # ── Coin reward labels under each card ─────────────────────────────
         ico_m = load_icon("coin_ico", 16)
         reward_data = [
-            (self.card_easy,      "200",      (100,220,100)),
+            (self.card_easy,      "250",      (100,220,100)),
             (self.card_fallen,    "750",      (180,100,255)),
             (self.card_frosty,    "1500",     (80,200,255)),
-            (self.card_endless,   "0.5/wave", (255,130,130)),
+            (self.card_endless,   "0.5/вол.",  (255,130,130)),
+            (self.card_sandbox,   "—",        (160,140,100)),
         ]
+        _rf = pygame.font.SysFont("segoeui", 13, bold=True)
+        for card, amount, col in reward_data:
+            lbl = _rf.render(amount, True, col)
+            total_w = (ico_m.get_width() + 3 if ico_m else 0) + lbl.get_width()
+            bx = card.centerx - total_w // 2
+            by = card.bottom + 6
+            if ico_m and amount != "—":
+                self.screen.blit(ico_m, (bx, by + (lbl.get_height() - ico_m.get_height()) // 2))
+                self.screen.blit(lbl, (bx + ico_m.get_width() + 3, by))
+            else:
+                self.screen.blit(lbl, (card.centerx - lbl.get_width()//2, by))
 
 
         hov_back = self.btn_back.collidepoint(mx, my)
@@ -3884,6 +4170,9 @@ class MainMenu:
                                 if map_choice != "back":
                                     game_core.CURRENT_MAP = map_choice
                                     self.action = diff
+                            elif diff == "play_sandbox":
+                                game_core.CURRENT_MAP = "straight"
+                                self.action = diff
                             else:
                                 map_choice = MapSelectMenu(self.screen).run()
                                 if map_choice != "back":
@@ -4672,7 +4961,7 @@ class EndlessWaveManager:
 
 
 class Game:
-    def __init__(self, save_data=None, mode="easy"):
+    def __init__(self, save_data=None, mode="easy", admin_mode=False):
         self.screen=pygame.display.set_mode((SCREEN_W,SCREEN_H))
         pygame.display.set_caption("Tower Defense")
         self.clock=pygame.time.Clock(); self.running=True
@@ -4705,12 +4994,20 @@ class Game:
             self._challenger_radius_applied=False
             self._challenger_wave6_done=False
             self._challenger_screen_shown=False
+        elif mode=="hardcore":
+            self.wave_mgr=WaveManager(wave_data=HARDCORE_WAVE_DATA, max_waves=HARDCORE_MAX_WAVES)
+            self.wave_mgr._mode="hardcore"
+            self.player_hp=100; self.player_maxhp=100
+            self.money=700
         else:
             self.wave_mgr=WaveManager()
             self.wave_mgr._mode="easy"
         # ── Apply Skill Tree bonuses ──────────────────────────────────────────
         _sd = save_data or {}
         _st_lvls = _sd.get("skill_tree", {})
+        # Hardcore: skill tree is disabled entirely
+        if mode == "hardcore":
+            _st_lvls = {}
         _bb_lvl = _st_lvls.get("bigger_budget", 0)
         if _bb_lvl > 0:
             self.money = int(self.money * (1.0 + _bb_lvl * 0.01))
@@ -4732,6 +5029,8 @@ class Game:
         self._frosty_bgm_track = 1        # 1 or 2 — which track plays next
         self._frosty_bgm_stopped = False  # True once wave 40 starts (don't restart)
         self.ui=UI()
+        self.ui.admin_mode = admin_mode or (mode == "sandbox")
+        self.ui.cost_mult = 1.5 if mode == "hardcore" else 1.0
         self._fallen_king_music_timer = None  # countdown until FallenKing spawns after music starts
         self._fallen_king_spawned = False
         self._fallen_king_shake = 0.0
@@ -4753,6 +5052,8 @@ class Game:
         self.paused = False
         self.pause_menu = PauseMenu(self.screen)
         self.return_to_menu = False
+        self._restart_mode  = None
+        self.admin_mode = admin_mode or (mode == "sandbox")  # stays True after admin-panel restarts
         self._hixw5yt_frozen = False   # time stopped, waiting for enemy click
         self._hixw5yt_owner = None     # which Xw5ytUnit triggered it
         self._ability_cycle_idx = 0    # index into self.units for F-key ability cycling
@@ -4817,6 +5118,8 @@ class Game:
             self.player_hp = 10000; self.player_maxhp = 10000
             self.money = 9999999999
             self.ui.SLOT_TYPES = [None, None, None, None, None]
+        # Hardcore: 1.5× placement and upgrade cost multiplier
+        self._hc_cost_mult = 1.5 if mode == "hardcore" else 1.0
         # Frosty: force the map
         if mode == "frosty":
             game_core.CURRENT_MAP = "frosty"
@@ -4848,7 +5151,7 @@ class Game:
         # Frosty: 1500 total / 40 waves = 37.5 per wave
         # Infernal: 500 total / 34 waves ≈ 14.7 per wave
         # Endless: 0.5 per wave
-        rate = {"easy": 10.0, "fallen": 18.75, "frosty": 37.5, "infernal": 14.7, "endless": 0.5}.get(self.mode, 10.0)
+        rate = {"easy": 12.5, "fallen": 18.75, "frosty": 37.5, "infernal": 14.7, "endless": 0.5}.get(self.mode, 12.5)
         self._wave_coin_accum += waves_done * rate
         whole = int(self._wave_coin_accum)
         if whole > 0:
@@ -5088,7 +5391,7 @@ class Game:
                         else:
                             try: pygame.mixer.music.play(0, start=8.7)
                             except: pass
-                if ev.type == pygame.MOUSEWHEEL and self.mode == "sandbox":
+                if ev.type == pygame.MOUSEWHEEL and self.admin_mode:
                     if self.ui.admin_panel.visible:
                         self.ui.admin_panel.handle_scroll(ev.y); continue
                 if self.console.visible:
@@ -5096,6 +5399,12 @@ class Game:
                         if ev.key == pygame.K_F1: self.console.toggle()
                         else: self.console.handle_key(ev, self)
                     continue
+                # Admin panel input fields intercept keyboard when active
+                if self.admin_mode and self.ui.admin_panel.visible:
+                    if ev.type == pygame.KEYDOWN:
+                        if self.ui.admin_panel._hp_input_active or self.ui.admin_panel._money_input_active:
+                            self.ui.admin_panel.handle_key(ev, self)
+                            continue
                 if self.paused:
                     if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                         action = self.pause_menu.handle_click(ev.pos)
@@ -5114,6 +5423,8 @@ class Game:
                     if ev.key == pygame.K_F1: self.console.toggle()
                     if ev.key == pygame.K_e and self.ui.open_unit:
                         u = self.ui.open_unit; cost = u.upgrade_cost()
+                        if cost is not None:
+                            cost = int(cost * getattr(self.ui, 'cost_mult', 1.0))
                         if cost and self.money >= cost: u.upgrade(); self.money -= cost
                         elif cost: self.ui.show_msg("Not enough money!")
                         else: self.ui.show_msg("Max level!")
@@ -5159,16 +5470,21 @@ class Game:
                     if ev.key in slot_keys and not self.console.visible:
                         idx = slot_keys[ev.key]; UType = self.ui.SLOT_TYPES[idx]
                         if UType is None: self.ui.show_msg("Coming soon!")
-                        elif self.money < UType.PLACE_COST: self.ui.show_msg("Not enough money!")
+                        elif self.money < int(UType.PLACE_COST * getattr(self.ui, 'cost_mult', 1.0)): self.ui.show_msg("Not enough money!")
                         else:
                             mx2, my2 = pygame.mouse.get_pos()
                             self.ui.selected_slot = idx; self.ui.drag_unit = UType(mx2, my2)
                 if self.game_over or self.win:
                     if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                         if self._end_btn.collidepoint(ev.pos):
-                            self.running = False; self.return_to_menu = True
                             try: pygame.mixer.music.stop()
                             except: pass
+                            if self.admin_mode and not self.win:
+                                # Lost in admin-mode: bounce back to sandbox
+                                self._restart_mode = "sandbox"
+                                self.running = False
+                            else:
+                                self.running = False; self.return_to_menu = True
                 elif not self.game_over:
                     if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                         _pre_open = self.ui.open_unit
@@ -5566,6 +5882,7 @@ class Game:
                             if self._sk_kill_counter >= _scav_n:
                                 self._sk_kill_counter = 0
                                 reward = int(reward * 1.5)
+                        # easy mode gives no kill reward; all other modes (incl. hardcore) do
                         if reward>0 and self.mode != "easy":
                             self.money+=reward
                             if SETTINGS.get("show_damage", True):
@@ -5724,6 +6041,14 @@ class Game:
                         inner.x=e.x; inner.y=e.y; inner._wp_index=getattr(e,'_wp_index',1)
                         if hasattr(e,'_frosty_path'): inner._frosty_path=e._frosty_path
                         new_enemies.append(inner)
+                    # MysteryEnemy spawns a random enemy on death
+                    if not e.alive and isinstance(e,MysteryEnemy) and not e._spawned_mystery:
+                        e._spawned_mystery=True
+                        Sp=random.choice(MYSTERY_SPAWN_POOL)
+                        baby=Sp(self.wave_mgr.wave)
+                        baby.x=e.x; baby.y=e.y; baby._wp_index=getattr(e,'_wp_index',1)
+                        if hasattr(e,'_frosty_path'): baby._frosty_path=e._frosty_path
+                        baby.free_kill=True; new_enemies.append(baby)
 
                     # ── INFERNAL mode death spawns ─────────────────────────────
                     if _INFERNAL_AVAILABLE and self.mode in ("infernal",):
@@ -5890,10 +6215,12 @@ class Game:
     
                 # tf_test: always track 1M miniboss and TFK in boss bars regardless of mode
     
-                if (self.wave_mgr.state=="waiting"
+                if (self.wave_mgr.state in ("waiting", "between", "done")
                         and not any(e.alive for e in self.enemies) and not self.wave_mgr._lmoney_paid):
                     lm=self.wave_mgr.wave_lmoney(); bm=self.wave_mgr.wave_bmoney()
-                    if self.mode == "frosty":
+                    if self.mode == "hardcore":
+                        lm = 0; bm = 0  # kill-only economy — no wave bonuses
+                    elif self.mode == "frosty":
                         if lm: lm += 150
                         if bm: bm += 150
                     elif self.mode == "infernal":
@@ -5983,6 +6310,9 @@ class Game:
                                 self.save_data.setdefault("owned_units", []).append("Rubber Duck")
                                 write_save(self.save_data)
                                 self.ui.show_msg("🐥 Rubber Duck разблокирована!", 6.0)
+                            # April Fools 2026 event achievement
+                            if game_core.CURRENT_MAP == "event":
+                                self.ach_mgr.try_grant("april_fools_2026")
                         # frosty perfect (no leaks)
                         if self.mode == "frosty" and not getattr(self, "_wave_ever_leaked", False):
                             self.ach_mgr.try_grant("frosty_perfect")
@@ -6417,15 +6747,17 @@ class Game:
                 fallen_bars.append((label,e.hp,e.maxhp,col))
         if not fallen_bars: fallen_bars=None
 
+        # Set _game_ref BEFORE ui.draw so admin button works on first frame
+        if self.admin_mode:
+            self.ui._game_ref = self
+
         self.ui.draw(self.screen,self.units,self.money,self.wave_mgr,
                      self.player_hp,self.player_maxhp,self.enemies,
                      self._boss_enemy,
                      False,False,extra_bars,fallen_bars,self.mode)
 
-
-        # Admin panel
-        if self.mode=="sandbox":
-            self.ui._game_ref=self
+        # Admin panel overlay
+        if self.admin_mode:
             self.ui.admin_panel.draw(self.screen,self.units,pygame.time.get_ticks()*0.001,game_ref=self,ui_ref=self.ui)
         self.console.draw(self.screen)
 
@@ -6434,9 +6766,6 @@ class Game:
             col=getattr(self,'_ceremony_flash_color',(255,255,255))
             fl=pygame.Surface((SCREEN_W,SCREEN_H))
             fl.fill(col); fl.set_alpha(self._ceremony_flash_alpha)
-            self.screen.blit(fl,(0,0))
-        # tf ceremony flash overlay
-            fl=pygame.Surface((SCREEN_W,SCREEN_H))
             self.screen.blit(fl,(0,0))
 
         # Draw stun indicator on stunned units
@@ -6637,6 +6966,9 @@ class MainMenu(_OrigMainMenu):
                                 if map_choice != "back":
                                     game_core.CURRENT_MAP = map_choice
                                     self.action = diff
+                            elif diff == "play_sandbox":
+                                game_core.CURRENT_MAP = "straight"
+                                self.action = diff
                             else:
                                 map_choice = MapSelectMenu(self.screen).run()
                                 if map_choice != "back":
@@ -6695,7 +7027,7 @@ class MainMenu(_OrigMainMenu):
         surf.blit(glow_s, (cx - 350, 130))
         title_s = title_font.render("TOWER DEFENSE", True, (r3, g3, 255))
         surf.blit(title_s, title_s.get_rect(center=(cx, 170)))
-        sub_s = sub_font.render("by zigres", True, (60, 70, 100))
+        sub_s = sub_font.render("kakashki", True, (60, 70, 100))
         surf.blit(sub_s, sub_s.get_rect(center=(cx, 215)))
 
         # ── Buttons ───────────────────────────────────────────────────────────
@@ -6742,9 +7074,9 @@ class MainMenu(_OrigMainMenu):
             pygame.draw.circle(surf, (_fc, _fc // 3, 0), (_fx, _fy), 3)
         _ef1 = pygame.font.SysFont("segoeui", 16, bold=True)
         _ef2 = pygame.font.SysFont("segoeui", 12)
-        surf.blit(_ef1.render("очень крутой ивент", True, (255, 180, 60) if _ev_hov else (220, 130, 40)),
+        surf.blit(_ef1.render("фывав", True, (255, 180, 60) if _ev_hov else (220, 130, 40)),
                   (_ev.x + 36, _ev.y + 10))
-        surf.blit(_ef2.render("страшно", True, (180, 100, 40)),
+        surf.blit(_ef2.render("аыафа4а", True, (180, 100, 40)),
                   (_ev.x + 10, _ev.y + 36))
 
         # ── Coin counter ──────────────────────────────────────────────────────
@@ -6824,12 +7156,13 @@ if __name__ == "__main__":
             ls.run()
             save_data = load_save()
 
-        elif action in ("play_easy", "play_sandbox", "play_fallen", "play_frosty", "play_endless", "play_infernal"):
+        elif action in ("play_easy", "play_sandbox", "play_fallen", "play_frosty", "play_endless", "play_infernal", "play_hardcore"):
             if action == "play_sandbox": mode = "sandbox"
             elif action == "play_fallen": mode = "fallen"
             elif action == "play_frosty": mode = "frosty"
             elif action == "play_endless": mode = "endless"
             elif action == "play_infernal": mode = "infernal"
+            elif action == "play_hardcore": mode = "hardcore"
             else: mode = "easy"
             print("Starting game mode:", mode)
             try:
@@ -6837,6 +7170,13 @@ if __name__ == "__main__":
                 print("Game created, running...")
                 game.run()
                 print("Game ended, return_to_menu:", game.return_to_menu)
+                # Handle restart from sandbox admin panel
+                while getattr(game, '_restart_mode', None):
+                    restart = game._restart_mode
+                    game._restart_mode = None
+                    save_data = load_save()
+                    game = Game(save_data, mode=restart, admin_mode=True)
+                    game.run()
             except Exception as e:
                 import traceback; traceback.print_exc()
                 input("Press Enter to continue...")

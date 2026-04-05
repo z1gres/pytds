@@ -2713,23 +2713,24 @@ C_GCOWBOY_DARK = (80,  60,  10)
 #    the trigger fires anyway — but we only count actual hits for authenticity
 
 GCOWBOY_LEVELS = [
-    # lv0 – place $550  — NERFED to Assassin tier
-    (2,  0.608,  6.0, None, 8,  20, 1.8, False),
-    # lv1 – +$300
-    (3,  0.508,  6.0,  300, 8,  20, 1.8, False),
-    # lv2 – +$400
-    (3,  0.508,  8.0,  400, 8,  40, 1.8, True),
-    # lv3 – +$1000
-    (7,  0.408,  8.5, 1000, 8,  50, 1.5, True),
-    # lv4 – +$3500
-    (10, 0.358,  9.0, 3500, 10, 70, 1.3, True),
-    # lv5 – +$12000
-    (13, 0.358,  9.5,12000, 12,120, 1.0, True),
+    # lv0 – place $400  base stats per screenshots
+    # (damage, firerate, range_tiles, upgrade_cost, cash_shot, income, spin_time, hidden_detection)
+    (2,  0.575,  5.0, None, 6,  30, 1.5, False),
+    # lv1 – Steady Hand +$160  | firerate improved, spin time reduced
+    (2,  0.475,  5.5,  160, 6,  30, 1.25, False),
+    # lv2 – Lucky Shot +$850  | +2 dmg, +range, hidden detection
+    (4,  0.475,  7.0,  850, 6,  40, 1.25, True),
+    # lv3 – Faster Instincts +$8000 | +2 range, +10 dmg, spin time reduced
+    (14, 0.450,  9.0, 8000, 6,  75, 1.0, True),
+    # lv4 – Double Tap +$5500 | faster firerate, more income, double cash_shot
+    (14, 0.275,  9.5, 5500, 12, 150, 1.0, True),
+    # lv5 – Outlawed +$12500 | +14 dmg, +2 range, big income
+    (28, 0.275, 11.0,12500, 12, 350, 1.0, True),
 ]
 
 
 class GoldenCowboy(Unit):
-    PLACE_COST       = 550
+    PLACE_COST       = 400
     COLOR            = C_GCOWBOY
     NAME             = "Cowboy"
     hidden_detection = False
@@ -2742,6 +2743,7 @@ class GoldenCowboy(Unit):
         self._spin_t       = 0.0   # animation timer
         self._aim_angle    = 0.0
         self._pending_income = 0   # income to deliver to game
+        self._bullets      = []    # active visual bullet projectiles
         self._apply_level()
 
     def _apply_level(self):
@@ -2763,6 +2765,31 @@ class GoldenCowboy(Unit):
     def update(self, dt, enemies, effects, money):
         self._spin_t += dt
 
+        # Tick visual bullets — damage dealt on contact, not on fire
+        next_bullets = []
+        for b in self._bullets:
+            b['x'] += b['vx'] * dt
+            b['y'] += b['vy'] * dt
+            b['life'] -= dt
+            if b['life'] <= 0:
+                next_bullets.append(b)  # expired without hit — just remove
+                continue
+            # Check collision with target enemy
+            target = b.get('target')
+            hit = False
+            if target is not None and target.alive:
+                if dist((b['x'], b['y']), (target.x, target.y)) < 18:
+                    # Deal damage on contact
+                    if getattr(target, 'IMMUNE_UNITS_ONLY', False):
+                        target.take_damage_from(b['dmg'], "GoldenCowboy")
+                    else:
+                        target.take_damage(b['dmg'])
+                    self.total_damage += b['dmg']
+                    hit = True
+            if not hit:
+                next_bullets.append(b)
+        self._bullets = [b for b in next_bullets if b['life'] > 0]
+
         # Spin phase — no firing
         if self._spinning:
             self._spin_timer -= dt
@@ -2772,19 +2799,30 @@ class GoldenCowboy(Unit):
             return
 
         # Normal fire
-        if self.cd_left > 0: self.cd_left -= dt
+        if self.cd_left > 0:
+            self.cd_left -= dt
         if self.cd_left <= 0:
             targets = self._get_targets(enemies, 1)
             if targets:
                 t = targets[0]
                 self._aim_angle = math.atan2(t.y - self.py, t.x - self.px)
-                self.cd_left = self.firerate
-                if getattr(t, 'IMMUNE_UNITS_ONLY', False):
-                    t.take_damage_from(self.damage, "GoldenCowboy")
-                else:
-                    t.take_damage(self.damage)
-                self.total_damage += self.damage
+                self.cd_left = self.firerate + self.cd_left  # carry over leftover
                 self._shot_count += 1
+
+                # Spawn bullet — damage happens on contact
+                speed = 900.0
+                ang = self._aim_angle
+                travel = dist((self.px, self.py), (t.x, t.y))
+                self._bullets.append({
+                    'x': self.px + math.cos(ang) * 22,
+                    'y': self.py + math.sin(ang) * 22,
+                    'vx': math.cos(ang) * speed,
+                    'vy': math.sin(ang) * speed,
+                    'life': travel / speed + 0.12,
+                    'ang': ang,
+                    'dmg': self.damage,
+                    'target': t,
+                })
 
                 # Cash shot threshold reached
                 if self._shot_count >= self._cash_shot:
@@ -2861,6 +2899,17 @@ class GoldenCowboy(Unit):
         for i in range(self.level):
             pygame.draw.circle(surf, C_GCOWBOY, (cx - 10 + i * 6, cy + 36), 3)
 
+        # Draw active bullets
+        for b in self._bullets:
+            bx, by = int(b['x']), int(b['y'])
+            ang = b['ang']
+            # Elongated golden bullet
+            ca, sa = math.cos(ang), math.sin(ang)
+            tx1 = bx + int(ca * 7);  ty1 = by + int(sa * 7)
+            tx2 = bx - int(ca * 4);  ty2 = by - int(sa * 4)
+            pygame.draw.line(surf, (255, 220, 60), (tx1, ty1), (tx2, ty2), 3)
+            pygame.draw.circle(surf, (255, 255, 180), (tx1, ty1), 2)
+
     def draw_range(self, surf):
         r = int(self.range_tiles * TILE)
         s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
@@ -2869,13 +2918,11 @@ class GoldenCowboy(Unit):
         surf.blit(s, (int(self.px) - r, int(self.py) - r))
 
     def get_info(self):
-        shots_left = self._cash_shot - self._shot_count
         return {
             "Damage":   self.damage,
             "Firerate": f"{self.firerate:.3f}",
             "Range":    self.range_tiles,
-            "CashShot": f"${self._income} in {shots_left}/{self._cash_shot}",
-            "SpinTime": f"{self._spin_time:.1f}s",
+            "Income":   f"${self._income}",
             "HidDet":   "YES" if self.hidden_detection else "no",
         }
 

@@ -138,6 +138,7 @@ ACHIEVEMENT_DEFS = [
     {"id": "millionaire",       "name": "Миллионер",           "desc": "Иметь 100 000 и более монет",                  "color": (255,200,40),  "border": (255,240,100)},
     {"id": "shard_500",         "name": "Искристый",           "desc": "Накопить 500 осколков",                        "color": (100,200,255), "border": (180,240,255)},
     {"id": "shard_1000",        "name": "Кристальный",         "desc": "Накопить 1000 осколков",                       "color": (60,160,255),  "border": (140,220,255)},
+    {"id": "april_fools_2026", "name": "April Fools 2026",    "desc": "Пройти ивент April Fools 2026",                "color": (255, 80, 120), "border": (255, 160, 200)},
 ]
 
 def load_achievements():
@@ -236,22 +237,29 @@ def write_save(data):
 
 
 def fmt_num(n):
-    """Format a number as compact string: 1k, 10k, 1.5M, 1B, etc."""
+    """Format a number as compact string up to sextillions.
+    Examples: 1k, 1.5k, 10k, 1M, 2.5B, 1T, 1Qa, 1Qi, 1Sx"""
     n = int(n)
-    if n < 1000:
-        return str(n)
-    elif n < 1_000_000:
-        v = n / 1000
-        s = f"{v:.1f}" if v != int(v) else str(int(v))
-        return s + "k"
-    elif n < 1_000_000_000:
-        v = n / 1_000_000
-        s = f"{v:.1f}" if v != int(v) else str(int(v))
-        return s + "M"
-    else:
-        v = n / 1_000_000_000
-        s = f"{v:.1f}" if v != int(v) else str(int(v))
-        return s + "B"
+    _STEPS = [
+        (10**21, "Sx"),   # sextillion
+        (10**18, "Qi"),   # quintillion
+        (10**15, "Qa"),   # quadrillion
+        (10**12, "T"),    # trillion
+        (10**9,  "B"),    # billion
+        (10**6,  "M"),    # million
+        (10**3,  "k"),    # thousand
+    ]
+    for threshold, suffix in _STEPS:
+        if n >= threshold:
+            v = n / threshold
+            # 1 decimal only for values < 10, integers otherwise
+            if v >= 10:
+                s = str(int(round(v)))
+            else:
+                rounded = round(v, 1)
+                s = str(int(rounded)) if rounded == int(rounded) else f"{rounded:.1f}"
+            return s + suffix
+    return str(n)
 
 def dist(a, b):
     return math.hypot(a[0]-b[0], a[1]-b[1])

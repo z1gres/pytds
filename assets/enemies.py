@@ -412,6 +412,90 @@ class QuickEnemy(Enemy):
         self._draw_hp_bar(surf,22,4)
         if hovered: self._hover_label(surf)
 
+# ── Hefty: 20 HP, 15% armor, Normal speed (55) ────────────────────────────────
+class HeftyEnemy(Enemy):
+    DISPLAY_NAME="Hefty"; BASE_HP=20; BASE_SPEED=55; ARMOR=0.15; KILL_REWARD=12
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=20; self.maxhp=20
+        self.speed=self.BASE_SPEED+(wave-1)*3; self.radius=19
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob)*2; cx,cy=int(self.x),int(self.y+bob)
+        pygame.draw.circle(surf,(180,100,40),(cx,cy),self.radius)
+        pygame.draw.circle(surf,(240,160,80),(cx-5,cy-5),7)
+        pygame.draw.circle(surf,(255,200,120),(cx,cy),self.radius,3)
+        for i in range(4):
+            a=math.radians(i*90+45)
+            x1=cx+int(math.cos(a)*7); y1=cy+int(math.sin(a)*7)
+            x2=cx+int(math.cos(a)*self.radius); y2=cy+int(math.sin(a)*self.radius)
+            pygame.draw.line(surf,(255,220,140),(x1,y1),(x2,y2),2)
+        self._draw_hp_bar(surf,32,5,(255,200,120))
+        if hovered: self._hover_label(surf)
+
+# ── Invisible: 22 HP, Fast speed (140), hidden ────────────────────────────────
+class InvisibleEnemy(Enemy):
+    DISPLAY_NAME="Invisible"; BASE_HP=22; BASE_SPEED=140; IS_HIDDEN=True; KILL_REWARD=14
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=22; self.maxhp=22
+        self.speed=self.BASE_SPEED+(wave-1)*5; self.radius=13
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*1.5)*2; cx,cy=int(self.x),int(self.y+bob)
+        alpha=180 if detected else (220 if hovered else 70)
+        s=pygame.Surface((60,60),pygame.SRCALPHA)
+        pygame.draw.circle(s,(80,200,255,alpha),(30,30),self.radius)
+        pygame.draw.circle(s,(180,240,255,alpha),(25,25),5)
+        pygame.draw.circle(s,(220,255,255,alpha//2),(30,30),self.radius,2)
+        surf.blit(s,(cx-30,cy-30))
+        if detected or hovered: self._draw_hp_bar(surf,28,4,(80,200,255))
+        if hovered: self._hover_label(surf)
+
+# ── Mystery: 20 HP, Normal*1.15 speed, spawns random enemy on death ───────────
+MYSTERY_SPAWN_POOL = None  # filled after all classes defined (see bottom of file)
+
+class MysteryEnemy(Enemy):
+    DISPLAY_NAME="Mystery"; BASE_HP=20; BASE_SPEED=int(55*1.15); KILL_REWARD=18
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=20; self.maxhp=20
+        self.speed=self.BASE_SPEED+(wave-1)*3; self.radius=17
+        self._spawned_mystery=False
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*1.1)*2; cx,cy=int(self.x),int(self.y+bob)
+        t=self._bob*0.3
+        r=int(128+math.sin(t)*80); g=int(80+math.sin(t+2.1)*70); b=int(200+math.sin(t+4.2)*55)
+        pygame.draw.circle(surf,(r,g,b),(cx,cy),self.radius)
+        pygame.draw.circle(surf,(min(255,r+60),min(255,g+60),min(255,b+60)),(cx-4,cy-4),6)
+        pygame.draw.circle(surf,(220,220,255),(cx,cy),self.radius,2)
+        for i in range(6):
+            a=math.radians(self._bob*30+i*60)
+            px=cx+int(math.cos(a)*(self.radius+5)); py=cy+int(math.sin(a)*(self.radius+5))
+            pygame.draw.circle(surf,(220,200,255),(px,py),2)
+        self._draw_hp_bar(surf,30,5,(200,180,255))
+        if hovered: self._hover_label(surf)
+
+# ── Mega Slow: 1600 HP, Slow*0.85 speed (~24), 5% armor ──────────────────────
+class MegaSlowEnemy(Enemy):
+    DISPLAY_NAME="Mega Slow"; BASE_HP=1600; BASE_SPEED=int(28*0.85); ARMOR=0.05; KILL_REWARD=600
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=1600; self.maxhp=1600
+        self.speed=self.BASE_SPEED; self.radius=30
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*0.4); cx,cy=int(self.x),int(self.y+bob)
+        s=pygame.Surface((132,132),pygame.SRCALPHA)
+        pygame.draw.circle(s,(60,20,80,35),(66,66),62); surf.blit(s,(cx-66,cy-66))
+        pygame.draw.circle(surf,(80,40,120),(cx,cy),self.radius+5,5)
+        pygame.draw.circle(surf,(50,20,80),(cx,cy),self.radius)
+        pygame.draw.circle(surf,(140,80,200),(cx-8,cy-8),12)
+        pygame.draw.circle(surf,(160,100,220),(cx,cy),self.radius,3)
+        for i in range(6):
+            a=math.radians(self._bob*10+i*60)
+            px=cx+int(math.cos(a)*(self.radius+8)); py=cy+int(math.sin(a)*(self.radius+8))
+            pygame.draw.circle(surf,(180,120,240),(px,py),4)
+        self._draw_hp_bar(surf,55,7,(160,100,220))
+        if hovered: self._hover_label(surf)
+
 class SkeletonEnemy(Enemy):
     DISPLAY_NAME="Skeleton"; BASE_HP=55; BASE_SPEED=55; KILL_REWARD=60
     def __init__(self, wave=1):
@@ -696,7 +780,7 @@ class FallenHonorGuard(Enemy):
         if hovered: self._hover_label(surf)
 
 class FallenShield(Enemy):
-    DISPLAY_NAME="Fallen Shield"; BASE_HP=8000; BASE_SPEED=55; ARMOR=0.40
+    DISPLAY_NAME="Fallen Shield"; BASE_HP=8000; BASE_SPEED=55; ARMOR=0.15
     def __init__(self, wave=1):
         super().__init__(wave)
         self.hp=8000; self.maxhp=8000; self.speed=self.BASE_SPEED+(wave-1)*2; self.radius=26
@@ -2091,3 +2175,129 @@ class WaveManager:
     def wave_bmoney(self):
         if 1<=self.wave<len(self.wave_data) and self.wave_data[self.wave]: return self.wave_data[self.wave][2]
         return 0
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HARDCORE BETA — 50 waves, kill-only cash, 100 HP, 700 start money
+# Enemy mapping (no flying enemies — Balloon replaced with BreakerEnemy):
+#   Abnormal=AbnormalEnemy  Quick=QuickEnemy  Hefty=TankEnemy
+#   Invisible=HiddenEnemy   Lead=ArmoredEnemy  Balloon=BreakerEnemy
+#   Mystery=Necromancer     Lead Boss=SlowBoss  Mega Slow=FallenSquire
+#   Fallen Reaper=FallenHonorGuard  Shadow Boss=HiddenBoss
+#   Giant Boss=FallenGiant  Fallen Titan=FallenNecromancer
+#   Mystery Boss=FallenJester  Grave Digger=GraveDigger
+#   Lava=CorruptedFallen    Slow King=NecroticSkeleton
+#   Error=FallenRusher      Circuit=Frostmite
+#   Soul=FallenSoul         Fallen Hero=FallenHero
+#   Soul Stealer=PossessedArmor  Warden=FallenShield
+#   Fallen Swordmaster=FallenEnemy (fast fallen)
+#   Fallen Guardian=FallenBreaker  Fallen King=FallenKing
+#   Necromancer Boss=FallenNecromancer  Speedy King=ScoutEnemy (fast)
+#   Health Cultist=FallenHazmat  Soul Boss=FallenGiant
+#   Molten Titan=OtchimusPrime   Vindicator=FallenKing
+# Wave reward tuple: (groups, wave_bonus_cash, wave_clear_cash)
+# In hardcore mode both bonuses are 0 — all money from kills only.
+# ══════════════════════════════════════════════════════════════════════════════
+MYSTERY_SPAWN_POOL = [AbnormalEnemy, QuickEnemy, HeftyEnemy, InvisibleEnemy, NormalBoss]
+
+HARDCORE_MAX_WAVES = 50
+HARDCORE_WAVE_DATA = [
+    None,                                                                                                       # 0
+    # ── Early waves (1-6): Abnormal / Quick ───────────────────────────────────
+    ([(AbnormalEnemy, 6)],                                                  0, 0),                              # 1
+    ([(AbnormalEnemy, 9)],                                                  0, 0),                              # 2
+    ([(AbnormalEnemy, 12)],                                                 0, 0),                              # 3
+    ([(QuickEnemy, 8)],                                                     0, 0),                              # 4
+    ([(AbnormalEnemy, 12), (QuickEnemy, 6)],                                0, 0),                              # 5
+    ([(AbnormalEnemy, 6), (QuickEnemy, 12)],                                0, 0),                              # 6
+    # ── Hefty introduced (7-9) ────────────────────────────────────────────────
+    ([(HeftyEnemy, 10)],                                                    0, 0),                              # 7  Hefty
+    ([(AbnormalEnemy, 5), (QuickEnemy, 5), (HeftyEnemy, 5)],                0, 0),                              # 8
+    ([(HeftyEnemy, 16)],                                                    0, 0),                              # 9  Hefty spam
+    # ── Invisible introduced (10) ─────────────────────────────────────────────
+    ([(InvisibleEnemy, 6)],                                                 0, 0),                              # 10 Invisible
+    # ── Mixed heavy (11-15) ───────────────────────────────────────────────────
+    ([(HeftyEnemy, 8), (AbnormalEnemy, 4), (QuickEnemy, 4)],                0, 0),                              # 11
+    ([(HeftyEnemy, 16), (AbnormalEnemy, 12), (QuickEnemy, 8),
+      (InvisibleEnemy, 3)],                                                 0, 0),                              # 12 big mixed
+    ([(InvisibleEnemy, 12)],                                                0, 0),                              # 13 Invisible
+    ([(InvisibleEnemy, 12), (HeftyEnemy, 16)],                              0, 0),                              # 14
+    ([(AbnormalEnemy, 12), (HeftyEnemy, 8), (QuickEnemy, 8),
+      (InvisibleEnemy, 5)],                                                 0, 0),                              # 15
+    # ── Normal Boss introduced (16-20) ────────────────────────────────────────
+    ([(QuickEnemy, 5), (HeftyEnemy, 8), (NormalBoss, 2)],                   0, 0),                              # 16 Normal Boss
+    ([(MysteryEnemy, 10)],                                                  0, 0),                              # 17 Mystery
+    ([(MysteryEnemy, 2), (HeftyEnemy, 6), (InvisibleEnemy, 8),
+      (NormalBoss, 2)],                                                     0, 0),                              # 18
+    ([(AbnormalEnemy, 2), (QuickEnemy, 2), (HeftyEnemy, 2),
+      (InvisibleEnemy, 4), (MysteryEnemy, 2), (NormalBoss, 2),
+      (MegaSlowEnemy, 1)],                                                  0, 0),                              # 19 Mega Slow
+    ([(NormalBoss, 7)],                                                     0, 0),                              # 20
+    # ── Shadow/Hidden bosses (21-25) ──────────────────────────────────────────
+    ([(Necromancer, 4), (TankEnemy, 6), (BreakerEnemy, 8), (SlowBoss, 2),
+      (HiddenBoss, 1)],                                                     0, 0),                              # 21 Shadow Boss
+    ([(QuickEnemy, 8), (HiddenEnemy, 6), (BreakerEnemy, 6),
+      (Necromancer, 6), (SlowBoss, 2)],                                     0, 0),                              # 22
+    ([(ArmoredEnemy, 8), (HiddenBoss, 1)],                                  0, 0),                              # 23
+    ([(ArmoredEnemy, 10), (BreakerEnemy, 4), (HiddenEnemy, 2),
+      (FallenSquire, 2), (Necromancer, 4), (FallenHonorGuard, 1)],          0, 0),                              # 24 Fallen Reaper
+    ([(SlowBoss, 10), (HiddenBoss, 3)],                                     0, 0),                              # 25
+    # ── Fallen-tier enemies enter (26-30) ─────────────────────────────────────
+    ([(ArmoredEnemy, 15), (FallenSquire, 2), (FallenHonorGuard, 2)],        0, 0),                              # 26
+    ([(FallenRusher, 8)],                                                   0, 0),                              # 27 Error (fast)
+    ([(FallenRusher, 12), (SlowBoss, 2), (ArmoredEnemy, 8)],                0, 0),                              # 28
+    ([(FallenSquire, 2), (FallenRusher, 10), (FallenHonorGuard, 3),
+      (HiddenBoss, 3)],                                                     0, 0),                              # 29
+    ([(FallenSquire, 3), (Necromancer, 10), (FallenRusher, 10),
+      (SlowBoss, 2)],                                                       0, 0),                              # 30
+    # ── Heavy bosses (31-35) ───────────────────────────────────────────────────
+    ([(ArmoredEnemy, 10), (BreakerEnemy, 1), (SlowBoss, 1), (FallenHonorGuard, 1),
+      (FallenHonorGuard, 6), (Necromancer, 8), (TankEnemy, 6), (FallenRusher, 6),
+      (FallenSquire, 2), (FallenGiant, 1)],                                 0, 0),                              # 31
+    ([(FallenGiant, 4), (FallenSquire, 2), (FallenHonorGuard, 2),
+      (FallenRusher, 5), (HiddenBoss, 5)],                                  0, 0),                              # 32
+    ([(HiddenBoss, 2), (Necromancer, 8), (FallenGiant, 1),
+      (FallenNecromancer, 8), (FallenJester, 1)],                           0, 0),                              # 33 Mystery Boss
+    ([(FallenGiant, 3), (FallenNecromancer, 1), (ArmoredEnemy, 15),
+      (Necromancer, 10), (ArmoredEnemy, 2), (SlowBoss, 2)],                 0, 0),                              # 34
+    ([(FallenGiant, 4), (FallenRusher, 2), (FallenNecromancer, 2)],         0, 0),                              # 35
+    # ── Grave Digger + Lava + endgame (36-40) ─────────────────────────────────
+    ([(FallenSquire, 8), (FallenJester, 5), (FallenNecromancer, 2),
+      (GraveDigger, 1), (FallenRusher, 8), (FallenHonorGuard, 1)],          0, 0),                              # 36 Grave Digger
+    ([(FallenGiant, 2), (FallenSquire, 4), (CorruptedFallen, 12),
+      (FallenJester, 8), (Necromancer, 8)],                                 0, 0),                              # 37 Lava (CorruptedFallen)
+    ([(FallenSquire, 6), (FallenGiant, 4), (BreakerEnemy, 12),
+      (CorruptedFallen, 8), (FallenJester, 2)],                             0, 0),                              # 38
+    ([(SlowBoss, 8), (BreakerEnemy, 8), (Necromancer, 10),
+      (FallenJester, 10)],                                                  0, 0),                              # 39
+    ([(CorruptedFallen, 7), (FallenJester, 8), (Necromancer, 8),
+      (FallenGiant, 4), (BreakerEnemy, 4)],                                 0, 0),                              # 40
+    # ── True endgame (41-50) ──────────────────────────────────────────────────
+    ([(CorruptedFallen, 12), (FallenSquire, 6), (FallenGiant, 4),
+      (FallenJester, 4), (NecroticSkeleton, 5)],                            0, 0),                              # 41
+    ([(Necromancer, 15), (FallenRusher, 7), (BreakerEnemy, 6),
+      (FallenJester, 8), (Frostmite, 8), (CorruptedFallen, 8)],             0, 0),                              # 42
+    ([(Frostmite, 8), (FallenNecromancer, 1), (CorruptedFallen, 16),
+      (BreakerEnemy, 8), (NecroticSkeleton, 2), (FallenJester, 3)],         0, 0),                              # 43
+    ([(CorruptedFallen, 20), (FallenSquire, 5), (FallenGiant, 1),
+      (FallenNecromancer, 3), (Frostmite, 1), (FallenJester, 1)],           0, 0),                              # 44
+    ([(FallenShield, 1), (Necromancer, 8), (FallenJester, 10),
+      (FallenSquire, 10), (FallenHazmat, 1), (Frostmite, 3),
+      (FallenRusher, 3), (FallenHero, 3)],                                  0, 0),                              # 45
+    ([(Necromancer, 16), (FallenEnemy, 12), (FallenSoul, 6),
+      (FallenJester, 4), (FallenHonorGuard, 3), (FallenNecromancer, 1),
+      (FallenKing, 1)],                                                     0, 0),                              # 46
+    ([(FallenJester, 10), (FallenGiant, 6), (NecroticSkeleton, 8),
+      (FallenHonorGuard, 2), (FallenRusher, 8), (FallenEnemy, 8),
+      (FallenNecromancer, 2), (FallenJester, 5), (Frostmite, 4)],           0, 0),                              # 47
+    ([(FallenHero, 3), (FallenJester, 8), (FallenNecromancer, 9),
+      (FallenEnemy, 5), (FallenSoul, 3), (FallenGiant, 4), (FallenJester, 2),
+      (FallenRusher, 6), (FallenHonorGuard, 2), (NecroticSkeleton, 4),
+      (FallenKing, 1)],                                                     0, 0),                              # 48
+    ([(FallenHero, 3), (FallenEnemy, 5), (FallenSoul, 4), (FallenGiant, 2),
+      (NecroticSkeleton, 2), (FallenKing, 1), (FallenJester, 6)],           0, 0),                              # 49
+    ([(FallenHero, 10), (FallenGiant, 10), (FallenNecromancer, 10),
+      (FallenHonorGuard, 4), (FallenJester, 2), (FallenKing, 2),
+      (FallenRusher, 12), (Necromancer, 8), (GraveDigger, 1),
+      (FallenEnemy, 2), (FallenShield, 1)],                                 0, 0),                              # 50
+]
