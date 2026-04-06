@@ -139,6 +139,14 @@ ACHIEVEMENT_DEFS = [
     {"id": "shard_500",         "name": "Искристый",           "desc": "Накопить 500 осколков",                        "color": (100,200,255), "border": (180,240,255)},
     {"id": "shard_1000",        "name": "Кристальный",         "desc": "Накопить 1000 осколков",                       "color": (60,160,255),  "border": (140,220,255)},
     {"id": "april_fools_2026", "name": "April Fools 2026",    "desc": "Пройти ивент April Fools 2026",                "color": (255, 80, 120), "border": (255, 160, 200)},
+    # ── New achievements ──────────────────────────────────────────────────────
+    {"id": "hardcore_clear",   "name": "Хардкорщик",          "desc": "Пройти Hardcore режим",                       "color": (220, 60, 20),  "border": (255, 120, 60)},
+    {"id": "hardcore_loss50",  "name": "Почти...",             "desc": "Проиграть на волне 50 в Hardcore",            "color": (160, 30, 30),  "border": (220, 80, 60)},
+    {"id": "has_skin",         "name": "Стилист",              "desc": "Иметь хотя бы 1 скин",                        "color": (200, 100, 220),"border": (230, 160, 255)},
+    {"id": "hardcore_beta",    "name": "Бета-тестер",          "desc": "Доиграть до конца хотя бы одну Hardcore BETA","color": (80, 180, 255), "border": (140, 220, 255)},
+    {"id": "naked_run",        "name": "Налегке",              "desc": "Запустить игру без одетых юнитов",            "color": (120, 120, 120),"border": (180, 180, 180)},
+    {"id": "fallen_duo",       "name": "Дуэт",                 "desc": "Пройти Fallen с не более 2 юнитами",          "color": (180, 60, 255), "border": (210, 120, 255)},
+    {"id": "grand_slam",       "name": "Гранд-слэм",           "desc": "Пройти Easy→Fallen→Frosty→Hardcore без поражений подряд", "color": (255, 200, 0), "border": (255, 240, 80)},
 ]
 
 def load_achievements():
@@ -236,10 +244,21 @@ def write_save(data):
     except: pass
 
 
+# Compact number display toggle (1000 → 1k). Toggled from SETTINGS in game.py
+_COMPACT_NUMBERS = True
+
 def fmt_num(n):
-    """Format a number as compact string up to sextillions.
+    """Format a number as compact string up to sextillions (only when compact_numbers enabled).
     Examples: 1k, 1.5k, 10k, 1M, 2.5B, 1T, 1Qa, 1Qi, 1Sx"""
     n = int(n)
+    # Check global setting — default True (compact on)
+    try:
+        from game_core import _COMPACT_NUMBERS
+        compact = _COMPACT_NUMBERS
+    except Exception:
+        compact = True
+    if not compact:
+        return str(n)
     _STEPS = [
         (10**21, "Sx"),   # sextillion
         (10**18, "Qi"),   # quintillion

@@ -3003,7 +3003,7 @@ class DifficultyMenu:
         _hf1 = pygame.font.SysFont("consolas", 22, bold=True)
         _hf2 = pygame.font.SysFont("segoeui", 13)
         _hs1 = _hf1.render("HARDCORE BETA", True, (_pulse_r, 100, 100) if hov_hardcore else (220, 60, 60))
-        _hs2 = _hf2.render("50 волн · 100 HP · 1.5× цены · деньги только за убийства", True, (160, 80, 80))
+        _hs2 = _hf2.render("50 волн · 100 HP · 1.5× цены · деньги за волны и убийства", True, (160, 80, 80))
         self.screen.blit(_hs1, (_hc.x + 52, _hc.y + 8))
         self.screen.blit(_hs2, (_hc.x + 52, _hc.y + 34))
 
@@ -3350,6 +3350,8 @@ SETTINGS = {
     "screen_shake":   True,
     "particles":      True,
     "show_damage":    True,
+    "compact_numbers": True,
+    "auto_skip":      False,
 }
 
 def _apply_audio_settings():
@@ -3378,6 +3380,10 @@ def save_settings():
     except Exception: pass
 
 load_settings()
+game_core._COMPACT_NUMBERS = SETTINGS.get("compact_numbers", True)
+
+def _sync_compact():
+    game_core._COMPACT_NUMBERS = SETTINGS.get("compact_numbers", True)
 
 # ── Patch Unit.draw_range for colored range rings ─────────────────────────────
 def _patched_draw_range(self, surf):
@@ -3425,6 +3431,7 @@ class SettingsScreen:
             ("music_muted",  "Мут музыки"),
             ("colored_range","Цветной рейндж"),
             ("screen_shake", "Тряска экрана"),
+            ("compact_numbers", "Сокр. числа (1k)"),
         ]
         return [(pygame.Rect(x, y0 + i*(th+gap), tw, th), k, lbl) for i,(k,lbl) in enumerate(keys)]
 
@@ -3436,6 +3443,7 @@ class SettingsScreen:
             ("particles",    "Партикли/эффекты"),
             ("show_damage",  "Числа урона/денег"),
             ("show_fps",     "Показывать FPS"),
+            ("auto_skip",    "Авто-скип волн"),
         ]
         return [(pygame.Rect(x, y0 + i*(th+gap), tw, th), k, lbl) for i,(k,lbl) in enumerate(keys)]
 
@@ -3455,6 +3463,7 @@ class SettingsScreen:
                     if self._drag_sfx:   self._set_sfx_vol(ev.pos[0])
             self._draw(); pygame.display.flip()
         save_settings()
+        _sync_compact()
 
     def _handle_click(self, pos):
         if self.btn_back.collidepoint(pos): self.running = False; return
@@ -4705,15 +4714,11 @@ class LoadoutScreen:
                     surf.blit(dim, card_r.topleft)
 
                     if rarity == "exclusive":
-                        ls3 = lock_f.render("🔒", True, (200,130,130))
-                        surf.blit(ls3, ls3.get_rect(center=(cx2, cy2 + 8)))
                         es  = excl_f.render("EXCLUSIVE", True, (220,65,65))
-                        surf.blit(es, es.get_rect(center=(cx2, cy2 + 30)))
+                        surf.blit(es, es.get_rect(center=(cx2, cy2 + 8)))
                     elif rarity == "mythic":
                         SHARD_PRICES = {"Caster": 1000, "Jester": 300}
                         shard_price = SHARD_PRICES.get(u["name"])
-                        ls3 = lock_f.render("🔒", True, (255, 220, 80))
-                        surf.blit(ls3, ls3.get_rect(center=(cx2, cy2 - 18)))
                         if shard_price is not None:
                             shards_have = self.save_data.get("shards", 0)
                             can_buy_s   = shards_have >= shard_price
@@ -4739,8 +4744,6 @@ class LoadoutScreen:
                                 surf.blit(lbl_sh, lbl_sh.get_rect(center=btn_r.center))
                             self._shard_buy_hits.append((btn_r, u))
                     else:
-                        ls3 = lock_f.render("🔒", True, (130,200,130))
-                        surf.blit(ls3, ls3.get_rect(center=(cx2, cy2 - 18)))
                         price = UNIT_SHOP_PRICES.get(u["name"], 0)
                         if price is not None:
                             can_buy = self.save_data.get("coins", 0) >= price
@@ -4781,11 +4784,12 @@ class LoadoutScreen:
 class PauseMenu:
     def __init__(self, screen):
         self.screen = screen
-        cw, ch = 300, 220
+        cw, ch = 300, 280
         cx, cy = SCREEN_W//2, SCREEN_H//2
         self.panel = pygame.Rect(cx - cw//2, cy - ch//2, cw, ch)
-        self.btn_resume = pygame.Rect(cx - 110, cy - 30, 220, 50)
-        self.btn_menu   = pygame.Rect(cx - 110, cy + 30, 220, 50)
+        self.btn_resume   = pygame.Rect(cx - 110, cy - 70, 220, 50)
+        self.btn_settings = pygame.Rect(cx - 110, cy - 5,  220, 50)
+        self.btn_menu     = pygame.Rect(cx - 110, cy + 60, 220, 50)
 
     def draw(self, hayden_eligible=False):
         draw_rect_alpha(self.screen, C_BLACK, (0, 0, SCREEN_W, SCREEN_H), 160)
@@ -4793,7 +4797,11 @@ class PauseMenu:
         pygame.draw.rect(self.screen, C_BORDER, self.panel, 2, border_radius=12)
         txt(self.screen, "PAUSED", (SCREEN_W//2, self.panel.y + 30), C_CYAN, font_xl, center=True)
         mx, my = pygame.mouse.get_pos()
-        for btn, label in [(self.btn_resume, "▶  RESUME"), (self.btn_menu, "⌂  MAIN MENU")]:
+        for btn, label in [
+            (self.btn_resume,   "▶  RESUME"),
+            (self.btn_settings, "⚙  SETTINGS"),
+            (self.btn_menu,     "⌂  MAIN MENU"),
+        ]:
             hov = btn.collidepoint(mx, my)
             bg = (60, 80, 130) if hov else (35, 45, 70)
             pygame.draw.rect(self.screen, bg, btn, border_radius=8)
@@ -4801,8 +4809,9 @@ class PauseMenu:
             txt(self.screen, label, btn.center, C_WHITE, font_lg, center=True)
 
     def handle_click(self, pos):
-        if self.btn_resume.collidepoint(pos): return "resume"
-        if self.btn_menu.collidepoint(pos):   return "menu"
+        if self.btn_resume.collidepoint(pos):   return "resume"
+        if self.btn_settings.collidepoint(pos): return "settings"
+        if self.btn_menu.collidepoint(pos):     return "menu"
         return None
 
 
@@ -5030,7 +5039,7 @@ class Game:
         self._frosty_bgm_stopped = False  # True once wave 40 starts (don't restart)
         self.ui=UI()
         self.ui.admin_mode = admin_mode or (mode == "sandbox")
-        self.ui.cost_mult = 1.5 if mode == "hardcore" else 1.0
+        self.ui.cost_mult = 1.35 if mode == "hardcore" else 1.0
         self._fallen_king_music_timer = None  # countdown until FallenKing spawns after music starts
         self._fallen_king_spawned = False
         self._fallen_king_shake = 0.0
@@ -5087,6 +5096,7 @@ class Game:
         self._easy_boss_leaked = False
         self._easy_boss_let_through = False  # boss reached end with hp < player hp
         self._wave_ever_leaked = False  # for frosty_perfect achievement
+        self._max_units_placed = 0      # peak simultaneous units on field (for fallen_duo)
 
         # Apply saved loadout to slot types
         _name_to_cls = {"Assassin": Assassin, "Accelerator": Accelerator,
@@ -5112,6 +5122,12 @@ class Game:
         _loadout = self.save_data.get("loadout", ["Assassin", "Accelerator", None, None, None])
         while len(_loadout) < 5: _loadout.append(None)
         self.ui.SLOT_TYPES = [_name_to_cls.get(n) if n else None for n in _loadout]
+        # ── Achievement: naked_run — start game with no units equipped ──
+        if mode not in ("sandbox",) and all(s is None for s in self.ui.SLOT_TYPES):
+            self.ach_mgr.try_grant("naked_run")
+        # ── Achievement: has_skin — player owns at least one skin ──
+        if self.save_data.get("skins"):
+            self.ach_mgr.try_grant("has_skin")
         # Sandbox mode: empty loadout, infinite money
         if mode == "sandbox":
             self.natural_spawn_stopped = True
@@ -5119,7 +5135,7 @@ class Game:
             self.money = 9999999999
             self.ui.SLOT_TYPES = [None, None, None, None, None]
         # Hardcore: 1.5× placement and upgrade cost multiplier
-        self._hc_cost_mult = 1.5 if mode == "hardcore" else 1.0
+        self._hc_cost_mult = 1.35 if mode == "hardcore" else 1.0
         # Frosty: force the map
         if mode == "frosty":
             game_core.CURRENT_MAP = "frosty"
@@ -5142,7 +5158,7 @@ class Game:
         pass
 
     def _give_wave_coins(self, wave_num):
-        if self.mode not in ("easy", "fallen", "frosty", "endless", "infernal"): return
+        if self.mode not in ("easy", "fallen", "frosty", "endless", "infernal", "hardcore"): return
         if wave_num <= self._last_coin_wave: return
         waves_done = wave_num - self._last_coin_wave
         self._last_coin_wave = wave_num
@@ -5151,6 +5167,9 @@ class Game:
         # Frosty: 1500 total / 40 waves = 37.5 per wave
         # Infernal: 500 total / 34 waves ≈ 14.7 per wave
         # Endless: 0.5 per wave
+        # Hardcore: no coins/shards — in-game money given per wave (see wave bonus section)
+        if self.mode == "hardcore":
+            return
         rate = {"easy": 12.5, "fallen": 18.75, "frosty": 37.5, "infernal": 14.7, "endless": 0.5}.get(self.mode, 12.5)
         self._wave_coin_accum += waves_done * rate
         whole = int(self._wave_coin_accum)
@@ -5169,7 +5188,7 @@ class Game:
                     earned = milestones_hit * 5
                     self.save_data["shards"] = self.save_data.get("shards", 0) + earned
                     write_save(self.save_data)
-                    self._show_msg(f"+{earned} ◆ shards! (wave {wave_num})")
+                    self.ui.show_msg(f"+{earned} ◆ shards! (wave {wave_num})")
 
     def _apply_stun(self, unit, duration):
         unit._stun_timer = max(getattr(unit,"_stun_timer",0), duration)
@@ -5409,6 +5428,8 @@ class Game:
                     if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                         action = self.pause_menu.handle_click(ev.pos)
                         if action == "resume": self.paused = False
+                        elif action == "settings":
+                            SettingsScreen(self.screen).run()
                         elif action == "menu":
                             self.paused = False; self.running = False
                             self.return_to_menu = True
@@ -5425,7 +5446,13 @@ class Game:
                         u = self.ui.open_unit; cost = u.upgrade_cost()
                         if cost is not None:
                             cost = int(cost * getattr(self.ui, 'cost_mult', 1.0))
-                        if cost and self.money >= cost: u.upgrade(); self.money -= cost
+                        if cost and self.money >= cost:
+                            u.upgrade(); self.money -= cost
+                            # Re-apply Enhanced Optics range bonus after upgrade
+                            if getattr(self, '_sk_range_bonus', 0) > 0:
+                                base_r = getattr(u, '_base_range_tiles', u.range_tiles)
+                                u._base_range_tiles = u.range_tiles
+                                u.range_tiles = round(u.range_tiles * (1.0 + self._sk_range_bonus), 4)
                         elif cost: self.ui.show_msg("Not enough money!")
                         else: self.ui.show_msg("Max level!")
                     if ev.key == pygame.K_x and self.ui.open_unit:
@@ -5489,6 +5516,7 @@ class Game:
                     if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                         _pre_open = self.ui.open_unit
                         _pre_units_len = len(self.units)
+                        _pre_open_lvl = getattr(_pre_open, 'level', -1) if _pre_open else -1
                         delta = self.ui.handle_click(ev.pos, self.units, self.money,
                                                      self.effects, self.enemies,
                                                      self.wave_mgr.wave, self.save_data, self.mode,
@@ -5499,6 +5527,12 @@ class Game:
                             if _res_lvl > 0:
                                 delta = int(delta * (1.0 + _res_lvl * 0.012))
                         self.money += delta
+                        # Re-apply Enhanced Optics range bonus if unit was upgraded
+                        if getattr(self, '_sk_range_bonus', 0) > 0 and _pre_open is not None:
+                            _post_lvl = getattr(_pre_open, 'level', -1)
+                            if _post_lvl > _pre_open_lvl:
+                                _pre_open._base_range_tiles = _pre_open.range_tiles
+                                _pre_open.range_tiles = round(_pre_open.range_tiles * (1.0 + self._sk_range_bonus), 4)
                         if self._hixw5yt_frozen:
                             for e in self.enemies:
                                 if e.alive and dist((e.x,e.y),ev.pos) <= e.radius+8:
@@ -5536,13 +5570,19 @@ class Game:
                         # Apply Enhanced Optics range bonus to newly placed unit
                         if len(self.units) > _pre_len and getattr(self, '_sk_range_bonus', 0) > 0:
                             _new_u = self.units[-1]
-                            _new_u.range_tiles = _new_u.range_tiles * (1.0 + self._sk_range_bonus)
+                            _new_u._base_range_tiles = _new_u.range_tiles
+                            _new_u.range_tiles = round(_new_u.range_tiles * (1.0 + self._sk_range_bonus), 4)
 
             if not self.game_over and not self.win:
                 self._elapsed += raw_dt
                 self._real_elapsed += raw_dt
             prev_wave = self.wave_mgr.wave
             if not self.paused and not self.game_over and not self.win:
+                # ── Auto-skip: automatically skip prep/between timers if enabled ──
+                if SETTINGS.get("auto_skip", False):
+                    if getattr(self.wave_mgr, 'can_skip', lambda: False)():
+                        _do_s = getattr(self.wave_mgr, 'do_skip', None)
+                        if _do_s: _do_s()
                 if not getattr(self,'natural_spawn_stopped',False):
                     _pre_count = len(self.enemies)
                     self.wave_mgr.update(dt,self.enemies)
@@ -5864,6 +5904,12 @@ class Game:
                         if any(isinstance(e,FallenKing)
                                for e in dead_reached):
                             self.ach_mgr.try_grant("king_victim")
+                    # ── Achievement: hardcore_loss50 — lose exactly on wave 50 of hardcore
+                    if self.mode=="hardcore" and self.wave_mgr.wave==50:
+                        self.ach_mgr.try_grant("hardcore_loss50")
+                    # ── grand_slam chain broken on loss — reset
+                    self.save_data["_gs_chain"] = []
+                    write_save(self.save_data)
                     try:
                         pygame.mixer.music.set_endevent(0)
                         pygame.mixer.music.stop()
@@ -6219,7 +6265,33 @@ class Game:
                         and not any(e.alive for e in self.enemies) and not self.wave_mgr._lmoney_paid):
                     lm=self.wave_mgr.wave_lmoney(); bm=self.wave_mgr.wave_bmoney()
                     if self.mode == "hardcore":
-                        lm = 0; bm = 0  # kill-only economy — no wave bonuses
+                        _hc_w = self.wave_mgr.wave
+                        _HC_LM = {
+                            1:204,  2:250,  3:298,  4:347,  5:400,
+                            6:446,  7:496,  8:546,  9:596,  10:647,
+                            11:698, 12:759, 13:800, 14:851, 15:874,
+                            16:954, 17:978, 18:995, 19:1057, 20:1109,
+                            21:1161,22:1213,23:1265,24:1317,25:1421,
+                            26:1467,27:1526,28:1579,29:1634,30:1684,
+                            31:1734,32:1795,33:1813,34:1875,35:2000,
+                            36:2100,37:2200,38:2300,39:2400,40:2500,
+                            41:2600,42:2700,43:2800,44:2900,45:3000,
+                            46:3100,47:3200,48:3300,49:3400,50:15000,
+                        }
+                        _HC_BM = {
+                            1:0,   2:50,  3:59,  4:69,  5:80,
+                            6:94,  7:99,  8:109, 9:119, 10:129,
+                            11:139,12:156,13:160,14:170,15:180,
+                            16:190,17:200,18:205,19:211,20:221,
+                            21:232,22:242,23:253,24:273,25:286,
+                            26:297,27:305,28:315,29:334,30:336,
+                            31:341,32:349,33:359,34:364,35:380,
+                            36:400,37:450,38:500,39:550,40:600,
+                            41:650,42:700,43:750,44:800,45:850,
+                            46:900,47:950,48:1000,49:1050,50:0,
+                        }
+                        lm = _HC_LM.get(_hc_w, 0)
+                        bm = _HC_BM.get(_hc_w, 0)
                     elif self.mode == "frosty":
                         if lm: lm += 150
                         if bm: bm += 150
@@ -6286,6 +6358,9 @@ class Game:
                         # ── Grant achievements on win ──
                         if self.mode == "fallen":
                             self.ach_mgr.try_grant("fallen_angel")
+                            # fallen_duo: win Fallen with at most 2 units placed total
+                            if getattr(self, "_max_units_placed", 0) <= 2:
+                                self.ach_mgr.try_grant("fallen_duo")
                         elif self.mode == "frosty":
                             self.ach_mgr.try_grant("frosty_clear")
                             # Reward: unlock Frostcelerator
@@ -6313,6 +6388,17 @@ class Game:
                             # April Fools 2026 event achievement
                             if game_core.CURRENT_MAP == "event":
                                 self.ach_mgr.try_grant("april_fools_2026")
+                        elif self.mode == "hardcore":
+                            self.ach_mgr.try_grant("hardcore_clear")
+                            self.ach_mgr.try_grant("hardcore_beta")
+                        # ── grand_slam: track Easy→Fallen→Frosty→Hardcore chain ──
+                        if self.mode in ("easy", "fallen", "frosty", "hardcore"):
+                            chain = self.save_data.get("_gs_chain", [])
+                            chain.append(self.mode)
+                            self.save_data["_gs_chain"] = chain[-4:]
+                            write_save(self.save_data)
+                            if self.save_data["_gs_chain"] == ["easy", "fallen", "frosty", "hardcore"]:
+                                self.ach_mgr.try_grant("grand_slam")
                         # frosty perfect (no leaks)
                         if self.mode == "frosty" and not getattr(self, "_wave_ever_leaked", False):
                             self.ach_mgr.try_grant("frosty_perfect")
@@ -6350,7 +6436,11 @@ class Game:
                 # Track leaks for frosty_perfect
                 if dead_reached:
                     self._wave_ever_leaked = True
-    
+
+                # Track peak units on field (for fallen_duo achievement)
+                if len(self.units) > getattr(self, "_max_units_placed", 0):
+                    self._max_units_placed = len(self.units)
+
                 # ── Achievement: free_pass ─ GraveDigger (easy final boss) leaks with hp < player_hp ──
                 if self.mode == "easy" and not self.game_over:
                     for e in dead_reached:
@@ -7027,8 +7117,6 @@ class MainMenu(_OrigMainMenu):
         surf.blit(glow_s, (cx - 350, 130))
         title_s = title_font.render("TOWER DEFENSE", True, (r3, g3, 255))
         surf.blit(title_s, title_s.get_rect(center=(cx, 170)))
-        sub_s = sub_font.render("kakashki", True, (60, 70, 100))
-        surf.blit(sub_s, sub_s.get_rect(center=(cx, 215)))
 
         # ── Buttons ───────────────────────────────────────────────────────────
         def draw_fancy_btn(rect, label, hov, accent=(80, 120, 255)):

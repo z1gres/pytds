@@ -2991,7 +2991,7 @@ class HallowPunkRocket:
             if d <= self.splash_r:
                 e.take_damage(self.damage)
                 # Knockback — push enemy backward along its path direction
-                if self.knockback > 0 and not getattr(e, 'frozen', False):
+                if self.knockback > 0 and not getattr(e, 'frozen', False) and not getattr(e, '_stun_immune', False):
                     push = self.knockback * max(0.2, 1.0 - d / self.splash_r)
                     path = getattr(e, '_frosty_path', None)
                     if path is None:
@@ -3005,6 +3005,23 @@ class HallowPunkRocket:
                     # Push opposite to movement direction (backward)
                     e.x -= (dx2 / d2) * push
                     e.y -= (dy2 / d2) * push
+                    # Recalculate _wp_index so enemy walks to the correct next waypoint
+                    # Find the first waypoint that is strictly ahead of the new position
+                    best_idx = 1
+                    for pi in range(1, len(path)):
+                        px2, py2 = path[pi]
+                        # Check progress along path: if this waypoint is past our current pos
+                        ppx, ppy = path[pi - 1]
+                        seg_dx = px2 - ppx; seg_dy = py2 - ppy
+                        seg_len = math.hypot(seg_dx, seg_dy) or 1
+                        # Project enemy position onto segment
+                        to_e_x = e.x - ppx; to_e_y = e.y - ppy
+                        t_proj = (to_e_x * seg_dx + to_e_y * seg_dy) / (seg_len * seg_len)
+                        if t_proj < 1.0:
+                            best_idx = pi
+                            break
+                        best_idx = pi + 1
+                    e._wp_index = min(max(best_idx, 1), len(path) - 1)
                 # Burn (lv1+)
                 if self.burn_dmg > 0:
                     e._fire_timer = max(getattr(e, '_fire_timer', 0.0), self.burn_time * _dm())
