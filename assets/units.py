@@ -2765,9 +2765,20 @@ class GoldenCowboy(Unit):
     def update(self, dt, enemies, effects, money):
         self._spin_t += dt
 
-        # Tick visual bullets — damage dealt on contact, not on fire
+        # Tick visual bullets — homing so they never miss
         next_bullets = []
         for b in self._bullets:
+            target = b.get('target')
+            # Home toward live target every frame
+            if target is not None and target.alive:
+                dx = target.x - b['x']
+                dy = target.y - b['y']
+                d = math.hypot(dx, dy)
+                if d > 1:
+                    speed = math.hypot(b['vx'], b['vy'])
+                    b['vx'] = (dx / d) * speed
+                    b['vy'] = (dy / d) * speed
+                    b['ang'] = math.atan2(dy, dx)
             b['x'] += b['vx'] * dt
             b['y'] += b['vy'] * dt
             b['life'] -= dt
@@ -2775,7 +2786,6 @@ class GoldenCowboy(Unit):
                 next_bullets.append(b)  # expired without hit — just remove
                 continue
             # Check collision with target enemy
-            target = b.get('target')
             hit = False
             if target is not None and target.alive:
                 if dist((b['x'], b['y']), (target.x, target.y)) < 18:
@@ -2818,7 +2828,7 @@ class GoldenCowboy(Unit):
                     'y': self.py + math.sin(ang) * 22,
                     'vx': math.cos(ang) * speed,
                     'vy': math.sin(ang) * speed,
-                    'life': travel / speed + 0.12,
+                    'life': travel / speed + 1.5,  # extended: homing needs time to catch fast enemies
                     'ang': ang,
                     'dmg': self.damage,
                     'target': t,
@@ -4484,7 +4494,7 @@ class HackerLaserTest(Unit):
         self._apply_level()
 
     def _get_sfx_vol(self):
-        from game_core import SETTINGS
+        SETTINGS = getattr(_game_core_ref, "SETTINGS", {})
         if SETTINGS.get("sfx_muted"): return 0.0
         return max(0.0, SETTINGS.get("sfx_volume", 0.7) / 6.0)
 

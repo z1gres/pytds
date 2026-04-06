@@ -262,10 +262,15 @@ class GraveDigger(Enemy):
     DISPLAY_NAME="Grave Digger"; BASE_HP=5000; BASE_SPEED=30
     def __init__(self, wave=1):
         super().__init__(1)
-        self.hp=5000; self.maxhp=5000; self.speed=self.BASE_SPEED; self.radius=38
+        self.hw_mode=False
+        _hp = 5000
+        self.hp=_hp; self.maxhp=_hp; self.speed=self.BASE_SPEED; self.radius=38
         self._rot=0.0
         self._spawned_fb=False
-        self.hw_mode=False
+
+    def set_hardcore(self):
+        self.hw_mode=True
+        self.hp=40000; self.maxhp=40000
     def update(self, dt):
         self._rot+=dt*90; return super().update(dt)
     def draw(self, surf, hovered=False, detected=False):
@@ -476,10 +481,10 @@ class MysteryEnemy(Enemy):
 
 # ── Mega Slow: 1600 HP, Slow*0.85 speed (~24), 5% armor ──────────────────────
 class MegaSlowEnemy(Enemy):
-    DISPLAY_NAME="Mega Slow"; BASE_HP=1600; BASE_SPEED=int(28*0.85); ARMOR=0.05; KILL_REWARD=600
+    DISPLAY_NAME="Mega Slow"; BASE_HP=1900; BASE_SPEED=int(28*0.85); ARMOR=0.05; KILL_REWARD=600
     def __init__(self, wave=1):
         super().__init__(wave)
-        self.hp=1600; self.maxhp=1600
+        self.hp=1900; self.maxhp=1900
         self.speed=self.BASE_SPEED; self.radius=30
     def draw(self, surf, hovered=False, detected=False):
         bob=math.sin(self._bob*0.4); cx,cy=int(self.x),int(self.y+bob)
@@ -738,7 +743,7 @@ class FallenBreaker(Enemy):
         if hovered: self._hover_label(surf)
 
 class FallenRusher(Enemy):
-    DISPLAY_NAME="Fallen Rusher"; BASE_HP=350; BASE_SPEED=140; ARMOR=0.40; KILL_REWARD=1500
+    DISPLAY_NAME="Fallen Rusher"; BASE_HP=350; BASE_SPEED=140; ARMOR=0.10; KILL_REWARD=1500
     def __init__(self, wave=1):
         super().__init__(wave)
         self.hp=350; self.maxhp=350; self.speed=self.BASE_SPEED+(wave-1)*5; self.radius=13
@@ -748,6 +753,50 @@ class FallenRusher(Enemy):
         pygame.draw.circle(surf,(220,70,160),(cx-3,cy-3),5)
         pygame.draw.circle(surf,(240,100,180),(cx,cy),self.radius,2)
         self._draw_hp_bar(surf,24,4,(220,70,160))
+        if hovered: self._hover_label(surf)
+
+class FallenReaper(Enemy):
+    """600 HP, speed between Normal(55) and Fast(140) → ~97, stun immune, summon ability."""
+    DISPLAY_NAME="Fallen Reaper"; BASE_HP=600; BASE_SPEED=97; KILL_REWARD=1800
+    _stun_immune=True
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=600; self.maxhp=600
+        self.speed=self.BASE_SPEED; self.radius=18
+        self._rot=0.0
+        self._ability_cd = random.uniform(10, 20)   # first ability fires after 10-20 s
+        self._ability_timer = 0.0
+        self._pending_summons = []   # list of (enemy_class, count) to spawn
+
+    def update(self, dt):
+        self._rot += dt * 120
+        self._ability_timer += dt
+        if self._ability_timer >= self._ability_cd:
+            self._ability_timer = 0.0
+            self._ability_cd = random.uniform(10, 20)
+            # Summon 1-3 of each: invisible, hefty, normal boss
+            self._pending_summons = [
+                (InvisibleEnemy,  random.randint(1, 3)),
+                (HeftyEnemy,      random.randint(1, 3)),
+                (NormalBoss,      random.randint(1, 3)),
+            ]
+        return super().update(dt)
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob)*2; cx,cy=int(self.x),int(self.y+bob)
+        # Dark aura
+        s=pygame.Surface((80,80),pygame.SRCALPHA)
+        pygame.draw.circle(s,(80,0,0,40),(40,40),38); surf.blit(s,(cx-40,cy-40))
+        # Rotating scythe blades
+        for i in range(3):
+            a=math.radians(self._rot + i*120)
+            rx=cx+int(math.cos(a)*(self.radius+8)); ry=cy+int(math.sin(a)*(self.radius+8))
+            pygame.draw.circle(surf,(180,20,20),(rx,ry),5)
+        pygame.draw.circle(surf,(60,0,0),(cx,cy),self.radius)
+        pygame.draw.circle(surf,(150,30,30),(cx-5,cy-5),8)
+        pygame.draw.circle(surf,(200,50,50),(cx,cy),self.radius,2)
+        self._draw_hp_bar(surf,34,5,(200,50,50))
         if hovered: self._hover_label(surf)
 
 class FallenHonorGuard(Enemy):
@@ -2070,7 +2119,10 @@ class WaveManager:
         for EClass,count in groups:
             for _ in range(count):
                 try:
-                    e=EClass(wn); e._from_wave=True; q.append(e)
+                    e=EClass(wn); e._from_wave=True
+                    if self._mode == "hardcore" and isinstance(e, GraveDigger):
+                        e.set_hardcore()
+                    q.append(e)
                 except Exception as ex:
                     import traceback; traceback.print_exc()
                     print(f"[WaveManager] ERROR creating {EClass} for wave {wn}: {ex}")
@@ -2106,11 +2158,31 @@ class WaveManager:
                 enemies.append(self.spawn_queue.pop(0))
             if not self.spawn_queue and self.spawn_timer<=0:
                 self.state="waiting"
+            # FallenReaper ability: summon pending enemies at its position
+            for e in list(enemies):
+                if isinstance(e, FallenReaper) and e.alive and e._pending_summons:
+                    for cls, count in e._pending_summons:
+                        for _ in range(count):
+                            s = cls(self.wave)
+                            s.x = e.x; s.y = e.y
+                            s._wp_index = e._wp_index
+                            enemies.append(s)
+                    e._pending_summons = []
 
         elif self.state=="waiting":
             # Wave timer still ticking after all enemies are spawned
             if self._wave_timer is not None:
                 self._wave_timer -= dt
+            # FallenReaper ability in waiting state too
+            for e in list(enemies):
+                if isinstance(e, FallenReaper) and e.alive and e._pending_summons:
+                    for cls, count in e._pending_summons:
+                        for _ in range(count):
+                            s = cls(self.wave)
+                            s.x = e.x; s.y = e.y
+                            s._wp_index = e._wp_index
+                            enemies.append(s)
+                    e._pending_summons = []
 
             if self.wave==20 and self.max_waves==MAX_WAVES and not self._gd_spawned:
                 if alive_count==0:
@@ -2183,7 +2255,7 @@ class WaveManager:
 #   Abnormal=AbnormalEnemy  Quick=QuickEnemy  Hefty=TankEnemy
 #   Invisible=HiddenEnemy   Lead=ArmoredEnemy  Balloon=BreakerEnemy
 #   Mystery=Necromancer     Lead Boss=SlowBoss  Mega Slow=FallenSquire
-#   Fallen Reaper=FallenHonorGuard  Shadow Boss=HiddenBoss
+#   Fallen Reaper=FallenReaper  Shadow Boss=HiddenBoss
 #   Giant Boss=FallenGiant  Fallen Titan=FallenNecromancer
 #   Mystery Boss=FallenJester  Grave Digger=GraveDigger
 #   Lava=CorruptedFallen    Slow King=NecroticSkeleton
@@ -2192,12 +2264,759 @@ class WaveManager:
 #   Soul Stealer=PossessedArmor  Warden=FallenShield
 #   Fallen Swordmaster=FallenEnemy (fast fallen)
 #   Fallen Guardian=FallenBreaker  Fallen King=FallenKing
-#   Necromancer Boss=FallenNecromancer  Speedy King=ScoutEnemy (fast)
-#   Health Cultist=FallenHazmat  Soul Boss=FallenGiant
-#   Molten Titan=OtchimusPrime   Vindicator=FallenKing
+#   Necromancer Boss=FallenNecromancer  Speedy King=SpeedyKingEnemy
+#   Health Cultist=FallenHazmat  Soul Boss=SoulBossEnemy
+#   Molten Titan=MoltenTitanEnemy   Vindicator=VindicatorEnemy
+#   Molten Warlord=MoltenWarlordEnemy  Warden=WardenEnemy
+#   Frost Necromancer=FrostNecromancerEnemy  Soul Stealer=PossessedArmor
+#   Unknown=UnknownEnemy  Fallen Titan=FallenTitanEnemy
+#   Giant Boss=GiantBossEnemy  Slow King=SlowKingEnemy
+#   Circuit=CircuitEnemy  Error=ErrorEnemy  Speedy King=SpeedyKingEnemy
+#   Frost Spirit=FrostSpiritEnemy  Fallen Guardian=FallenGuardianEnemy
+#   Mystery Boss=MysteryBossEnemy  Grave Digger=GraveDigger  Lava=CorruptedFallen
+#   Fallen Rusher=FallenRusher  Shadow Boss=HiddenBoss
 # Wave reward tuple: (groups, wave_bonus_cash, wave_clear_cash)
 # In hardcore mode both bonuses are 0 — all money from kills only.
 # ══════════════════════════════════════════════════════════════════════════════
+
+# ── NEW HARDCORE ENEMY CLASSES ────────────────────────────────────────────────
+
+class FallenTitanEnemy(Enemy):
+    """Wave 31+. 6000 HP + 1000 shield (yellow bar). Shockwave stun every 10-15s."""
+    DISPLAY_NAME="Fallen Titan"; BASE_HP=6000; BASE_SPEED=55; KILL_REWARD=8000
+    _stun_immune=False
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=6000; self.maxhp=6000
+        self.shield=1000; self.maxshield=1000
+        self.speed=self.BASE_SPEED; self.radius=34
+        self._shockwave_timer=random.uniform(10,15)
+        self._shockwave_active=False; self._shockwave_r=0.0; self._shockwave_dur=0.0
+        self._stomp_pause=0.0
+
+    def take_damage(self, dmg):
+        if self.shield > 0:
+            self.shield -= dmg
+            if self.shield < 0:
+                self.hp += self.shield  # carry over excess
+                self.shield = 0
+            if self.hp < 0: self.hp = 0
+        else:
+            self.hp -= dmg
+        if self.hp <= 0: self.alive = False
+
+    @property
+    def effective_speed(self):
+        return self.BASE_SPEED if self.shield > 0 else 28  # slow when no shield
+
+    def update(self, dt):
+        self._bob += dt*4
+        # Update speed based on shield
+        if not hasattr(self,'_last_shield_state'):
+            self._last_shield_state = self.shield > 0
+        cur = self.shield > 0
+        if cur != self._last_shield_state:
+            self.speed = self.BASE_SPEED if cur else 28
+            self._last_shield_state = cur
+
+        # Shockwave timer
+        self._shockwave_timer -= dt
+        if self._shockwave_timer <= 0 and not self._shockwave_active:
+            self._stomp_pause = 0.5
+            self._shockwave_active = True
+            self._shockwave_r = 0.0
+            self._shockwave_dur = 0.6
+            self._shockwave_timer = random.uniform(10,15)
+
+        if self._shockwave_active:
+            self._shockwave_dur -= dt
+            self._shockwave_r += dt * 500
+            if self._shockwave_dur <= 0:
+                self._shockwave_active = False
+
+        if self._stomp_pause > 0:
+            self._stomp_pause -= dt
+            self._bob += dt*4; return False  # frozen in place during stomp
+
+        path = get_map_path()
+        if self._wp_index >= len(path):
+            self.alive=False; return True
+        tx,ty = path[self._wp_index]
+        dx=tx-self.x; dy=ty-self.y
+        d=math.hypot(dx,dy); step=self.speed*dt
+        if d<=step+1:
+            self.x=float(tx); self.y=float(ty); self._wp_index+=1
+            if self._wp_index>=len(path): self.alive=False; return True
+        else:
+            self.x+=dx/d*step; self.y+=dy/d*step
+        return False
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*0.5); cx,cy=int(self.x),int(self.y+bob)
+        s=pygame.Surface((156,156),pygame.SRCALPHA)
+        pygame.draw.circle(s,(180,100,20,35),(78,78),74); surf.blit(s,(cx-78,cy-78))
+        for i in range(8):
+            a=math.radians(self._bob*30+i*45)
+            rx=cx+int(math.cos(a)*(self.radius+12)); ry=cy+int(math.sin(a)*(self.radius+12))
+            pygame.draw.circle(surf,(255,180,30),(rx,ry),6)
+        pygame.draw.circle(surf,(160,80,0),(cx,cy),self.radius+6,6)
+        pygame.draw.circle(surf,(100,40,0),(cx,cy),self.radius)
+        pygame.draw.circle(surf,(255,180,50),(cx-9,cy-9),14)
+        pygame.draw.circle(surf,(255,200,80),(cx,cy),self.radius,2)
+        # HP bar + shield bar
+        bw=70; bh=7; bx=cx-bw//2; by=cy-self.radius-18
+        pygame.draw.rect(surf,C_HP_BG,(bx,by,bw,bh),border_radius=2)
+        fill=max(0,int(bw*self.hp/self.maxhp))
+        if fill: pygame.draw.rect(surf,(200,60,60),(bx,by,fill,bh),border_radius=2)
+        if self.shield>0:
+            sf=max(0,int(bw*self.shield/self.maxshield))
+            pygame.draw.rect(surf,(255,220,0),(bx,by-8,sf,6),border_radius=2)
+        # Shockwave ring
+        if self._shockwave_active:
+            cr=int(self._shockwave_r)
+            ra=max(0,int((1-self._shockwave_r/350)*200))
+            rs=pygame.Surface((SCREEN_W,SCREEN_H),pygame.SRCALPHA)
+            pygame.draw.circle(rs,(255,200,0,ra),(cx,cy),cr,6)
+            surf.blit(rs,(0,0))
+        if hovered: self._hover_label(surf)
+
+
+class GiantBossEnemy(Enemy):
+    """Wave 32+. 12500 HP, 5% armor, 10% slower than Slow, drops 6000 every 25% HP lost."""
+    DISPLAY_NAME="Giant Boss"; BASE_HP=12500; BASE_SPEED=int(28*0.90); ARMOR=0.05; KILL_REWARD=6000
+    _stun_immune=False
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=12500; self.maxhp=12500
+        self.speed=self.BASE_SPEED; self.radius=38
+        self._threshold_hits=[0.75, 0.50, 0.25]  # at 75%, 50%, 25%
+        self._rot=0.0
+        self.pending_gold_drop=0  # signals game to give player gold
+
+    def take_damage(self, dmg):
+        old_frac = self.hp / self.maxhp
+        self.hp -= dmg*(1.0-self.ARMOR)
+        new_frac = self.hp / self.maxhp
+        for t in list(self._threshold_hits):
+            if old_frac > t >= new_frac:
+                self._threshold_hits.remove(t)
+                self.pending_gold_drop += 6000
+        if self.hp <= 0: self.alive=False
+
+    def update(self, dt):
+        self._rot += dt*50; return super().update(dt)
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*0.4); cx,cy=int(self.x),int(self.y+bob)
+        s=pygame.Surface((168,168),pygame.SRCALPHA)
+        pulse=int(abs(math.sin(self._rot/50*math.pi))*30)
+        pygame.draw.circle(s,(80,180,80,28+pulse),(84,84),80); surf.blit(s,(cx-84,cy-84))
+        for i in range(10):
+            a=math.radians(self._rot+i*36)
+            rx=cx+int(math.cos(a)*(self.radius+14)); ry=cy+int(math.sin(a)*(self.radius+14))
+            col2=(140,255,140) if i%2==0 else (60,180,60)
+            pygame.draw.circle(surf,col2,(rx,ry),7)
+        pygame.draw.circle(surf,(40,130,40),(cx,cy),self.radius+7,7)
+        pygame.draw.circle(surf,(20,80,20),(cx,cy),self.radius)
+        pygame.draw.circle(surf,(120,240,120),(cx-10,cy-10),16)
+        pygame.draw.circle(surf,(160,255,160),(cx,cy),self.radius,3)
+        self._draw_hp_bar(surf,72,9,(120,240,120))
+        if hovered: self._hover_label(surf)
+
+
+class MysteryBossEnemy(Enemy):
+    """Wave 33+. 200 HP, Normal speed. On death spawns 1 random big boss."""
+    DISPLAY_NAME="Mystery Boss"; BASE_HP=200; BASE_SPEED=55; KILL_REWARD=500
+    _SPAWN_POOL_NAMES=['MegaSlowEnemy','HiddenBoss','GiantBossEnemy','NormalBoss']
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=200; self.maxhp=200
+        self.speed=self.BASE_SPEED+(wave-1)*3; self.radius=20
+        self._spawned_death=False
+        self._rot=0.0
+
+    def update(self, dt):
+        self._rot+=dt*150; return super().update(dt)
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*1.1)*2; cx,cy=int(self.x),int(self.y+bob)
+        t=self._bob*0.4
+        r=int(200+math.sin(t)*55); g=int(100+math.sin(t+2.1)*80); b=int(50+math.sin(t+4.2)*50)
+        pygame.draw.circle(surf,(r,g,b),(cx,cy),self.radius)
+        for i in range(5):
+            a=math.radians(self._rot+i*72)
+            rx=cx+int(math.cos(a)*(self.radius+6)); ry=cy+int(math.sin(a)*(self.radius+6))
+            pygame.draw.circle(surf,(255,255,100),(rx,ry),4)
+        pygame.draw.circle(surf,(min(255,r+40),min(255,g+40),min(255,b+40)),(cx-5,cy-5),7)
+        pygame.draw.circle(surf,(255,220,80),(cx,cy),self.radius,2)
+        qf=pygame.font.SysFont("consolas",13,bold=True)
+        qs=qf.render("?",True,(255,255,200))
+        surf.blit(qs,qs.get_rect(center=(cx,cy)))
+        self._draw_hp_bar(surf,36,5,(255,220,80))
+        if hovered: self._hover_label(surf)
+
+
+class SlowKingEnemy(Enemy):
+    """Wave 41+. 5000 HP + 3000 shield. 25% armor while shielded, 5% without. Stun immune."""
+    DISPLAY_NAME="Slow King"; BASE_HP=5000; BASE_SPEED=int((55+28)//2); KILL_REWARD=7000
+    _stun_immune=True
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=5000; self.maxhp=5000
+        self.shield=3000; self.maxshield=3000
+        self.ARMOR=0.25; self.speed=self.BASE_SPEED; self.radius=36
+
+    def take_damage(self, dmg):
+        armor = self.ARMOR if self.shield > 0 else 0.05
+        eff = dmg*(1.0-armor)
+        if self.shield > 0:
+            self.shield -= eff
+            if self.shield < 0:
+                self.hp += self.shield
+                self.shield = 0
+        else:
+            self.hp -= eff
+        if self.hp <= 0: self.alive=False
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*0.5); cx,cy=int(self.x),int(self.y+bob)
+        s=pygame.Surface((156,156),pygame.SRCALPHA)
+        pygame.draw.circle(s,(140,60,200,35),(78,78),74); surf.blit(s,(cx-78,cy-78))
+        for i in range(6):
+            a=math.radians(self._bob*20+i*60)
+            rx=cx+int(math.cos(a)*(self.radius+12)); ry=cy+int(math.sin(a)*(self.radius+12))
+            pygame.draw.circle(surf,(200,100,255),(rx,ry),7)
+        pygame.draw.circle(surf,(100,30,160),(cx,cy),self.radius+6,6)
+        pygame.draw.circle(surf,(70,10,110),(cx,cy),self.radius)
+        pygame.draw.circle(surf,(220,140,255),(cx-9,cy-9),14)
+        pygame.draw.circle(surf,(240,160,255),(cx,cy),self.radius,2)
+        # Crown spikes
+        for i in range(5):
+            a=math.radians(-90+i*36)
+            sx2=cx+int(math.cos(a)*(self.radius+2)); sy2=cy+int(math.sin(a)*(self.radius+2))
+            ex2=cx+int(math.cos(a)*(self.radius+16)); ey2=cy+int(math.sin(a)*(self.radius+16))
+            pygame.draw.line(surf,(220,140,255),(int(sx2),int(sy2)),(int(ex2),int(ey2)),3)
+        bw=72; bh=7; bx=cx-bw//2; by=cy-self.radius-18
+        pygame.draw.rect(surf,C_HP_BG,(bx,by,bw,bh),border_radius=2)
+        fill=max(0,int(bw*self.hp/self.maxhp))
+        if fill: pygame.draw.rect(surf,(180,60,255),(bx,by,fill,bh),border_radius=2)
+        if self.shield>0:
+            sf=max(0,int(bw*self.shield/self.maxshield))
+            pygame.draw.rect(surf,(220,180,255),(bx,by-8,sf,6),border_radius=2)
+        if hovered: self._hover_label(surf)
+
+
+class ErrorEnemy(Enemy):
+    """Wave 42+. 500 HP + 400 shield. Moves 20% faster than Fast (168 px/s)."""
+    DISPLAY_NAME="Error"; BASE_HP=500; BASE_SPEED=int(140*1.20); KILL_REWARD=900
+    _stun_immune=False
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=500; self.maxhp=500
+        self.shield=400; self.maxshield=400
+        self.speed=self.BASE_SPEED; self.radius=14
+        self._glitch=0.0
+
+    def take_damage(self, dmg):
+        if self.shield > 0:
+            self.shield -= dmg
+            if self.shield < 0: self.hp += self.shield; self.shield=0
+        else:
+            self.hp -= dmg
+        if self.hp <= 0: self.alive=False
+
+    def update(self, dt):
+        self._glitch=(self._glitch+dt*8)%(math.pi*2)
+        return super().update(dt)
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*2)*3; cx,cy=int(self.x),int(self.y+bob)
+        g_off=int(math.sin(self._glitch)*3)
+        # Glitch layers
+        sl=pygame.Surface((60,60),pygame.SRCALPHA)
+        pygame.draw.circle(sl,(255,50,50,80),(30+g_off,30),self.radius); surf.blit(sl,(cx-30,cy-30))
+        pygame.draw.circle(surf,(30,30,30),(cx,cy),self.radius)
+        pygame.draw.circle(surf,(255,60,60),(cx-3-g_off,cy-3),5)
+        pygame.draw.circle(surf,(255,0,0),(cx,cy),self.radius,2)
+        # "!" symbol
+        ef=pygame.font.SysFont("consolas",11,bold=True)
+        es=ef.render("!",True,(255,100,100))
+        surf.blit(es,es.get_rect(center=(cx,cy)))
+        bw=26; bh=4; bx=cx-bw//2; by=cy-self.radius-10
+        pygame.draw.rect(surf,C_HP_BG,(bx,by,bw,bh),border_radius=2)
+        fill=max(0,int(bw*self.hp/self.maxhp))
+        if fill: pygame.draw.rect(surf,(255,60,60),(bx,by,fill,bh),border_radius=2)
+        if self.shield>0:
+            sf=max(0,int(bw*self.shield/self.maxshield))
+            pygame.draw.rect(surf,(255,180,180),(bx,by-5,sf,4),border_radius=2)
+        if hovered: self._hover_label(surf)
+
+
+class CircuitEnemy(Enemy):
+    """Wave 43+. 2500 HP, Fast speed. Boosts 5 nearest enemies by 25-50% speed while alive."""
+    DISPLAY_NAME="Circuit"; BASE_HP=2500; BASE_SPEED=140; KILL_REWARD=4000
+    _stun_immune=False
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=2500; self.maxhp=2500
+        self.speed=self.BASE_SPEED; self.radius=22
+        self._boosted_enemies=[]  # references to currently boosted enemies
+        self._rot=0.0
+
+    def update(self, dt):
+        self._rot+=dt*200; return super().update(dt)
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*1.2)*2; cx,cy=int(self.x),int(self.y+bob)
+        s=pygame.Surface((90,90),pygame.SRCALPHA)
+        pygame.draw.circle(s,(0,200,255,40),(45,45),43); surf.blit(s,(cx-45,cy-45))
+        # Circuit board lines
+        for i in range(4):
+            a=math.radians(self._rot+i*90)
+            x1=cx+int(math.cos(a)*6); y1=cy+int(math.sin(a)*6)
+            x2=cx+int(math.cos(a)*self.radius); y2=cy+int(math.sin(a)*self.radius)
+            pygame.draw.line(surf,(0,220,255),(x1,y1),(x2,y2),2)
+            # Branch
+            ba=math.radians(self._rot+i*90+30)
+            mx=cx+int(math.cos(a)*self.radius//2); my=cy+int(math.sin(a)*self.radius//2)
+            bx2=mx+int(math.cos(ba)*8); by2=my+int(math.sin(ba)*8)
+            pygame.draw.line(surf,(0,180,220),(mx,my),(bx2,by2),1)
+        pygame.draw.circle(surf,(0,80,120),(cx,cy),self.radius+3,3)
+        pygame.draw.circle(surf,(0,40,80),(cx,cy),self.radius)
+        pygame.draw.circle(surf,(0,220,255),(cx-5,cy-5),8)
+        pygame.draw.circle(surf,(0,255,255),(cx,cy),self.radius,2)
+        self._draw_hp_bar(surf,40,5,(0,220,255))
+        if hovered: self._hover_label(surf)
+
+
+class SpeedyKingEnemy(Enemy):
+    """Wave 44+. 6000 HP, Fast speed. On death boosts 3 random enemies by 70% for 1s."""
+    DISPLAY_NAME="Speedy King"; BASE_HP=6000; BASE_SPEED=140; KILL_REWARD=5000
+    _stun_immune=False
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=6000; self.maxhp=6000
+        self.speed=self.BASE_SPEED; self.radius=26
+        self._rot=0.0
+
+    def update(self, dt):
+        self._rot+=dt*180; return super().update(dt)
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*1.4)*3; cx,cy=int(self.x),int(self.y+bob)
+        s=pygame.Surface((108,108),pygame.SRCALPHA)
+        pygame.draw.circle(s,(255,140,0,35),(54,54),52); surf.blit(s,(cx-54,cy-54))
+        for i in range(8):
+            a=math.radians(self._rot+i*45)
+            rx=cx+int(math.cos(a)*(self.radius+10)); ry=cy+int(math.sin(a)*(self.radius+10))
+            pygame.draw.circle(surf,(255,200,50),(rx,ry),5)
+        pygame.draw.circle(surf,(180,80,0),(cx,cy),self.radius+5,5)
+        pygame.draw.circle(surf,(130,50,0),(cx,cy),self.radius)
+        pygame.draw.circle(surf,(255,180,50),(cx-6,cy-6),10)
+        pygame.draw.circle(surf,(255,220,100),(cx,cy),self.radius,2)
+        for i in range(5):
+            a=math.radians(-90+i*36)
+            sx2=cx+int(math.cos(a)*(self.radius+2)); sy2=cy+int(math.sin(a)*(self.radius+2))
+            ex2=cx+int(math.cos(a)*(self.radius+14)); ey2=cy+int(math.sin(a)*(self.radius+14))
+            pygame.draw.line(surf,(255,220,50),(int(sx2),int(sy2)),(int(ex2),int(ey2)),3)
+        self._draw_hp_bar(surf,48,6,(255,200,60))
+        if hovered: self._hover_label(surf)
+
+
+class MoltenTitanEnemy(Enemy):
+    """Wave 44+. 3500 HP, Slow speed. Stun immune, burn immune."""
+    DISPLAY_NAME="Molten Titan"; BASE_HP=3500; BASE_SPEED=28; KILL_REWARD=4500
+    _stun_immune=True; _burn_immune=True
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=3500; self.maxhp=3500
+        self.speed=self.BASE_SPEED; self.radius=33
+        self._rot=0.0
+
+    def update(self, dt):
+        self._rot+=dt*40; return super().update(dt)
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*0.5); cx,cy=int(self.x),int(self.y+bob)
+        s=pygame.Surface((144,144),pygame.SRCALPHA)
+        pulse=int(abs(math.sin(self._rot/40*math.pi))*30)
+        pygame.draw.circle(s,(255,80,0,30+pulse),(72,72),70); surf.blit(s,(cx-72,cy-72))
+        for i in range(8):
+            a=math.radians(self._rot+i*45)
+            rx=cx+int(math.cos(a)*(self.radius+10)); ry=cy+int(math.sin(a)*(self.radius+10))
+            col2=(255,120,20) if i%2==0 else (200,60,0)
+            pygame.draw.circle(surf,col2,(rx,ry),6)
+        pygame.draw.circle(surf,(180,50,0),(cx,cy),self.radius+6,6)
+        pygame.draw.circle(surf,(120,20,0),(cx,cy),self.radius)
+        pygame.draw.circle(surf,(255,140,50),(cx-9,cy-9),14)
+        pygame.draw.circle(surf,(255,100,20),(cx,cy),self.radius,2)
+        self._draw_hp_bar(surf,60,7,(255,120,40))
+        if hovered: self._hover_label(surf)
+
+
+class MoltenWarlordEnemy(Enemy):
+    """Wave 44. 70000 HP, Fallen King speed (~9). All immunities."""
+    DISPLAY_NAME="Molten Warlord"; BASE_HP=70000; BASE_SPEED=9; KILL_REWARD=50000
+    _stun_immune=True; _burn_immune=True; _freeze_immune=True
+    _confusion_immune=True; _poison_immune=True
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=70000; self.maxhp=70000
+        self.speed=self.BASE_SPEED; self.radius=44
+        self._rot=0.0
+
+    def update(self, dt):
+        self._rot+=dt*30; return super().update(dt)
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*0.4); cx,cy=int(self.x),int(self.y+bob)
+        s=pygame.Surface((192,192),pygame.SRCALPHA)
+        pulse=int(abs(math.sin(self._rot/30*math.pi))*40)
+        pygame.draw.circle(s,(255,60,0,25+pulse),(96,96),90); surf.blit(s,(cx-96,cy-96))
+        for i in range(12):
+            a=math.radians(self._rot+i*30)
+            rx=cx+int(math.cos(a)*(self.radius+16)); ry=cy+int(math.sin(a)*(self.radius+16))
+            col2=(255,150,0) if i%3==0 else ((255,80,0) if i%3==1 else (200,40,0))
+            pygame.draw.circle(surf,col2,(rx,ry),7)
+        pygame.draw.circle(surf,(200,60,0),(cx,cy),self.radius+8,8)
+        pygame.draw.circle(surf,(140,20,0),(cx,cy),self.radius)
+        pygame.draw.circle(surf,(255,180,60),(cx-12,cy-12),18)
+        pygame.draw.circle(surf,(255,120,40),(cx,cy),self.radius,3)
+        for i in range(5):
+            a=math.radians(-90+i*36)
+            sx2=cx+int(math.cos(a)*(self.radius+2)); sy2=cy+int(math.sin(a)*(self.radius+2))
+            ex2=cx+int(math.cos(a)*(self.radius+22)); ey2=cy+int(math.sin(a)*(self.radius+22))
+            pygame.draw.line(surf,(255,200,0),(int(sx2),int(sy2)),(int(ex2),int(ey2)),4)
+        self._draw_hp_bar(surf,84,10,(255,120,40))
+        if hovered: self._hover_label(surf)
+
+
+class SoulBossEnemy(Enemy):
+    """Wave 46+. 4000 HP, Hidden, 20% faster than Normal."""
+    DISPLAY_NAME="Soul Boss"; BASE_HP=4000; BASE_SPEED=int(55*1.20); IS_HIDDEN=True; KILL_REWARD=6000
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=4000; self.maxhp=4000
+        self.speed=self.BASE_SPEED; self.radius=28
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob)*2; cx,cy=int(self.x),int(self.y+bob)
+        alpha=160 if detected else (220 if hovered else 60)
+        s=pygame.Surface((108,108),pygame.SRCALPHA)
+        pygame.draw.circle(s,(180,60,255,alpha),(54,54),self.radius+3,3)
+        pygame.draw.circle(s,(120,20,200,alpha),(54,54),self.radius)
+        pygame.draw.circle(s,(220,140,255,alpha),(49,49),10)
+        for i in range(5):
+            a=math.radians(self._bob*25+i*72)
+            rx=54+int(math.cos(a)*(self.radius+8)); ry=54+int(math.sin(a)*(self.radius+8))
+            pygame.draw.circle(s,(200,100,255,alpha),(rx,ry),4)
+        pygame.draw.circle(s,(240,180,255,alpha//2),(54,54),self.radius,2)
+        surf.blit(s,(cx-54,cy-54))
+        if detected or hovered:
+            self._draw_hp_bar(surf,50,6,(200,100,255))
+        if hovered: self._hover_label(surf)
+
+
+class WardenEnemy(Enemy):
+    """Wave 45. 8000 HP, 20% armor. Normal speed. Stun immune. Laser stuns towers every 15-20s."""
+    DISPLAY_NAME="Warden"; BASE_HP=8000; BASE_SPEED=55; ARMOR=0.20; KILL_REWARD=6000
+    _stun_immune=True
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=8000; self.maxhp=8000
+        self.speed=self.BASE_SPEED; self.radius=32
+        self._laser_timer=random.uniform(15,20)
+        self._laser_active=False; self._laser_dur=0.0
+        self._laser_angle=0.0; self._rot=0.0
+
+    def update(self, dt):
+        self._rot+=dt*60
+        self._laser_timer-=dt
+        if self._laser_timer<=0 and not self._laser_active:
+            self._laser_active=True; self._laser_dur=2.0
+            self._laser_angle=random.uniform(0,360)
+            self._laser_timer=random.uniform(15,20)
+        if self._laser_active:
+            self._laser_dur-=dt
+            self._laser_angle+=dt*120  # sweeps
+            if self._laser_dur<=0: self._laser_active=False
+        return super().update(dt)
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*0.6); cx,cy=int(self.x),int(self.y+bob)
+        s=pygame.Surface((144,144),pygame.SRCALPHA)
+        pygame.draw.circle(s,(50,50,200,35),(72,72),70); surf.blit(s,(cx-72,cy-72))
+        for i in range(8):
+            a=math.radians(self._rot+i*45)
+            rx=cx+int(math.cos(a)*(self.radius+10)); ry=cy+int(math.sin(a)*(self.radius+10))
+            pygame.draw.circle(surf,(100,100,255),(rx,ry),5)
+        pygame.draw.circle(surf,(30,30,160),(cx,cy),self.radius+5,5)
+        pygame.draw.circle(surf,(20,20,120),(cx,cy),self.radius)
+        pygame.draw.circle(surf,(120,120,255),(cx-8,cy-8),13)
+        pygame.draw.circle(surf,(140,140,255),(cx,cy),self.radius,2)
+        if self._laser_active:
+            la=math.radians(self._laser_angle)
+            lx=cx+int(math.cos(la)*300); ly=cy+int(math.sin(la)*300)
+            ls=pygame.Surface((SCREEN_W,SCREEN_H),pygame.SRCALPHA)
+            pygame.draw.line(ls,(0,200,255,180),(cx,cy),(lx,ly),4)
+            pygame.draw.line(ls,(200,240,255,80),(cx,cy),(lx,ly),10)
+            surf.blit(ls,(0,0))
+        self._draw_hp_bar(surf,58,7,(100,120,255))
+        if hovered: self._hover_label(surf)
+
+
+class FrostNecromancerEnemy(Enemy):
+    """Wave 46+. Frost-themed necromancer. Summons cold enemies."""
+    DISPLAY_NAME="Frost Necromancer"; BASE_HP=5000; BASE_SPEED=55; KILL_REWARD=7000
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=5000; self.maxhp=5000
+        self.speed=self.BASE_SPEED; self.radius=30
+        self._summon_timer=random.uniform(6,12)
+        self._rot=0.0
+
+    def update(self, dt):
+        self._rot+=dt*80; self._summon_timer-=dt
+        return super().update(dt)
+
+    def should_summon(self):
+        if self._summon_timer<=0: self._summon_timer=random.uniform(6,12); return True
+        return False
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*0.8)*1.5; cx,cy=int(self.x),int(self.y+bob)
+        s=pygame.Surface((108,108),pygame.SRCALPHA)
+        pygame.draw.circle(s,(80,180,255,40),(54,54),52); surf.blit(s,(cx-54,cy-54))
+        for i in range(6):
+            a=math.radians(self._rot+i*60)
+            rx=cx+int(math.cos(a)*(self.radius+9)); ry=cy+int(math.sin(a)*(self.radius+9))
+            pygame.draw.circle(surf,(140,230,255),(rx,ry),5)
+        pygame.draw.circle(surf,(40,130,200),(cx,cy),self.radius+4,4)
+        pygame.draw.circle(surf,(20,80,160),(cx,cy),self.radius)
+        pygame.draw.circle(surf,(180,240,255),(cx-8,cy-8),12)
+        pygame.draw.circle(surf,(200,245,255),(cx,cy),self.radius,2)
+        for i in range(4):
+            a=math.radians(i*90+self._rot*0.5)
+            x1=cx+int(math.cos(a)*6); y1=cy+int(math.sin(a)*6)
+            x2=cx+int(math.cos(a)*(self.radius-2)); y2=cy+int(math.sin(a)*(self.radius-2))
+            pygame.draw.line(surf,(160,230,255),(x1,y1),(x2,y2),2)
+        self._draw_hp_bar(surf,54,7,(140,220,255))
+        if hovered: self._hover_label(surf)
+
+
+class FrostSpiritEnemy(Enemy):
+    """Wave 48. Fast, hidden, frost-themed spirit."""
+    DISPLAY_NAME="Frost Spirit"; BASE_HP=3000; BASE_SPEED=140; IS_HIDDEN=True; KILL_REWARD=5000
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=3000; self.maxhp=3000
+        self.speed=self.BASE_SPEED; self.radius=18
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*1.5)*3; cx,cy=int(self.x),int(self.y+bob)
+        alpha=160 if detected else (200 if hovered else 50)
+        s=pygame.Surface((72,72),pygame.SRCALPHA)
+        pygame.draw.circle(s,(180,240,255,alpha),(36,36),self.radius)
+        for i in range(6):
+            a=math.radians(self._bob*40+i*60)
+            rx=36+int(math.cos(a)*(self.radius-4)); ry=36+int(math.sin(a)*(self.radius-4))
+            pygame.draw.circle(s,(220,255,255,alpha),(rx,ry),3)
+        pygame.draw.circle(s,(240,255,255,alpha//2),(36,36),self.radius,2)
+        surf.blit(s,(cx-36,cy-36))
+        if detected or hovered: self._draw_hp_bar(surf,34,5,(180,240,255))
+        if hovered: self._hover_label(surf)
+
+
+class VindicatorEnemy(Enemy):
+    """Wave 49+. 40000 HP + 5000 shield. 50% armor shielded, 0% without. 10% slower than Normal."""
+    DISPLAY_NAME="Vindicator"; BASE_HP=40000; BASE_SPEED=int(55*0.90); KILL_REWARD=30000
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=40000; self.maxhp=40000
+        self.shield=5000; self.maxshield=5000
+        self.ARMOR=0.50; self.speed=self.BASE_SPEED; self.radius=40
+        self._rot=0.0
+
+    def take_damage(self, dmg):
+        armor=self.ARMOR if self.shield>0 else 0.0
+        eff=dmg*(1.0-armor)
+        if self.shield>0:
+            self.shield-=eff
+            if self.shield<0: self.hp+=self.shield; self.shield=0
+        else:
+            self.hp-=eff
+        if self.hp<=0: self.alive=False
+
+    def update(self, dt):
+        self._rot+=dt*35; return super().update(dt)
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*0.4); cx,cy=int(self.x),int(self.y+bob)
+        s=pygame.Surface((180,180),pygame.SRCALPHA)
+        pulse=int(abs(math.sin(self._rot/35*math.pi))*35)
+        pygame.draw.circle(s,(180,180,30,25+pulse),(90,90),86); surf.blit(s,(cx-90,cy-90))
+        for i in range(10):
+            a=math.radians(self._rot+i*36)
+            rx=cx+int(math.cos(a)*(self.radius+14)); ry=cy+int(math.sin(a)*(self.radius+14))
+            col2=(255,240,60) if i%2==0 else (180,160,0)
+            pygame.draw.circle(surf,col2,(rx,ry),7)
+        pygame.draw.circle(surf,(140,130,0),(cx,cy),self.radius+7,7)
+        pygame.draw.circle(surf,(80,70,0),(cx,cy),self.radius)
+        pygame.draw.circle(surf,(255,240,100),(cx-11,cy-11),16)
+        pygame.draw.circle(surf,(255,250,120),(cx,cy),self.radius,3)
+        bw=76; bh=8; bx=cx-bw//2; by=cy-self.radius-20
+        pygame.draw.rect(surf,C_HP_BG,(bx,by,bw,bh),border_radius=2)
+        fill=max(0,int(bw*self.hp/self.maxhp))
+        if fill: pygame.draw.rect(surf,(220,200,0),(bx,by,fill,bh),border_radius=2)
+        if self.shield>0:
+            sf=max(0,int(bw*self.shield/self.maxshield))
+            pygame.draw.rect(surf,(255,255,120),(bx,by-9,sf,7),border_radius=2)
+        if hovered: self._hover_label(surf)
+
+
+class UnknownEnemy(Enemy):
+    """Wave 49+. 14000 HP, Slow speed. Shockwave stun every 10-20s."""
+    DISPLAY_NAME="Unknown"; BASE_HP=14000; BASE_SPEED=28; KILL_REWARD=12000
+    _stun_immune=False
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=14000; self.maxhp=14000
+        self.speed=self.BASE_SPEED; self.radius=36
+        self._shockwave_timer=random.uniform(10,20)
+        self._shockwave_active=False; self._shockwave_r=0.0; self._shockwave_dur=0.0
+        self._rot=0.0
+
+    def update(self, dt):
+        self._rot+=dt*25
+        self._shockwave_timer-=dt
+        if self._shockwave_timer<=0 and not self._shockwave_active:
+            self._shockwave_active=True; self._shockwave_r=0.0; self._shockwave_dur=0.7
+            self._shockwave_timer=random.uniform(10,20)
+        if self._shockwave_active:
+            self._shockwave_dur-=dt; self._shockwave_r+=dt*450
+            if self._shockwave_dur<=0: self._shockwave_active=False
+        return super().update(dt)
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*0.4); cx,cy=int(self.x),int(self.y+bob)
+        s=pygame.Surface((168,168),pygame.SRCALPHA)
+        pulse=int(abs(math.sin(self._rot/25*math.pi))*35)
+        pygame.draw.circle(s,(40,40,40,30+pulse),(84,84),80); surf.blit(s,(cx-84,cy-84))
+        for i in range(8):
+            a=math.radians(self._rot+i*45)
+            rx=cx+int(math.cos(a)*(self.radius+12)); ry=cy+int(math.sin(a)*(self.radius+12))
+            col2=(80,80,80) if i%2==0 else (50,50,50)
+            pygame.draw.circle(surf,col2,(rx,ry),6)
+        pygame.draw.circle(surf,(50,50,50),(cx,cy),self.radius+6,6)
+        pygame.draw.circle(surf,(20,20,20),(cx,cy),self.radius)
+        pygame.draw.circle(surf,(150,150,150),(cx-9,cy-9),14)
+        pygame.draw.circle(surf,(180,180,180),(cx,cy),self.radius,2)
+        qf=pygame.font.SysFont("consolas",16,bold=True)
+        qs=qf.render("?",True,(200,200,200))
+        surf.blit(qs,qs.get_rect(center=(cx,cy)))
+        if self._shockwave_active:
+            cr=int(self._shockwave_r)
+            ra=max(0,int((1-self._shockwave_r/350)*180))
+            rs=pygame.Surface((SCREEN_W,SCREEN_H),pygame.SRCALPHA)
+            pygame.draw.circle(rs,(150,150,150,ra),(cx,cy),cr,6)
+            surf.blit(rs,(0,0))
+        self._draw_hp_bar(surf,64,8,(160,160,160))
+        if hovered: self._hover_label(surf)
+
+
+class FallenGuardianEnemy(Enemy):
+    """Wave 50. Heavy fallen-tier guardian."""
+    DISPLAY_NAME="Fallen Guardian"; BASE_HP=20000; BASE_SPEED=28; ARMOR=0.20; KILL_REWARD=18000
+    _stun_immune=True
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp=20000; self.maxhp=20000
+        self.speed=self.BASE_SPEED; self.radius=40
+        self._rot=0.0
+
+    def update(self, dt):
+        self._rot+=dt*45; return super().update(dt)
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*0.4); cx,cy=int(self.x),int(self.y+bob)
+        s=pygame.Surface((180,180),pygame.SRCALPHA)
+        pygame.draw.circle(s,(80,0,120,35),(90,90),86); surf.blit(s,(cx-90,cy-90))
+        for i in range(10):
+            a=math.radians(self._rot+i*36)
+            rx=cx+int(math.cos(a)*(self.radius+14)); ry=cy+int(math.sin(a)*(self.radius+14))
+            col2=(180,60,240) if i%2==0 else (120,20,180)
+            pygame.draw.circle(surf,col2,(rx,ry),7)
+        pygame.draw.circle(surf,(100,0,150),(cx,cy),self.radius+8,8)
+        pygame.draw.circle(surf,(60,0,100),(cx,cy),self.radius)
+        pygame.draw.circle(surf,(200,100,255),(cx-11,cy-11),17)
+        pygame.draw.circle(surf,(220,130,255),(cx,cy),self.radius,3)
+        # Shield cross
+        pygame.draw.line(surf,(200,120,255),(cx,cy-self.radius+6),(cx,cy+self.radius-6),4)
+        pygame.draw.line(surf,(200,120,255),(cx-self.radius+6,cy),(cx+self.radius-6,cy),4)
+        self._draw_hp_bar(surf,74,9,(180,80,240))
+        if hovered: self._hover_label(surf)
+
+
+class FinalJudgmentEnemy(Enemy):
+    """Wave 50 finale. HP = player base HP - 1. 100% armor (unkillable). All immunities.
+    Fast speed. Designed to reduce base to 1 HP then be replaced by final boss."""
+    DISPLAY_NAME="??? (Judgment)"; BASE_HP=100; BASE_SPEED=140; ARMOR=1.0; KILL_REWARD=0
+    _stun_immune=True; _burn_immune=True; _freeze_immune=True
+    _confusion_immune=True; _poison_immune=True; IS_HIDDEN=False
+
+    def __init__(self, player_hp=100):
+        super().__init__(1)
+        self.hp=max(1, player_hp-1); self.maxhp=self.hp
+        self.speed=self.BASE_SPEED; self.radius=38
+        self._rot=0.0; self._phase=0.0
+
+    def take_damage(self, dmg):
+        pass  # unkillable
+
+    def update(self, dt):
+        self._rot+=dt*120; self._phase+=dt*3
+        return super().update(dt)
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*1.3)*3; cx,cy=int(self.x),int(self.y+bob)
+        # Eerie pulsing aura
+        s=pygame.Surface((200,200),pygame.SRCALPHA)
+        alpha=int(abs(math.sin(self._phase))*80)+30
+        pygame.draw.circle(s,(255,0,255,alpha),(100,100),95); surf.blit(s,(cx-100,cy-100))
+        for i in range(12):
+            a=math.radians(self._rot+i*30)
+            rx=cx+int(math.cos(a)*(self.radius+14)); ry=cy+int(math.sin(a)*(self.radius+14))
+            col2=(255,0,255) if i%3==0 else ((200,0,200) if i%3==1 else (150,0,150))
+            pygame.draw.circle(surf,col2,(rx,ry),6)
+        pygame.draw.circle(surf,(80,0,80),(cx,cy),self.radius+7,7)
+        pygame.draw.circle(surf,(40,0,40),(cx,cy),self.radius)
+        pygame.draw.circle(surf,(255,100,255),(cx-10,cy-10),15)
+        pygame.draw.circle(surf,(255,0,255),(cx,cy),self.radius,3)
+        # "???" label
+        qf=pygame.font.SysFont("consolas",14,bold=True)
+        qs=qf.render("???",True,(255,180,255))
+        surf.blit(qs,qs.get_rect(center=(cx,cy)))
+        # Draw HP bar showing remaining base HP it will take
+        self._draw_hp_bar(surf,70,8,(180,0,180))
+        if hovered: self._hover_label(surf)
+
+
 MYSTERY_SPAWN_POOL = [AbnormalEnemy, QuickEnemy, HeftyEnemy, InvisibleEnemy, NormalBoss]
 
 HARDCORE_MAX_WAVES = 50
@@ -2233,71 +3052,113 @@ HARDCORE_WAVE_DATA = [
       (InvisibleEnemy, 4), (MysteryEnemy, 2), (NormalBoss, 2),
       (MegaSlowEnemy, 1)],                                                  0, 0),                              # 19 Mega Slow
     ([(NormalBoss, 7)],                                                     0, 0),                              # 20
-    # ── Shadow/Hidden bosses (21-25) ──────────────────────────────────────────
-    ([(Necromancer, 4), (TankEnemy, 6), (BreakerEnemy, 8), (SlowBoss, 2),
-      (HiddenBoss, 1)],                                                     0, 0),                              # 21 Shadow Boss
-    ([(QuickEnemy, 8), (HiddenEnemy, 6), (BreakerEnemy, 6),
-      (Necromancer, 6), (SlowBoss, 2)],                                     0, 0),                              # 22
-    ([(ArmoredEnemy, 8), (HiddenBoss, 1)],                                  0, 0),                              # 23
-    ([(ArmoredEnemy, 10), (BreakerEnemy, 4), (HiddenEnemy, 2),
-      (FallenSquire, 2), (Necromancer, 4), (FallenHonorGuard, 1)],          0, 0),                              # 24 Fallen Reaper
-    ([(SlowBoss, 10), (HiddenBoss, 3)],                                     0, 0),                              # 25
+    # ── Shadow/Hidden bosses + Fallen Reaper intro (21-25) ───────────────────
+    # 21: 4 mystery, 6 hefty, 2 normal boss, 2 invisible, 1 fallen reaper
+    ([(MysteryEnemy, 4), (HeftyEnemy, 6), (NormalBoss, 2),
+      (InvisibleEnemy, 2), (FallenReaper, 1)],                          0, 0),                              # 21 Fallen Reaper
+    # 22: 8 quick, 6 invisible, 12 mystery, 3 normal boss
+    ([(QuickEnemy, 8), (InvisibleEnemy, 6), (MysteryEnemy, 12),
+      (NormalBoss, 3)],                                                     0, 0),                              # 22
+    # 23: 8 hefty, 1 shadow boss (Hidden Boss)
+    ([(HeftyEnemy, 8), (HiddenBoss, 1)],                                    0, 0),                              # 23 Shadow Boss
+    # 24: 6 mystery, 4 invisible, 2 mega slow, 1 fallen reaper
+    ([(MysteryEnemy, 6), (InvisibleEnemy, 4), (MegaSlowEnemy, 2),
+      (FallenReaper, 1)],                                               0, 0),                              # 24
+    # 25: 10 normal boss, 3 shadow boss
+    ([(NormalBoss, 10), (HiddenBoss, 3)],                                   0, 0),                              # 25
     # ── Fallen-tier enemies enter (26-30) ─────────────────────────────────────
-    ([(ArmoredEnemy, 15), (FallenSquire, 2), (FallenHonorGuard, 2)],        0, 0),                              # 26
-    ([(FallenRusher, 8)],                                                   0, 0),                              # 27 Error (fast)
-    ([(FallenRusher, 12), (SlowBoss, 2), (ArmoredEnemy, 8)],                0, 0),                              # 28
-    ([(FallenSquire, 2), (FallenRusher, 10), (FallenHonorGuard, 3),
-      (HiddenBoss, 3)],                                                     0, 0),                              # 29
-    ([(FallenSquire, 3), (Necromancer, 10), (FallenRusher, 10),
-      (SlowBoss, 2)],                                                       0, 0),                              # 30
+    # 26: 15 mystery, 2 mega slow, 2 fallen reaper
+    ([(MysteryEnemy, 15), (MegaSlowEnemy, 2), (FallenReaper, 2)],       0, 0),                              # 26
+    # 27: 8 fallen rusher
+    ([(FallenRusher, 8)],                                                   0, 0),                              # 27 Fallen Rusher
+    # 28: 12 fallen rusher, 2 normal boss
+    ([(FallenRusher, 12), (NormalBoss, 2)],                                 0, 0),                              # 28
+    # 29: 3 fallen reaper, 3 shadow boss, 2 mega slow, 6 fallen rusher
+    ([(FallenReaper, 3), (HiddenBoss, 3), (MegaSlowEnemy, 2),
+      (FallenRusher, 6)],                                                   0, 0),                              # 29
+    # 30: 3 mega slow, 10 mystery, 10 fallen rusher
+    ([(MegaSlowEnemy, 3), (MysteryEnemy, 10), (FallenRusher, 10)],          0, 0),                              # 30
     # ── Heavy bosses (31-35) ───────────────────────────────────────────────────
-    ([(ArmoredEnemy, 10), (BreakerEnemy, 1), (SlowBoss, 1), (FallenHonorGuard, 1),
-      (FallenHonorGuard, 6), (Necromancer, 8), (TankEnemy, 6), (FallenRusher, 6),
-      (FallenSquire, 2), (FallenGiant, 1)],                                 0, 0),                              # 31
-    ([(FallenGiant, 4), (FallenSquire, 2), (FallenHonorGuard, 2),
-      (FallenRusher, 5), (HiddenBoss, 5)],                                  0, 0),                              # 32
-    ([(HiddenBoss, 2), (Necromancer, 8), (FallenGiant, 1),
-      (FallenNecromancer, 8), (FallenJester, 1)],                           0, 0),                              # 33 Mystery Boss
-    ([(FallenGiant, 3), (FallenNecromancer, 1), (ArmoredEnemy, 15),
-      (Necromancer, 10), (ArmoredEnemy, 2), (SlowBoss, 2)],                 0, 0),                              # 34
-    ([(FallenGiant, 4), (FallenRusher, 2), (FallenNecromancer, 2)],         0, 0),                              # 35
+    # 31: 1 fallen reaper, 2 shadow boss, 6 mystery, 4 hefty, 6 fallen rusher, 2 mega slow, 1 fallen titan
+    ([(FallenReaper, 1), (HiddenBoss, 2), (MysteryEnemy, 6),
+      (HeftyEnemy, 4), (FallenRusher, 6), (MegaSlowEnemy, 2),
+      (FallenTitanEnemy, 1)],                                               0, 0),                              # 31 Fallen Titan
+    # 32: 2 mega slow, 2 fallen reaper, 3 shadow boss, 2 giant boss
+    ([(MegaSlowEnemy, 2), (FallenReaper, 2), (HiddenBoss, 3),
+      (GiantBossEnemy, 2)],                                                 0, 0),                              # 32 Giant Boss
+    # 33: 2 shadow boss, 8 mystery, 1 fallen titan, 8 mystery boss
+    ([(HiddenBoss, 2), (MysteryEnemy, 8), (FallenTitanEnemy, 1),
+      (MysteryBossEnemy, 8)],                                               0, 0),                              # 33 Mystery Boss
+    # 34: 3 giant boss, 1 fallen titan, 8 fallen rusher, 15 mystery, 10 invisible, 2 normal boss
+    ([(GiantBossEnemy, 3), (FallenTitanEnemy, 1), (FallenRusher, 8),
+      (MysteryEnemy, 15), (InvisibleEnemy, 10), (NormalBoss, 2)],           0, 0),                              # 34
+    # 35: 4 giant boss, 4 fallen rusher, 2 fallen titan
+    ([(GiantBossEnemy, 4), (FallenRusher, 4), (FallenTitanEnemy, 2)],       0, 0),                              # 35
     # ── Grave Digger + Lava + endgame (36-40) ─────────────────────────────────
-    ([(FallenSquire, 8), (FallenJester, 5), (FallenNecromancer, 2),
-      (GraveDigger, 1), (FallenRusher, 8), (FallenHonorGuard, 1)],          0, 0),                              # 36 Grave Digger
-    ([(FallenGiant, 2), (FallenSquire, 4), (CorruptedFallen, 12),
-      (FallenJester, 8), (Necromancer, 8)],                                 0, 0),                              # 37 Lava (CorruptedFallen)
-    ([(FallenSquire, 6), (FallenGiant, 4), (BreakerEnemy, 12),
-      (CorruptedFallen, 8), (FallenJester, 2)],                             0, 0),                              # 38
-    ([(SlowBoss, 8), (BreakerEnemy, 8), (Necromancer, 10),
-      (FallenJester, 10)],                                                  0, 0),                              # 39
-    ([(CorruptedFallen, 7), (FallenJester, 8), (Necromancer, 8),
-      (FallenGiant, 4), (BreakerEnemy, 4)],                                 0, 0),                              # 40
+    # 36: 8 mega slow, 5 mystery boss, 2 fallen titan, 1 grave digger, 8 fallen rusher, 1 fallen reaper
+    ([(MegaSlowEnemy, 8), (MysteryBossEnemy, 5), (FallenTitanEnemy, 2),
+      (GraveDigger, 1), (FallenRusher, 8), (FallenReaper, 1)],          0, 0),                              # 36 Grave Digger
+    # 37: 2 giant boss, 4 mega slow, 8 mystery boss, 8 mystery, 12 lava
+    ([(GiantBossEnemy, 2), (MegaSlowEnemy, 4), (MysteryBossEnemy, 8),
+      (MysteryEnemy, 8), (CorruptedFallen, 12)],                            0, 0),                              # 37 Lava
+    # 38: 6 mega slow, 4 giant boss, 15 lava, 8 mystery boss, 2 fallen reaper
+    ([(MegaSlowEnemy, 6), (GiantBossEnemy, 4), (CorruptedFallen, 15),
+      (MysteryBossEnemy, 8), (FallenReaper, 2)],                        0, 0),                              # 38
+    # 39: 8 normal boss, 10 mystery, 10 mystery boss, 25 abnormal, 10 quick, 10 invisible,
+    #     5 shadow boss, 5 mega slow, 3 giant boss, 2 fallen rusher, 3 lava
+    ([(NormalBoss, 8), (MysteryEnemy, 10), (MysteryBossEnemy, 10),
+      (AbnormalEnemy, 25), (QuickEnemy, 10), (InvisibleEnemy, 10),
+      (HiddenBoss, 5), (MegaSlowEnemy, 5), (GiantBossEnemy, 3),
+      (FallenRusher, 2), (CorruptedFallen, 3)],                             0, 0),                              # 39
+    # 40: 7 lava, 8 mystery boss, 4 giant boss, 10 shadow boss
+    ([(CorruptedFallen, 7), (MysteryBossEnemy, 8),
+      (GiantBossEnemy, 4), (HiddenBoss, 10)],                               0, 0),                              # 40
     # ── True endgame (41-50) ──────────────────────────────────────────────────
-    ([(CorruptedFallen, 12), (FallenSquire, 6), (FallenGiant, 4),
-      (FallenJester, 4), (NecroticSkeleton, 5)],                            0, 0),                              # 41
-    ([(Necromancer, 15), (FallenRusher, 7), (BreakerEnemy, 6),
-      (FallenJester, 8), (Frostmite, 8), (CorruptedFallen, 8)],             0, 0),                              # 42
-    ([(Frostmite, 8), (FallenNecromancer, 1), (CorruptedFallen, 16),
-      (BreakerEnemy, 8), (NecroticSkeleton, 2), (FallenJester, 3)],         0, 0),                              # 43
-    ([(CorruptedFallen, 20), (FallenSquire, 5), (FallenGiant, 1),
-      (FallenNecromancer, 3), (Frostmite, 1), (FallenJester, 1)],           0, 0),                              # 44
-    ([(FallenShield, 1), (Necromancer, 8), (FallenJester, 10),
-      (FallenSquire, 10), (FallenHazmat, 1), (Frostmite, 3),
-      (FallenRusher, 3), (FallenHero, 3)],                                  0, 0),                              # 45
-    ([(Necromancer, 16), (FallenEnemy, 12), (FallenSoul, 6),
-      (FallenJester, 4), (FallenHonorGuard, 3), (FallenNecromancer, 1),
-      (FallenKing, 1)],                                                     0, 0),                              # 46
-    ([(FallenJester, 10), (FallenGiant, 6), (NecroticSkeleton, 8),
-      (FallenHonorGuard, 2), (FallenRusher, 8), (FallenEnemy, 8),
-      (FallenNecromancer, 2), (FallenJester, 5), (Frostmite, 4)],           0, 0),                              # 47
-    ([(FallenHero, 3), (FallenJester, 8), (FallenNecromancer, 9),
-      (FallenEnemy, 5), (FallenSoul, 3), (FallenGiant, 4), (FallenJester, 2),
-      (FallenRusher, 6), (FallenHonorGuard, 2), (NecroticSkeleton, 4),
-      (FallenKing, 1)],                                                     0, 0),                              # 48
-    ([(FallenHero, 3), (FallenEnemy, 5), (FallenSoul, 4), (FallenGiant, 2),
-      (NecroticSkeleton, 2), (FallenKing, 1), (FallenJester, 6)],           0, 0),                              # 49
-    ([(FallenHero, 10), (FallenGiant, 10), (FallenNecromancer, 10),
-      (FallenHonorGuard, 4), (FallenJester, 2), (FallenKing, 2),
-      (FallenRusher, 12), (Necromancer, 8), (GraveDigger, 1),
-      (FallenEnemy, 2), (FallenShield, 1)],                                 0, 0),                              # 50
+    # 41: 12 lava, 6 mega slow, 4 giant boss, 5 mystery, 4 slow king
+    ([(CorruptedFallen, 12), (MegaSlowEnemy, 6), (GiantBossEnemy, 4),
+      (MysteryEnemy, 5), (SlowKingEnemy, 4)],                               0, 0),                              # 41 Slow King
+    # 42: 15 mystery, 10 mystery boss, 5 mega slow, 5 slow king, 3 fallen reaper, 7 error
+    ([(MysteryEnemy, 15), (MysteryBossEnemy, 10), (MegaSlowEnemy, 5),
+      (SlowKingEnemy, 5), (FallenReaper, 3), (ErrorEnemy, 7)],          0, 0),                              # 42 Error
+    # 43: 8 error, 2 slow king, 12 normal boss, 16 lava, 1 circuit
+    ([(ErrorEnemy, 8), (SlowKingEnemy, 2), (NormalBoss, 12),
+      (CorruptedFallen, 16), (CircuitEnemy, 1)],                            0, 0),                              # 43 Circuit
+    # 44: 32 lava, 5 mega slow, 1 circuit, 1 speedy king, 3 molten titan, 1 molten warlord
+    ([(CorruptedFallen, 32), (MegaSlowEnemy, 5), (CircuitEnemy, 1),
+      (SpeedyKingEnemy, 1), (MoltenTitanEnemy, 3), (MoltenWarlordEnemy, 1)], 0, 0),                             # 44 Molten Warlord
+    # 45: 8 mystery, 8 mystery boss, 10 mega slow, 6 slow king, 3 speedy king,
+    #     1 circuit, 3 fallen hero, 4 soul, 1 warden
+    ([(MysteryEnemy, 8), (MysteryBossEnemy, 8), (MegaSlowEnemy, 10),
+      (SlowKingEnemy, 6), (SpeedyKingEnemy, 3), (CircuitEnemy, 1),
+      (FallenHero, 3), (FallenSoul, 4), (WardenEnemy, 1)],                  0, 0),                              # 45 Warden
+    # 46: 12 fallen, 16 mystery, 8 soul, 3 fallen reaper, 7 slow king,
+    #     4 speedy king, 3 fallen titan, 1 frost necromancer, 4 soul boss
+    ([(FallenEnemy, 12), (MysteryEnemy, 16), (FallenSoul, 8),
+      (FallenReaper, 3), (SlowKingEnemy, 7), (SpeedyKingEnemy, 4),
+      (FallenTitanEnemy, 3), (FrostNecromancerEnemy, 1), (SoulBossEnemy, 4)], 0, 0),                            # 46 Frost Necromancer
+    # 47: 10 mystery boss, 6 soul boss, 8 slow king, 1 frost necromancer, 2 fallen titan,
+    #     8 error, 4 mega slow, 4 speedy king, 8 fallen, 8 fallen rusher, 1 fallen king
+    ([(MysteryBossEnemy, 10), (SoulBossEnemy, 6), (SlowKingEnemy, 8),
+      (FrostNecromancerEnemy, 1), (FallenTitanEnemy, 2), (ErrorEnemy, 8),
+      (MegaSlowEnemy, 4), (SpeedyKingEnemy, 4), (FallenEnemy, 8),
+      (FallenRusher, 8), (FallenKing, 1)],                                  0, 0),                              # 47 Fallen King
+    # 48: 3 fallen hero, 1 warden, 8 mystery boss, 9 error, 5 fallen, 3 soul,
+    #     4 soul boss, 4 slow king, 5 speedy king, 6 error, 2 fallen hero, 8 fallen,
+    #     2 fallen titan, 1 necromancer boss, 2 soul stealer, 1 frost spirit
+    ([(FallenHero, 3), (WardenEnemy, 1), (MysteryBossEnemy, 8),
+      (ErrorEnemy, 9), (FallenEnemy, 5), (FallenSoul, 3), (SoulBossEnemy, 4),
+      (SlowKingEnemy, 4), (SpeedyKingEnemy, 5), (ErrorEnemy, 6),
+      (FallenHero, 2), (FallenEnemy, 8), (FallenTitanEnemy, 2),
+      (FallenNecromancer, 1), (PossessedArmor, 2), (FrostSpiritEnemy, 1)],  0, 0),                              # 48
+    # 49: 3 fallen hero, 5 fallen, 3 soul, 4 soul boss, 2 slow king,
+    #     3 speedy king, 1 vindicator, 6 unknown
+    ([(FallenHero, 3), (FallenEnemy, 5), (FallenSoul, 3), (SoulBossEnemy, 4),
+      (SlowKingEnemy, 2), (SpeedyKingEnemy, 3), (VindicatorEnemy, 1),
+      (UnknownEnemy, 6)],                                                   0, 0),                              # 49 Vindicator + Unknown
+    # 50: massive finale — all killed, then FinalJudgmentEnemy spawns (handled in game.py)
+    ([(FallenHero, 10), (SoulBossEnemy, 10), (SlowKingEnemy, 10),
+      (SpeedyKingEnemy, 12), (UnknownEnemy, 6), (FallenTitanEnemy, 2),
+      (FallenGuardianEnemy, 2), (VindicatorEnemy, 2), (MysteryEnemy, 12),
+      (MysteryBossEnemy, 8), (GiantBossEnemy, 6), (FallenGuardianEnemy, 2),
+      (VindicatorEnemy, 2), (UnknownEnemy, 6)],                             0, 0),                              # 50 FINALE
 ]
