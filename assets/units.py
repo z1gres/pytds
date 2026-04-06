@@ -598,12 +598,12 @@ C_LIFESTEALER_DARK = (100, 10, 30)
 
 # (damage, firerate, range_tiles, upgrade_cost, money_pct)
 LIFESTEALER_LEVELS = [
-    (5.5,  0.650, 5.0, None, 0.10),
-    (5.5,  0.600, 5.0, 350,  0.15),
-    (6.5,  0.600, 5.5, 600,  0.20),
-    (8.5,  0.600, 5.5, 800,  0.25),
-    (9.5,  0.600, 5.5, 1300, 0.35),
-    (11.5, 0.600, 6.0, 1700, 0.45),
+    (2.75, 0.650, 5.0, None, 0.10),
+    (2.75, 0.600, 5.0, 350,  0.15),
+    (3.25, 0.600, 5.5, 600,  0.20),
+    (4.25, 0.600, 5.5, 800,  0.25),
+    (4.75, 0.600, 5.5, 1300, 0.35),
+    (5.75, 0.600, 6.0, 1700, 0.45),
 ]
 
 class LifestealerBullet:
@@ -1064,11 +1064,11 @@ C_REDBALL_DARK = (120, 10,  10)
 
 # (damage, firerate, upgrade_cost)  — range is always 7
 REDBALL_LEVELS = [
-    (15,  0.7, None),
-    (25,  0.8, 750),
-    (30,  0.8, 1250),
-    (75,  0.6, 3000),
-    (150, 0.6, 4000),
+    (7,   0.7, None),
+    (15,  0.8, 750),
+    (20,  0.8, 1250),
+    (35,  0.6, 3000),
+    (50,  0.6, 4000),
 ]
 
 class RedBall(Unit):
@@ -1233,11 +1233,11 @@ C_FREEZER_DARK = (20, 70, 120)
 
 # (damage, firerate, range_tiles, upgrade_cost, slow_pct, slow_dur)
 FREEZER_LEVELS = [
-    (3,  0.9, 4.0, None, 0.05, 3.0),   # lv0
-    (5,  0.7, 4.5, 300,  0.10, 3.0),   # lv1
-    (8,  0.7, 5.0, 500,  0.10, 3.0),   # lv2
-    (10, 0.5, 5.5, 700,  0.12, 4.0),   # lv3
-    (15, 0.3, 6.0, 1200, 0.15, 5.0),   # lv4 (max)
+    (1.5, 0.9, 4.0, None, 0.05, 3.0),   # lv0
+    (3.5, 0.7, 4.5, 300,  0.10, 3.0),   # lv1
+    (6.5, 0.7, 5.0, 500,  0.10, 3.0),   # lv2
+    (8.5, 0.5, 5.5, 700,  0.12, 4.0),   # lv3
+    (13.5, 0.3, 6.0, 1200, 0.15, 5.0),  # lv4 (max)
 ]
 
 class FreezerBullet:
@@ -1398,15 +1398,15 @@ C_FROSTBLASTER_DARK = (20, 60, 110)
 # proj_speed = bullet travel speed
 FROSTBLASTER_LEVELS = [
     # lv0 – place cost 800
-    (4,  0.608, 6.0, None, False, 0.50, 0.45, 3, 0.45, 0.00, 0.00, 420.0),
+    (2,  0.608, 6.0, None, False, 0.50, 0.45, 3, 0.45, 0.00, 0.00, 420.0),
     # lv1 – upgrade 350
-    (4,  0.508, 7.2,  350, True,  0.50, 0.60, 3, 0.60, 0.00, 0.00, 420.0),
+    (2,  0.508, 7.2,  350, True,  0.50, 0.60, 3, 0.60, 0.00, 0.00, 420.0),
     # lv2 – upgrade 1350
-    (7,  0.508, 7.2, 1350, True,  0.75, 0.60, 3, 0.60, 0.15, 0.00, 420.0),
+    (5,  0.508, 7.2, 1350, True,  0.75, 0.60, 3, 0.60, 0.15, 0.00, 420.0),
     # lv3 – upgrade 3200
-    (8,  0.308, 7.8, 3200, True,  0.75, 0.60, 3, 0.60, 0.15, 0.00, 420.0),
+    (6,  0.308, 7.8, 3200, True,  0.75, 0.60, 3, 0.60, 0.15, 0.00, 420.0),
     # lv4 – upgrade 8500
-    (53, 0.908,10.2, 8500, True,  0.75, 1.50, 3, 1.50, 0.15, 0.35, 450.0),
+    (38, 0.908,10.2, 8500, True,  0.75, 1.50, 3, 1.50, 0.15, 0.35, 450.0),
 ]
 
 
@@ -1971,18 +1971,18 @@ C_GLADIATOR_DARK = (80,  60,  10)
 # within that arc — up to max_hits, sorted by target_mode.
 # Passive: stun-block — every 1.25 s it can absorb one incoming stun.
 GLADIATOR_LEVELS = [
-    # lv0 – place $500
-    (5,  1.008, 5.0, None, 3,  False),
-    # lv1 – +$300
-    (7,  1.008, 5.0,  300, 3,  False),
-    # lv2 – +$550  (hidden detection, faster swing)
-    (12, 0.758, 5.0,  550, 5,  True),
-    # lv3 – +$1500
-    (17, 0.758, 5.0, 1500, 7,  True),
-    # lv4 – +$2500 (bigger range, much faster)
-    (37, 0.508, 7.0, 2500, 9,  True),
-    # lv5 – +$6000
-    (57, 0.508, 8.0, 6000, 10, True),
+    # lv0 – place $525  | dmg 3 | firerate 0.975 | range 5.0 | 3 hits | hidden det
+    (3,   0.975, 5.0,  None,  3, True),
+    # lv1 – +$450       | dmg 5 | firerate 0.975->0.775
+    (5,   0.775, 5.0,   450,  3, True),
+    # lv2 – +$1,250     | dmg 8
+    (8,   0.775, 5.0,  1250,  3, True),
+    # lv3 – +$2,000     | dmg 16 | range 5.0->5.5 | firerate 0.775->1.075 | +3 hits -> 6
+    (16,  1.075, 5.5,  2000,  6, True),
+    # lv4 – +$6,000     | dmg 45 | range 5.5->5.7 | +2 hits -> 8
+    (45,  1.075, 5.7,  6000,  8, True),
+    # lv5 – +$13,900    | dmg 78 | firerate 1.075->1.5 | hits -> 10
+    (78,  1.500, 5.7, 13900, 10, True),
 ]
 
 # How wide the arc is (degrees, total width centred on aim angle)
@@ -1990,10 +1990,10 @@ _GLAD_ARC_DEG = 180.0
 
 
 class Gladiator(Unit):
-    PLACE_COST    = 500
+    PLACE_COST    = 525
     COLOR         = C_GLADIATOR
     NAME          = "Gladiator"
-    hidden_detection = False
+    hidden_detection = True
 
     def __init__(self, px, py):
         super().__init__(px, py)
@@ -2713,24 +2713,24 @@ C_GCOWBOY_DARK = (80,  60,  10)
 #    the trigger fires anyway — but we only count actual hits for authenticity
 
 GCOWBOY_LEVELS = [
-    # lv0 – place $400  base stats per screenshots
+    # lv0 – place $550  | dmg 2 | firerate 0.358 | spin_time 1.75 | income 25
     # (damage, firerate, range_tiles, upgrade_cost, cash_shot, income, spin_time, hidden_detection)
-    (2,  0.575,  5.0, None, 6,  30, 1.5, False),
-    # lv1 – Steady Hand +$160  | firerate improved, spin time reduced
-    (2,  0.475,  5.5,  160, 6,  30, 1.25, False),
-    # lv2 – Lucky Shot +$850  | +2 dmg, +range, hidden detection
-    (4,  0.475,  7.0,  850, 6,  40, 1.25, True),
-    # lv3 – Faster Instincts +$8000 | +2 range, +10 dmg, spin time reduced
-    (14, 0.450,  9.0, 8000, 6,  75, 1.0, True),
-    # lv4 – Double Tap +$5500 | faster firerate, more income, double cash_shot
-    (14, 0.275,  9.5, 5500, 12, 150, 1.0, True),
-    # lv5 – Outlawed +$12500 | +14 dmg, +2 range, big income
-    (28, 0.275, 11.0,12500, 12, 350, 1.0, True),
+    (2,  0.358,  5.0,  None, 6,  25,  1.75, False),
+    # lv1 – +$225  | firerate 0.358->0.308 | spin_time 1.75->1.25 | income 25
+    (2,  0.308,  5.0,   225, 6,  25,  1.25, False),
+    # lv2 – +$900  | +2 dmg -> 4 | hidden detection | income 50
+    (4,  0.308,  5.0,   900, 6,  50,  1.25, True),
+    # lv3 – +$3,500 | +11 dmg -> 15 | firerate 0.308->0.508 | spin_time 1.25->1.0 | income 85
+    (15, 0.508,  5.0,  3500, 6,  85,  1.0,  True),
+    # lv4 – +$5,500 | firerate 0.508->0.258 | cash_shot 6->12 | income 175
+    (15, 0.258,  5.0,  5500, 12, 175, 1.0,  True),
+    # lv5 – +$17,000 | +20 dmg -> 35 | income 325
+    (35, 0.258,  5.0, 17000, 12, 325, 1.0,  True),
 ]
 
 
 class GoldenCowboy(Unit):
-    PLACE_COST       = 400
+    PLACE_COST       = 550
     COLOR            = C_GCOWBOY
     NAME             = "Cowboy"
     hidden_detection = False
@@ -4183,10 +4183,10 @@ COMMANDO_LEVELS = [
     (4,  0.13, 7.5,  600, 4,  1.4, 1, False),
     # lv2  +$1500  (grenade)
     (5,  0.12, 8.0, 1500, 5,  1.3, 2, False),
-    # lv3  +$4000  (hidden det)
-    (6,  0.11, 8.5, 4000, 6,  1.1, 2, True),
-    # lv4  +$10000  (dual fire, more pierce)
-    (9,  0.10, 9.0,10000, 8,  1.0, 3, True),
+    # lv3  +$6000  (hidden det)
+    (6,  0.11, 8.5, 6000, 6,  1.1, 2, True),
+    # lv4  +$15000  (dual fire, more pierce)
+    (9,  0.10, 9.0,15000, 8,  1.0, 3, True),
 ]
 
 _COMMANDO_BULLET_SPEED = 560.0
