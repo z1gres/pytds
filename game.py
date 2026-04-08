@@ -1776,6 +1776,9 @@ class UI:
                 hd_next=bool(nxt and not hd_now and (u.level+1)>=2)
                 stats=[]
                 if hd_now: stats.append(("HidDet","Hidden Detection",None))
+                if u.arrow_mode=="flame"     and u.level>=3: stats.append(("FlameArrow","Flame Arrow",None))
+                if u.arrow_mode=="shock"     and u.level>=4: stats.append(("ShockArrow","Shock Arrow",None))
+                if u.arrow_mode=="explosive" and u.level>=5: stats.append(("ExplosiveArrow","Explosive Arrow",None))
                 stats+=[
                     ("Damage",  u.damage,          nxt.get("Damage")    if nxt else None),
                     ("Firerate",f"{u.firerate:.3f}", f"{nxt['Firerate']:.3f}" if nxt else None),
@@ -4106,7 +4109,7 @@ ALL_UNITS_POOL = [
     {"name": "Spotlight Tech", "rarity": "common"},
     {"name": "Snowballer",     "rarity": "rare"},
     {"name": "Commander",      "rarity": "starter"},
-    {"name": "Commando",       "rarity": "rare"},
+    {"name": "Commando",       "rarity": "starter"},
     {"name": "Warlock",      "rarity": "epic"},
     {"name": "Caster",       "rarity": "mythic"},
     {"name": "Jester",       "rarity": "mythic"},
@@ -4117,7 +4120,7 @@ ALL_UNITS_POOL = [
 UNIT_SHOP_PRICES = {
     "Assassin":       None,
     "Archer":         1000,
-    "Lifestealer":    450,
+    "Lifestealer":    300,
     "Accelerator":    4000,
     "Red Ball":       500,
     "Farm":           200,
@@ -4133,8 +4136,8 @@ UNIT_SHOP_PRICES = {
     "Hallow Punk":    600,
     "Spotlight Tech": 5000,
     "Snowballer":     700,
-    "Commander":      2000,
-    "Commando":       800,
+    "Commander":      500,
+    "Commando":       400,
     "hacker_laser_effects_test": None,
     "Caster": None,
     "Warlock": 3000,
