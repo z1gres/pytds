@@ -1273,6 +1273,222 @@ class Archer(Unit):
         return info
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# ArcherPrime — sandbox-only unit
+#   • 1 damage per hit
+#   • Fires an arrow that ricochets up to 40 times
+#   • Ricochet targets ANY alive enemy — no range / direction restrictions
+#   • Cannot be placed on path
+# ══════════════════════════════════════════════════════════════════════════════
+
+C_ARCHERPRIME      = (180, 80, 255)
+C_ARCHERPRIME_DARK = (70,  20, 120)
+
+class ArcherPrimeArrow:
+    """Arrow that ricochets to ANY alive, unhit enemy — no range or direction limit."""
+    TRAIL_LEN = 22
+    SPEED = 560.0
+
+    def __init__(self, ox, oy, target, max_hits=40):
+        self.x = float(ox); self.y = float(oy)
+        self._target = target
+        dx = target.x - ox; dy = target.y - oy
+        d = math.hypot(dx, dy) or 1
+        self.vx = dx / d; self.vy = dy / d
+        self.damage = 1
+        self.hits_left = max_hits
+        self.alive = True
+        self._hit_ids = set()
+        self._dist_left = 900.0
+        self._trail = []
+        self._trail_timer = 0.0
+
+    def _ricochet(self, enemies):
+        """Ricochet to nearest alive unhit enemy — absolutely no restrictions."""
+        best = None; best_d = 9999999
+        for e in enemies:
+            if not e.alive or id(e) in self._hit_ids: continue
+            d = math.hypot(e.x - self.x, e.y - self.y)
+            if d < best_d:
+                best_d = d; best = e
+        if best:
+            self._target = best
+            dx = best.x - self.x; dy = best.y - self.y
+            d = math.hypot(dx, dy) or 1
+            self.vx = dx / d; self.vy = dy / d
+            self._dist_left = 1200.0
+        else:
+            self.alive = False  # no enemies left
+
+    def update(self, dt, enemies, effects=None):
+        if not self.alive: return
+        # Trail
+        self._trail_timer += dt
+        if self._trail_timer >= 0.016:
+            self._trail_timer = 0.0
+            self._trail.append((self.x, self.y))
+            if len(self._trail) > self.TRAIL_LEN:
+                self._trail.pop(0)
+        step = self.SPEED * dt
+        # Home to current target
+        if self._target and self._target.alive and id(self._target) not in self._hit_ids:
+            dx = self._target.x - self.x; dy = self._target.y - self.y
+            d = math.hypot(dx, dy) or 1
+            self.vx = dx / d; self.vy = dy / d
+        self.x += self.vx * step; self.y += self.vy * step
+        self._dist_left -= step
+        if self._dist_left <= 0:
+            self.alive = False; return
+        # Collision
+        for e in enemies:
+            if not e.alive or id(e) in self._hit_ids: continue
+            if math.hypot(e.x - self.x, e.y - self.y) < e.radius + 7:
+                e.take_damage(self.damage)
+                self._hit_ids.add(id(e))
+                self.hits_left -= 1
+                if self.hits_left <= 0:
+                    self.alive = False; return
+                self._ricochet(enemies)
+                return
+
+    def draw(self, surf):
+        if not self.alive: return
+        trail = self._trail; tlen = len(trail)
+        if tlen >= 2:
+            ts = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            for i in range(tlen - 1):
+                frac = i / max(tlen - 1, 1)
+                alpha = int(60 + frac * 195)
+                r2 = int(80  + frac * 100)
+                g2 = int(20  + frac * 20)
+                b2 = int(200 + frac * 55)
+                w2 = max(2, int(frac * 8))
+                pygame.draw.line(ts, (r2, g2, b2, alpha),
+                                 (int(trail[i][0]), int(trail[i][1])),
+                                 (int(trail[i+1][0]), int(trail[i+1][1])), w2)
+                # glow halo
+                pygame.draw.line(ts, (180, 0, 255, alpha // 3),
+                                 (int(trail[i][0]), int(trail[i][1])),
+                                 (int(trail[i+1][0]), int(trail[i+1][1])), w2 + 6)
+            surf.blit(ts, (0, 0))
+        # Arrowhead
+        ax = int(self.x + self.vx * 10); ay = int(self.y + self.vy * 10)
+        pygame.draw.circle(surf, (220, 80, 255), (ax, ay), 5)
+        pygame.draw.circle(surf, (255, 180, 255), (ax, ay), 3)
+
+
+class ArcherPrime(Unit):
+    PLACE_COST     = 0          # free in sandbox
+    COLOR          = C_ARCHERPRIME
+    NAME           = "ArcherPrime"
+    hidden_detection = True     # sees hidden enemies
+    CAN_PLACE_ON_PATH = False
+
+    DAMAGE   = 1
+    MAX_HITS = 40
+    FIRERATE = 1.2
+    RANGE    = 8.0              # range_tiles (visual only — ricochet ignores range)
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self.damage      = self.DAMAGE
+        self.max_hits    = self.MAX_HITS
+        self.firerate    = self.FIRERATE
+        self.range_tiles = self.RANGE
+        self._arrows     = []
+        self._anim_t     = 0.0
+        self._aim_angle  = 0.0
+
+    # No upgrades
+    def upgrade_cost(self): return None
+    def upgrade(self): pass
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t += dt
+        if self.cd_left > 0: self.cd_left -= dt
+        targets = self._get_targets(enemies, 1)
+        if self.cd_left <= 0 and targets:
+            t = targets[0]
+            self._aim_angle = math.atan2(t.y - self.py, t.x - self.px)
+            self.cd_left = self.firerate
+            self.total_damage += self.damage
+            self._arrows.append(ArcherPrimeArrow(self.px, self.py, t, self.MAX_HITS))
+        for a in self._arrows: a.update(dt, enemies, effects)
+        self._arrows = [a for a in self._arrows if a.alive]
+
+    def draw(self, surf):
+        cx, cy = int(self.px), int(self.py)
+        t = self._anim_t
+
+        # Outer glow ring (pulsing)
+        pulse = int(abs(math.sin(t * 2.5)) * 30 + 10)
+        gs = pygame.Surface((80, 80), pygame.SRCALPHA)
+        pygame.draw.circle(gs, (180, 40, 255, pulse), (40, 40), 38)
+        surf.blit(gs, (cx - 40, cy - 40))
+
+        # Body
+        pygame.draw.circle(surf, C_ARCHERPRIME_DARK, (cx, cy), 27)
+        pygame.draw.circle(surf, C_ARCHERPRIME,      (cx, cy), 20)
+
+        # Orbiting stars
+        for i in range(3):
+            oa = math.radians(t * 150 + i * 120)
+            ox2 = cx + int(math.cos(oa) * 24)
+            oy2 = cy + int(math.sin(oa) * 24)
+            pts = []
+            for pi2 in range(10):
+                r2 = 5 if pi2 % 2 == 0 else 2
+                a2 = math.radians(-90 + pi2 * 36)
+                pts.append((ox2 + int(math.cos(a2) * r2), oy2 + int(math.sin(a2) * r2)))
+            pygame.draw.polygon(surf, (220, 100, 255), pts)
+
+        # Bow/arrow visual (same structure as Archer)
+        SIZE = 66
+        bow_surf = pygame.Surface((SIZE, SIZE), pygame.SRCALPHA)
+        bx = by = SIZE // 2
+        a = self._aim_angle; ca = math.cos(a); sa = math.sin(a)
+        pa = -sa; pb = ca
+        ax0 = int(bx + ca * (-14)); ay0 = int(by + sa * (-14))
+        ax1 = int(bx + ca * 18);   ay1 = int(by + sa * 18)
+        pygame.draw.line(bow_surf, (210, 120, 255), (ax0, ay0), (ax1, ay1), 2)
+        tip_x = bx + ca * 18; tip_y = by + sa * 18
+        back_x = bx + ca * 12; back_y = by + sa * 12
+        pygame.draw.polygon(bow_surf, (240, 160, 255), [
+            (int(tip_x), int(tip_y)),
+            (int(back_x + pa * 5), int(back_y + pb * 5)),
+            (int(back_x - pa * 5), int(back_y - pb * 5))
+        ])
+        bow_cx = int(bx + ca * (-8)); bow_cy = int(by + sa * (-8))
+        pygame.draw.line(bow_surf, (200, 80, 255),
+                         (int(bow_cx + pa * 16), int(bow_cy + pb * 16)),
+                         (int(bow_cx - pa * 16), int(bow_cy - pb * 16)), 3)
+        pygame.draw.line(bow_surf, (255, 200, 255),
+                         (int(bow_cx + pa * 16), int(bow_cy + pb * 16)),
+                         (int(bx + ca * 2), int(by + sa * 2)), 1)
+        pygame.draw.line(bow_surf, (255, 200, 255),
+                         (int(bow_cx - pa * 16), int(bow_cy - pb * 16)),
+                         (int(bx + ca * 2), int(by + sa * 2)), 1)
+        surf.blit(bow_surf, (cx - SIZE // 2, cy - SIZE // 2))
+
+        # Draw arrows
+        for arr in self._arrows: arr.draw(surf)
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (180, 40, 255, 18), (r, r), r)
+        pygame.draw.circle(s, (220, 80, 255, 70), (r, r), r, 2)
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+
+    def get_info(self):
+        return {
+            "Damage":   self.damage,
+            "Bounces":  self.max_hits,
+            "Firerate": f"{self.firerate:.2f}",
+            "Range":    "∞ (ricochet)",
+        }
+
+
 # ── Farm ───────────────────────────────────────────────────────────────────────
 C_FARM      = (80, 180, 60)
 C_FARM_DARK = (40, 90,  25)
@@ -1507,6 +1723,157 @@ SPAWN_MAP={
     "fallenhero":       lambda w: FallenHero(w),
     "fallenking":       lambda w: FallenKing(w),
 }
+
+# forward-declare Militant so SPAWN_MAP can reference it after class is defined
+# (actual class defined below)
+# ── Militant ───────────────────────────────────────────────────────────────────
+C_MILITANT      = (160, 120, 60)
+C_MILITANT_DARK = (60, 40, 15)
+
+class MilitantBullet:
+    """Small fast tracer bullet — visual only, damage dealt on hit."""
+    def __init__(self, ox, oy, target, damage, hidden_detection):
+        self.x = float(ox); self.y = float(oy)
+        self.target = target
+        self.damage = damage
+        self.hidden_detection = hidden_detection
+        self.alive = True
+        self.speed = 520.0
+        self._hit = False
+        # Trail positions for motion blur
+        self._trail = []
+
+    def update(self, dt):
+        if not self.target.alive:
+            self.alive = False; return
+        dx = self.target.x - self.x
+        dy = self.target.y - self.y
+        d = math.hypot(dx, dy)
+        # Save trail point
+        self._trail.append((self.x, self.y))
+        if len(self._trail) > 4:
+            self._trail.pop(0)
+        if d < 8:
+            if not self._hit:
+                self._hit = True
+                self.target.take_damage(self.damage)
+            self.alive = False; return
+        step = self.speed * dt
+        self.x += dx / d * step
+        self.y += dy / d * step
+
+    def draw(self, surf):
+        # Draw trail
+        for i, (tx, ty) in enumerate(self._trail):
+            alpha = int(80 * (i + 1) / len(self._trail)) if self._trail else 0
+            s = pygame.Surface((8, 8), pygame.SRCALPHA)
+            pygame.draw.circle(s, (220, 200, 80, alpha), (4, 4), 3)
+            surf.blit(s, (int(tx) - 4, int(ty) - 4))
+        # Bullet head
+        cx, cy = int(self.x), int(self.y)
+        s = pygame.Surface((10, 10), pygame.SRCALPHA)
+        pygame.draw.circle(s, (255, 240, 100, 255), (5, 5), 4)
+        pygame.draw.circle(s, (255, 255, 220, 200), (5, 5), 2)
+        surf.blit(s, (cx - 5, cy - 5))
+
+# (damage, firerate, range_tiles, upgrade_cost)
+MILITANT_LEVELS = [
+    (3,  0.600, 5.0, None),   # lv0  base – $200
+    (4,  0.525, 5.5,  300),   # lv1  +1 Dmg, faster, +0.5 Range
+    (5,  0.450, 6.0,  850),   # lv2  +1 Dmg, faster, +0.5 Range  — hidden detection
+    (8,  0.400, 6.5, 2750),   # lv3  +3 Dmg, faster, +0.5 Range
+    (13, 0.350, 7.0, 8000),   # lv4  +5 Dmg, faster, +0.5 Range
+]
+
+class Militant(Unit):
+    PLACE_COST       = 600
+    COLOR            = C_MILITANT
+    NAME             = "Militant"
+    hidden_detection = False
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._anim_t   = 0.0
+        self._aim_angle = 0.0
+        self._bullets  = []
+        self._apply_level()
+
+    def _apply_level(self):
+        d, fr, r, _ = MILITANT_LEVELS[self.level]
+        self.damage       = d
+        self.firerate     = fr
+        self.range_tiles  = r
+        self.hidden_detection = (self.level >= 2)
+        self.cd_left      = 0.0
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(MILITANT_LEVELS): return None
+        return MILITANT_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(MILITANT_LEVELS):
+            self.level = nxt; self._apply_level()
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t += dt
+        if self.cd_left > 0: self.cd_left -= dt
+        targets = self._get_targets(enemies, 1)
+        if self.cd_left <= 0 and targets:
+            t = targets[0]
+            self._aim_angle = math.atan2(t.y - self.py, t.x - self.px)
+            self.cd_left = self.firerate
+            # Spawn bullet from barrel tip
+            barrel_x = self.px + math.cos(self._aim_angle) * 30
+            barrel_y = self.py + math.sin(self._aim_angle) * 30
+            self._bullets.append(MilitantBullet(barrel_x, barrel_y, t, self.damage, self.hidden_detection))
+            self.total_damage += self.damage
+        for b in self._bullets: b.update(dt)
+        self._bullets = [b for b in self._bullets if b.alive]
+
+    def draw(self, surf):
+        # Draw bullets behind unit
+        for b in self._bullets: b.draw(surf)
+
+        cx, cy = int(self.px), int(self.py)
+        t = self._anim_t
+
+        # Shadow
+        pygame.draw.circle(surf, (20, 15, 5), (cx + 2, cy + 2), 27)
+        # Body circle
+        pygame.draw.circle(surf, C_MILITANT_DARK, (cx, cy), 27)
+        pygame.draw.circle(surf, C_MILITANT, (cx, cy), 21)
+
+        # Helmet – dark arc on top
+        helmet_rect = pygame.Rect(cx - 18, cy - 27, 36, 20)
+        pygame.draw.ellipse(surf, (50, 35, 10), helmet_rect)
+        pygame.draw.arc(surf, (90, 65, 20), helmet_rect, 0, math.pi, 4)
+
+        # Rifle barrel pointing in aim direction
+        angle = self._aim_angle
+        bx = cx + int(math.cos(angle) * 14)
+        by = cy + int(math.sin(angle) * 14)
+        ex = cx + int(math.cos(angle) * 30)
+        ey = cy + int(math.sin(angle) * 30)
+        pygame.draw.line(surf, (70, 55, 25), (bx, by), (ex, ey), 5)
+        pygame.draw.line(surf, (180, 150, 80), (bx, by), (ex, ey), 3)
+
+        # Hidden detection eye dot
+        if self.hidden_detection:
+            pygame.draw.circle(surf, (100, 255, 100), (cx + 19, cy - 19), 5)
+
+        # Level pips
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_GOLD, (cx - 10 + i * 7, cy + 33), 3)
+
+    def get_info(self):
+        return {
+            "Damage":   self.damage,
+            "Range":    self.range_tiles,
+            "Firerate": f"{self.firerate:.3f}",
+        }
+
 # ── Freezer ────────────────────────────────────────────────────────────────────
 C_FREEZER      = (80, 200, 255)
 C_FREEZER_DARK = (20, 70, 120)

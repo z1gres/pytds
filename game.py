@@ -31,6 +31,10 @@ from game_core import (
     fmt_num,
 )
 
+# ── Unit limit overrides (applied on top of game_core defaults) ────────────────
+UNIT_LIMITS["Archer"]   = 8   # increased from default (was 6)
+UNIT_LIMITS["Militant"] = 6   # new starter unit
+
 
 
 
@@ -165,6 +169,8 @@ from units import (
     C_FARM, C_FARM_DARK, C_REDBALL, C_REDBALL_DARK,
     draw_xw5yt_icon,
     RubberDuck, RubberDuckProjectile, DUCK_LEVELS, DUCK_LEVEL_NAMES, C_DUCK, C_DUCK_DARK,
+    ArcherPrime, C_ARCHERPRIME,
+    Militant, MILITANT_LEVELS, C_MILITANT, C_MILITANT_DARK,
 )
 
 class DevConsole:
@@ -617,6 +623,7 @@ class AdminPanel:
                 ("Frostcel.",Frostcelerator,(60,200,255)),("xw5yt",Xw5ytUnit,C_XW5YT),
                 ("Lifestealer",Lifestealer,(220,40,80)),("Archer",Archer,(200,160,60)),
                 ("ArcherOld",ArcherOld,(160,100,50)),
+                ("Militant",Militant,C_MILITANT),
                 ("Farm",Farm,(80,180,60)),("Red Ball",RedBall,(220,40,40)),
                 ("FrostBlast",FrostBlaster,C_FROSTBLASTER),
                 ("Sledger",Sledger,C_SLEDGER),
@@ -636,6 +643,7 @@ class AdminPanel:
                 ("Spotlight",SpotlightTech,C_SPOTLIGHT),
                 ("SoulWeaver",SoulWeaver,C_SOULWEAVER),
                 ("RubberDuck",RubberDuck,C_DUCK),
+                ("ArcherPrime",ArcherPrime,C_ARCHERPRIME),
             ]
             cols=8; cw=(pw-28)//cols; ch=100; gap=6
             start_x=px+10; start_y=content_top+6
@@ -1435,6 +1443,13 @@ class UI:
             result={"Damage":d,"Firerate":f"{fr:.2f}","Range":r}
             if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
             return result
+        elif cls==Militant:
+            if nxt>=len(MILITANT_LEVELS): return None
+            d,fr,r,_=MILITANT_LEVELS[nxt]
+            hd=nxt>=2
+            result={"Damage":d,"Firerate":fr,"Range":r}
+            if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
+            return result
         return None
 
     def draw(self,surf,units,money,wave_mgr,player_hp,player_maxhp,enemies,
@@ -1690,7 +1705,7 @@ class UI:
 
             cls=type(u)
             nxt=self._get_next_stats(u)
-            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,ArcherOld:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS}
+            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,ArcherOld:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS}
             lvl_list=levels_map.get(cls,[])
             if cls==Jester: lvl_list=JESTER_LEVELS
             total_lvls=len(lvl_list)
@@ -2074,6 +2089,17 @@ class UI:
                                  nxt_row[2] if nxt_row else None),
                 ]
                 if hd_next: stats.append(("HidDet_unlock", None, "Hidden Detection"))
+            elif cls==Militant:
+                hd_now=u.hidden_detection
+                hd_next=bool(nxt and nxt.get("HidDet") and not hd_now)
+                stats=[]
+                if hd_now: stats.append(("HidDet","Hidden Detection",None))
+                stats+=[
+                    ("Damage",   u.damage,              nxt.get("Damage")   if nxt else None),
+                    ("Firerate", f"{u.firerate:.3f}",    f"{nxt['Firerate']:.3f}" if nxt else None),
+                    ("Range",    u.range_tiles,           nxt.get("Range")   if nxt else None),
+                ]
+                if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
             else:
                 stats=[(k,v,None) for k,v in u.get_info().items()]
 
@@ -2561,6 +2587,7 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
     else:
         _col_map = {
             "Assassin": C_ASSASSIN,
+            "Militant": C_MILITANT,
             "Lifestealer": C_LIFESTEALER,
             "Archer": C_ARCHER,
             "Red Ball": C_REDBALL,
@@ -2594,6 +2621,7 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
     surf.blit(ns, ns.get_rect(center=(cx, cy + 56)))
 
     cost_map = {"Assassin": 300, "Accelerator": 5000, "Frostcelerator": 3500, "Freezer": 400,
+                "Militant": 600,
                 "Lifestealer": 400, "Archer": 400, "Red Ball": 1000, "Farm": 250,
                 "Frost Blaster": 800, "Sledger": 950, "Gladiator": 500,
                 "Toxic Gunner": 525, "Slasher": 1700, "Cowboy": 550,
@@ -4092,6 +4120,7 @@ class MainMenu:
 # ── Loadout Screen ──────────────────────────────────────────────────────────────
 ALL_UNITS_POOL = [
     {"name": "Assassin",       "rarity": "starter"},
+    {"name": "Militant",       "rarity": "starter"},
     {"name": "Accelerator",    "rarity": "epic"},
     {"name": "Frostcelerator", "rarity": "exclusive"},
     {"name": "Lifestealer",    "rarity": "starter"},
@@ -4119,6 +4148,7 @@ ALL_UNITS_POOL = [
 # Coin cost to unlock units (None = not purchasable / exclusive)
 UNIT_SHOP_PRICES = {
     "Assassin":       None,
+    "Militant":       None,
     "Archer":         1000,
     "Lifestealer":    300,
     "Accelerator":    4000,
@@ -4216,6 +4246,9 @@ class LoadoutScreen:
             owned = list(owned) + ["Cowboy"]
         # Migrate old Golden Cowboy save entries to Cowboy
         owned = ["Cowboy" if u == "Golden Cowboy" else u for u in owned]
+        # Militant is a starter — always owned
+        if "Militant" not in owned:
+            owned = list(owned) + ["Militant"]
         # Rubber Duck — выдаётся только за прохождение ивента ПЕКЛО
         return owned
 
@@ -4413,6 +4446,7 @@ class LoadoutScreen:
 
         _col_map_slot = {
             "Assassin": C_ASSASSIN,        "Lifestealer": C_LIFESTEALER,
+            "Militant": C_MILITANT,
             "Archer":   C_ARCHER,          "Red Ball":    C_REDBALL,
             "Farm":     C_FARM,            "Freezer":     C_FREEZER,
             "Frost Blaster": C_FROSTBLASTER, "Sledger":   C_SLEDGER,
@@ -4965,6 +4999,7 @@ class Game:
                         "Frostcelerator": Frostcelerator, "xw5yt": Xw5ytUnit,
                         "Lifestealer": Lifestealer,
                         "Archer": Archer,
+                        "Militant": Militant,
                         "ArcherOld": ArcherOld, "Red Ball": RedBall, "Farm": Farm,
                         "Freezer": Freezer, "Frost Blaster": FrostBlaster,
                         "Sledger": Sledger, "Gladiator": Gladiator,
