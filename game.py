@@ -4727,6 +4727,9 @@ class EndlessWaveManager:
         self._lmoney_paid = False
         self._bonus_paid = False
         self._gd_spawned = False
+        self._skipped_from_between = False
+        self._lmoney_pay_pending = False
+        self._lmoney_pending_wave = None
 
     def _build_queue(self, wn):
         import random as _r
@@ -4779,10 +4782,20 @@ class EndlessWaveManager:
             if self.prep_timer <= 0: self._start_wave()
 
     def _start_wave(self):
+        prev_wave = self.wave
         self.wave += 1
         self.state = "spawning"
         self.spawn_queue = self._build_queue(self.wave)
         self.spawn_timer = 0
+        # If we skipped from "between", lmoney for the previous wave hasn't been paid yet.
+        # Save the previous wave index so the payment block can look up the correct lmoney.
+        if self._skipped_from_between:
+            self._lmoney_pay_pending = True
+            self._lmoney_pending_wave = prev_wave
+            self._skipped_from_between = False
+        else:
+            self._lmoney_pay_pending = False
+            self._lmoney_pending_wave = None
         self._lmoney_paid = False
         self._bonus_paid = False
 
@@ -4796,6 +4809,7 @@ class EndlessWaveManager:
 
     def do_skip(self):
         if self.state in ("prep", "between"):
+            self._skipped_from_between = (self.state == "between")
             self.prep_timer = 0.0
 
     def wave_lmoney(self):
@@ -6114,9 +6128,21 @@ class Game:
     
                 # tf_test: always track 1M miniboss and TFK in boss bars regardless of mode
     
-                if (self.wave_mgr.state in ("waiting", "between", "done")
-                        and not any(e.alive for e in self.enemies) and not self.wave_mgr._lmoney_paid):
-                    lm=self.wave_mgr.wave_lmoney(); bm=self.wave_mgr.wave_bmoney()
+                _skipped_pending = getattr(self.wave_mgr, '_lmoney_pay_pending', False)
+                if ((self.wave_mgr.state in ("waiting", "between", "done")
+                        and not any(e.alive for e in self.enemies) and not self.wave_mgr._lmoney_paid)
+                        or _skipped_pending):
+                    # For skipped waves: look up lmoney for the wave that was skipped,
+                    # and do NOT award bmoney (wave clear bonus) since it wasn't cleared normally.
+                    if _skipped_pending:
+                        _pw = self.wave_mgr._lmoney_pending_wave or (self.wave_mgr.wave - 1)
+                        _saved_wave = self.wave_mgr.wave
+                        self.wave_mgr.wave = _pw
+                        lm = self.wave_mgr.wave_lmoney()
+                        self.wave_mgr.wave = _saved_wave
+                        bm = 0  # no wave-clear bonus on skip
+                    else:
+                        lm=self.wave_mgr.wave_lmoney(); bm=self.wave_mgr.wave_bmoney()
                     if self.mode == "hardcore":
                         _hc_w = self.wave_mgr.wave
                         _HC_LM = {
@@ -6171,6 +6197,7 @@ class Game:
                         if msgs: self.ui.show_msg("  |  ".join(msgs),3.0)
                     # (per-wave profile coins handled by the wave-advance hook above)
                     self.wave_mgr._lmoney_paid=True; self.wave_mgr._bonus_paid=True
+                    self.wave_mgr._lmoney_pay_pending=False; self.wave_mgr._lmoney_pending_wave=None
                     # MP: send wave bonuses to client (NOT farm — client counts own farms itself)
                     if getattr(self, 'is_host', False):
                         client_bonus = (lm or 0) + (bm or 0)
