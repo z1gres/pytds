@@ -2621,7 +2621,7 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
     surf.blit(ns, ns.get_rect(center=(cx, cy + 56)))
 
     cost_map = {"Assassin": 300, "Accelerator": 5000, "Frostcelerator": 3500, "Freezer": 400,
-                "Militant": 600,
+                "Militant": 300,
                 "Lifestealer": 400, "Archer": 400, "Red Ball": 1000, "Farm": 250,
                 "Frost Blaster": 800, "Sledger": 950, "Gladiator": 500,
                 "Toxic Gunner": 525, "Slasher": 1700, "Cowboy": 550,
@@ -4148,7 +4148,7 @@ ALL_UNITS_POOL = [
 # Coin cost to unlock units (None = not purchasable / exclusive)
 UNIT_SHOP_PRICES = {
     "Assassin":       None,
-    "Militant":       None,
+    "Militant":       300,
     "Archer":         1000,
     "Lifestealer":    300,
     "Accelerator":    4000,
@@ -4164,7 +4164,7 @@ UNIT_SHOP_PRICES = {
     "Golden Cowboy":  None,  # legacy key kept for save compat
     "Cowboy":         None,
     "Hallow Punk":    600,
-    "Spotlight Tech": 5000,
+    "Spotlight Tech": 2000,
     "Snowballer":     700,
     "Commander":      500,
     "Commando":       400,
@@ -4246,9 +4246,7 @@ class LoadoutScreen:
             owned = list(owned) + ["Cowboy"]
         # Migrate old Golden Cowboy save entries to Cowboy
         owned = ["Cowboy" if u == "Golden Cowboy" else u for u in owned]
-        # Militant is a starter — always owned
-        if "Militant" not in owned:
-            owned = list(owned) + ["Militant"]
+
         # Rubber Duck — выдаётся только за прохождение ивента ПЕКЛО
         return owned
 
