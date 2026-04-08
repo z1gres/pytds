@@ -935,30 +935,12 @@ class ArcherArrow:
     RICOCHET_RADIUS = 260
 
     def _ricochet(self, enemies):
-        """Ricochet to nearest alive unhit enemy that is:
-        1. Within archer's range (from the archer's position), AND
-        2. Behind the hit point — i.e. in the half-plane toward the archer.
-        This prevents forward-bouncing and mirrors TDS behaviour.
-        If no valid target found, arrow dies immediately."""
-        # Direction from hit point toward the archer (= "backward")
-        back_dx = self._archer_ox - self.x
-        back_dy = self._archer_oy - self.y
-        back_len = math.hypot(back_dx, back_dy) or 1
-        back_nx = back_dx / back_len; back_ny = back_dy / back_len
-
-        archer_range_px = self._archer_range  # already in pixels (range_tiles * TILE stored)
-
+        """Ricochet to nearest alive unhit enemy within RICOCHET_RADIUS from hit point."""
         best = None; best_d = 9999
         for e in enemies:
             if not e.alive or id(e) in self._hit_ids: continue
-            # Must be within archer's range FROM THE ARCHER (not from hit point)
-            d_from_archer = math.hypot(e.x - self._archer_ox, e.y - self._archer_oy)
-            if d_from_archer > archer_range_px: continue
-            # Must be in the backward half-plane (dot product with back direction > 0)
-            ex = e.x - self.x; ey = e.y - self.y
-            dot = ex * back_nx + ey * back_ny
-            if dot <= 0: continue  # enemy is forward — skip
-            d = math.hypot(ex, ey)
+            d = math.hypot(e.x - self.x, e.y - self.y)
+            if d > self.RICOCHET_RADIUS: continue
             if d < best_d: best_d = d; best = e
 
         if best:
@@ -968,7 +950,7 @@ class ArcherArrow:
             self.vx = dx/d; self.vy = dy/d
             self._dist_left = 600.0
         else:
-            self.alive = False  # no valid backward target — vanish cleanly
+            self.alive = False
 
     def update(self, dt, enemies, effects=None):
         if not self.alive: return
