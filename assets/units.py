@@ -736,8 +736,10 @@ class Lifestealer(Unit):
 C_ARCHER      = (160, 100, 50)
 C_ARCHER_DARK = (80,  45,  15)
 
-# (damage, firerate, range_tiles, upgrade_cost, pierce_count)
-ARCHER_LEVELS = [
+# ══════════════════════════════════════════════════════════════════════════════
+# ArcherOld — original Archer kept for sandbox
+# ══════════════════════════════════════════════════════════════════════════════
+_ARCHER_OLD_LEVELS = [
     (4,  0.650, 5.5, None, 2),
     (4,  0.600, 5.5, 350,  3),
     (5,  0.600, 6.0, 600,  3),
@@ -746,250 +748,528 @@ ARCHER_LEVELS = [
     (10, 0.600, 6.5, 1700, 6),
 ]
 
-class ArcherArrow:
-    """Arrow that homes toward its target — cannot miss."""
+class _ArcherOldArrow:
     def __init__(self, ox, oy, target, damage, pierce, flame=False, ice=False):
         self.x=float(ox); self.y=float(oy)
         self._target=target
         dx=target.x-ox; dy=target.y-oy
         d=math.hypot(dx,dy) or 1
         self.vx=dx/d; self.vy=dy/d
-        self.speed=500.0
-        self.damage=damage
-        self.pierce_left=pierce
-        self.alive=True
-        self._hit_ids=set()
-        self._dist_left=900.0
-        self.flame=flame
-        self.ice=ice
+        self.speed=500.0; self.damage=damage; self.pierce_left=pierce
+        self.alive=True; self._hit_ids=set(); self._dist_left=900.0
+        self.flame=flame; self.ice=ice
     def update(self, dt, enemies):
         if not self.alive: return
         step=self.speed*dt
-        # Home toward primary target only if not yet hit
         if self._target and self._target.alive and id(self._target) not in self._hit_ids:
             dx=self._target.x-self.x; dy=self._target.y-self.y
-            d=math.hypot(dx,dy) or 1
-            self.vx=dx/d; self.vy=dy/d
+            d=math.hypot(dx,dy) or 1; self.vx=dx/d; self.vy=dy/d
         self.x+=self.vx*step; self.y+=self.vy*step
         self._dist_left-=step
         if self._dist_left<=0: self.alive=False; return
         for e in enemies:
-            if not e.alive: continue
-            if id(e) in self._hit_ids: continue
+            if not e.alive or id(e) in self._hit_ids: continue
             if math.hypot(e.x-self.x, e.y-self.y) < e.radius+6:
-                if getattr(e, 'IMMUNE_UNITS_ONLY', False):
-                    e.take_damage_from(self.damage, "Archer")
-                else:
-                    e.take_damage(self.damage)
-                self._hit_ids.add(id(e))
-                if self.flame:
-                    e._fire_timer=3.0*_dm(); e._fire_tick=0.0
+                e.take_damage(self.damage); self._hit_ids.add(id(e))
+                if self.flame: e._fire_timer=3.0*_dm(); e._fire_tick=0.0
                 if self.ice and not getattr(e,'_frost_frozen',False):
-                    if getattr(e,'SLOW_RESISTANCE',0.0) < 1.0:
-                        if not getattr(e,'_ice_arrow_slowed',False):
-                            e._ice_arrow_orig_speed=e.speed
-                        e._ice_arrow_slowed=True
-                        e._ice_arrow_timer=0.6
-                        e.speed=e._ice_arrow_orig_speed*0.55
+                    if getattr(e,'SLOW_RESISTANCE',0.0)<1.0:
+                        if not getattr(e,'_ice_arrow_slowed',False): e._ice_arrow_orig_speed=e.speed
+                        e._ice_arrow_slowed=True; e._ice_arrow_timer=0.6; e.speed=e._ice_arrow_orig_speed*0.55
                 self.pierce_left-=1
-                if self.pierce_left<=0:
-                    self.alive=False; return
-                # After hitting primary target, keep flying straight — no retarget
+                if self.pierce_left<=0: self.alive=False; return
     def draw(self, surf, star_skin=False):
         if not self.alive: return
-        tail_x=self.x-self.vx*12; tail_y=self.y-self.vy*12
-        if star_skin:
-            # Draw a flying 5-pointed star
-            pygame.draw.line(surf,(255,200,40),(int(tail_x),int(tail_y)),(int(self.x),int(self.y)),2)
-            star_pts=[]
-            for pi2 in range(10):
-                r2=6 if pi2%2==0 else 2
-                a2=math.radians(-90+pi2*36)
-                star_pts.append((int(self.x+math.cos(a2)*r2),int(self.y+math.sin(a2)*r2)))
-            pygame.draw.polygon(surf,(255,230,60),star_pts)
-            pygame.draw.polygon(surf,(255,255,180),star_pts,1)
-            # Golden sparkle trail
-            gs=pygame.Surface((20,20),pygame.SRCALPHA)
-            pygame.draw.circle(gs,(255,220,60,80),(10,10),6)
-            surf.blit(gs,(int(tail_x)-10,int(tail_y)-10))
-        elif self.flame:
-            pygame.draw.line(surf,(255,120,20),(int(tail_x),int(tail_y)),(int(self.x),int(self.y)),3)
+        tx=self.x-self.vx*12; ty=self.y-self.vy*12
+        if self.flame:
+            pygame.draw.line(surf,(255,120,20),(int(tx),int(ty)),(int(self.x),int(self.y)),3)
             pygame.draw.circle(surf,(255,200,50),(int(self.x),int(self.y)),4)
         elif self.ice:
-            pygame.draw.line(surf,(100,200,255),(int(tail_x),int(tail_y)),(int(self.x),int(self.y)),3)
+            pygame.draw.line(surf,(100,200,255),(int(tx),int(ty)),(int(self.x),int(self.y)),3)
             pygame.draw.circle(surf,(200,240,255),(int(self.x),int(self.y)),4)
         else:
-            pygame.draw.line(surf,(100,60,20),(int(tail_x),int(tail_y)),(int(self.x),int(self.y)),3)
+            pygame.draw.line(surf,(100,60,20),(int(tx),int(ty)),(int(self.x),int(self.y)),3)
             pygame.draw.circle(surf,(200,140,60),(int(self.x),int(self.y)),3)
 
-
-class Archer(Unit):
-    PLACE_COST=400; COLOR=C_ARCHER; NAME="Archer"; hidden_detection=False
-
+class ArcherOld(Unit):
+    PLACE_COST=400; COLOR=C_ARCHER; NAME="ArcherOld"; hidden_detection=False
     def __init__(self, px, py):
-        super().__init__(px,py)
-        self._arrows=[]
-        self._anim_t=0.0
-        self.arrow_mode="arrow"  # "arrow", "ice_arrow", "flame_arrow"
-        self._aim_angle=0.0      # radians, direction archer faces
-        self._apply_level()
-
+        super().__init__(px,py); self._arrows=[]; self._anim_t=0.0
+        self.arrow_mode="arrow"; self._aim_angle=0.0; self._apply_level()
     def _apply_level(self):
-        d,fr,r,_,pc=ARCHER_LEVELS[self.level]
+        d,fr,r,_,pc=_ARCHER_OLD_LEVELS[self.level]
         self.damage=d; self.firerate=fr; self.range_tiles=r; self.pierce=pc
         self.hidden_detection=(self.level>=4)
-
     def upgrade_cost(self):
         nxt=self.level+1
-        if nxt>=len(ARCHER_LEVELS): return None
-        return ARCHER_LEVELS[nxt][3]
-
+        if nxt>=len(_ARCHER_OLD_LEVELS): return None
+        return _ARCHER_OLD_LEVELS[nxt][3]
     def upgrade(self):
         nxt=self.level+1
-        if nxt<len(ARCHER_LEVELS): self.level=nxt; self._apply_level()
-
+        if nxt<len(_ARCHER_OLD_LEVELS): self.level=nxt; self._apply_level()
     def update(self, dt, enemies, effects, money):
         self._anim_t+=dt
         if self.cd_left>0: self.cd_left-=dt
-
         targets=self._get_rightmost(enemies,1)
         if self.cd_left<=0 and targets:
-            t=targets[0]
-            dx=t.x-self.px; dy=t.y-self.py
-            self._aim_angle=math.atan2(dy,dx)
-            self.cd_left=self.firerate
+            t=targets[0]; dx=t.x-self.px; dy=t.y-self.py
+            self._aim_angle=math.atan2(dy,dx); self.cd_left=self.firerate
             self.total_damage+=self.damage
-            use_flame = (self.arrow_mode=="flame_arrow" and self.level>=3)
-            use_ice   = (self.arrow_mode=="ice_arrow"   and self.level>=2)
-            self._arrows.append(ArcherArrow(self.px,self.py,t,self.damage,self.pierce,
-                                             flame=use_flame, ice=use_ice))
-
+            use_flame=(self.arrow_mode=="flame_arrow" and self.level>=3)
+            use_ice=(self.arrow_mode=="ice_arrow" and self.level>=2)
+            self._arrows.append(_ArcherOldArrow(self.px,self.py,t,self.damage,self.pierce,flame=use_flame,ice=use_ice))
         for a in self._arrows: a.update(dt, enemies)
         self._arrows=[a for a in self._arrows if a.alive]
-
-        # Fire DoT tick on burning enemies
         for e in enemies:
             if not e.alive: continue
             ft=getattr(e,'_fire_timer',0)
             if ft>0:
-                e._fire_timer=max(0, ft-dt)
-                e._fire_tick=getattr(e,'_fire_tick',0)+dt
-                if e._fire_tick>=0.5:
-                    e._fire_tick-=0.5
-                    e.take_damage(2)
-            # Ice arrow slow tick
+                e._fire_timer=max(0,ft-dt); e._fire_tick=getattr(e,'_fire_tick',0)+dt
+                if e._fire_tick>=0.5: e._fire_tick-=0.5; e.take_damage(2)
             if getattr(e,'_ice_arrow_slowed',False):
                 e._ice_arrow_timer=getattr(e,'_ice_arrow_timer',0)-dt
                 if e._ice_arrow_timer<=0:
                     e._ice_arrow_slowed=False
                     orig=getattr(e,'_ice_arrow_orig_speed',None)
                     if orig is not None: e.speed=orig
+    def draw(self, surf):
+        cx,cy=int(self.px),int(self.py)
+        pygame.draw.circle(surf,C_ARCHER_DARK,(cx,cy),27)
+        pygame.draw.circle(surf,C_ARCHER,(cx,cy),20)
+        SIZE=66; bow_surf=pygame.Surface((SIZE,SIZE),pygame.SRCALPHA); bx,by=SIZE//2,SIZE//2
+        a=self._aim_angle; ca=math.cos(a); sa=math.sin(a); pa=-sa; pb=ca
+        ax0=int(bx+ca*(-14)); ay0=int(by+sa*(-14)); ax1=int(bx+ca*18); ay1=int(by+sa*18)
+        pygame.draw.line(bow_surf,(210,160,80),(ax0,ay0),(ax1,ay1),2)
+        tip_x=bx+ca*18; tip_y=by+sa*18; perp_x=pa*5; perp_y=pb*5; back_x=bx+ca*12; back_y=by+sa*12
+        pygame.draw.polygon(bow_surf,(255,210,100),[(int(tip_x),int(tip_y)),(int(back_x+perp_x),int(back_y+perp_y)),(int(back_x-perp_x),int(back_y-perp_y))])
+        tail_x=bx+ca*(-14); tail_y=by+sa*(-14)
+        pygame.draw.line(bow_surf,(180,120,60),(int(tail_x),int(tail_y)),(int(tail_x+pa*6-ca*4),int(tail_y+pb*6-sa*4)),2)
+        pygame.draw.line(bow_surf,(180,120,60),(int(tail_x),int(tail_y)),(int(tail_x-pa*6-ca*4),int(tail_y-pb*6-sa*4)),2)
+        bow_cx=int(bx+ca*(-8)); bow_cy=int(by+sa*(-8)); bow_arm=16
+        pygame.draw.line(bow_surf,(220,170,90),(int(bow_cx+pa*bow_arm),int(bow_cy+pb*bow_arm)),(int(bow_cx-pa*bow_arm),int(bow_cy-pb*bow_arm)),3)
+        pygame.draw.line(bow_surf,(200,200,180),(int(bow_cx+pa*bow_arm),int(bow_cy+pb*bow_arm)),(int(bx+ca*2),int(by+sa*2)),1)
+        pygame.draw.line(bow_surf,(200,200,180),(int(bow_cx-pa*bow_arm),int(bow_cy-pb*bow_arm)),(int(bx+ca*2),int(by+sa*2)),1)
+        surf.blit(bow_surf,(cx-SIZE//2,cy-SIZE//2))
+        if self.hidden_detection: pygame.draw.circle(surf,(100,255,100),(cx+21,cy-21),6)
+        for i in range(self.level): pygame.draw.circle(surf,C_GOLD,(cx-14+i*6,cy+36),3)
+        for arr in self._arrows: arr.draw(surf)
+    def get_info(self):
+        info={"Damage":self.damage,"Range":self.range_tiles,"Firerate":f"{self.firerate:.3f}","Pierce":self.pierce}
+        if self.arrow_mode=="flame_arrow" and self.level>=3: info["FlameArrow"]="ON"
+        if self.arrow_mode=="ice_arrow"   and self.level>=2: info["IceArrow"]="ON"
+        return info
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Archer — REWORKED
+#   Lv0  base  — normal arrows, max_hits=1, ricochet between enemies
+#   Lv1  $100  — +1 Range
+#   Lv2  $400  — +2 Dmg, faster firerate, hidden detection, max_hits=2
+#   Lv3  $1000 — +2 Dmg, faster firerate, +0.6 Range, max_hits=3, Unlocks Flame Arrow
+#   Lv4  $2750 — +8 Dmg, +1 Range, max_hits=4, Unlocks Shock Arrow
+#   Lv5  $8575 — +19 Dmg, faster firerate, +1 Range, max_hits=5, Unlocks Explosive Arrow
+# Arrows ricochet to nearest unhit enemy up to max_hits times.
+# Cannot be placed on path.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# (damage, firerate, range_tiles, upgrade_cost, max_hits)
+ARCHER_LEVELS = [
+    (4,  1.708, 6.0, None, 1),   # lv0
+    (4,  1.708, 7.0, 100,  1),   # lv1  +1 Range
+    (6,  1.608, 7.0, 400,  2),   # lv2  +2 Dmg, faster, hid det, max_hits=2
+    (8,  1.508, 7.6, 1000, 3),   # lv3  +2 Dmg, faster, +0.6 Range, max_hits=3, flame
+    (16, 1.508, 8.6, 2750, 4),   # lv4  +8 Dmg, +1 Range, max_hits=4, shock
+    (35, 1.258, 9.6, 8575, 5),   # lv5  +19 Dmg, faster, +1 Range, max_hits=5, explosive
+]
+
+class ArcherArrow:
+    """
+    Reworked arrow: homes to first target, then ricochets to nearest unhit enemy.
+    Ricochet count = max_hits - 1 (first hit + bounces).
+    Different visual trails per arrow type.
+    """
+    TRAIL_LEN = 18  # longer trail — more visible at 2× size
+
+    def __init__(self, ox, oy, target, damage, max_hits,
+                 arrow_type="arrow",  # "arrow","flame","shock","explosive"
+                 fire_dmg=0, fire_dur=0,
+                 shock_stun=0, shock_hits=0,
+                 splash_dmg=0, splash_r=0,
+                 archer_ox=0.0, archer_oy=0.0, archer_range=0.0):
+        self.x = float(ox); self.y = float(oy)
+        self._target = target
+        dx = target.x - ox; dy = target.y - oy
+        d = math.hypot(dx, dy) or 1
+        self.vx = dx/d; self.vy = dy/d
+        self.speed = 520.0
+        self.damage = damage
+        self.hits_left = max_hits
+        self.alive = True
+        self._hit_ids = set()
+        self._dist_left = 700.0   # kill quickly if initial target dies mid-flight
+        self.arrow_type = arrow_type
+        self.fire_dmg = fire_dmg; self.fire_dur = fire_dur
+        self.shock_stun = shock_stun; self.shock_hits = shock_hits
+        self.splash_dmg = splash_dmg; self.splash_r = splash_r
+        # Archer origin — used to constrain ricochet to "backward" direction only
+        self._archer_ox = float(archer_ox); self._archer_oy = float(archer_oy)
+        self._archer_range = float(archer_range)
+        # Trail: list of (x, y) recent positions
+        self._trail = []
+        self._trail_timer = 0.0
+
+    def _apply_hit_effect(self, e):
+        if self.arrow_type == "flame":
+            e._fire_timer = self.fire_dur * _dm()
+            e._fire_dmg = self.fire_dmg
+            e._fire_tick = 0.0
+        elif self.arrow_type == "shock":
+            if self.shock_stun > 0 and not getattr(e, '_shock_stunned', False):
+                e._shock_stunned = True
+                e._shock_stun_timer = self.shock_stun * _dm()
+                e._shock_pre_speed = e.speed
+                e.speed = 0.0
+        elif self.arrow_type == "explosive":
+            pass  # handled in update via splash
+
+    # Max ricochet search radius (pixels). Nearby bounces only — mimics TDS.
+    RICOCHET_RADIUS = 260
+
+    def _ricochet(self, enemies):
+        """Ricochet to nearest alive unhit enemy that is:
+        1. Within archer's range (from the archer's position), AND
+        2. Behind the hit point — i.e. in the half-plane toward the archer.
+        This prevents forward-bouncing and mirrors TDS behaviour.
+        If no valid target found, arrow dies immediately."""
+        # Direction from hit point toward the archer (= "backward")
+        back_dx = self._archer_ox - self.x
+        back_dy = self._archer_oy - self.y
+        back_len = math.hypot(back_dx, back_dy) or 1
+        back_nx = back_dx / back_len; back_ny = back_dy / back_len
+
+        archer_range_px = self._archer_range  # already in pixels (range_tiles * TILE stored)
+
+        best = None; best_d = 9999
+        for e in enemies:
+            if not e.alive or id(e) in self._hit_ids: continue
+            # Must be within archer's range FROM THE ARCHER (not from hit point)
+            d_from_archer = math.hypot(e.x - self._archer_ox, e.y - self._archer_oy)
+            if d_from_archer > archer_range_px: continue
+            # Must be in the backward half-plane (dot product with back direction > 0)
+            ex = e.x - self.x; ey = e.y - self.y
+            dot = ex * back_nx + ey * back_ny
+            if dot <= 0: continue  # enemy is forward — skip
+            d = math.hypot(ex, ey)
+            if d < best_d: best_d = d; best = e
+
+        if best:
+            self._target = best
+            dx = best.x - self.x; dy = best.y - self.y
+            d = math.hypot(dx, dy) or 1
+            self.vx = dx/d; self.vy = dy/d
+            self._dist_left = 600.0
+        else:
+            self.alive = False  # no valid backward target — vanish cleanly
+
+    def update(self, dt, enemies, effects=None):
+        if not self.alive: return
+        self._trail_timer += dt
+        if self._trail_timer >= 0.018:
+            self._trail_timer = 0.0
+            self._trail.append((self.x, self.y))
+            if len(self._trail) > self.TRAIL_LEN:
+                self._trail.pop(0)
+        step = self.speed * dt
+        # Home toward current target if it's alive and unhit
+        if self._target and self._target.alive and id(self._target) not in self._hit_ids:
+            dx = self._target.x - self.x; dy = self._target.y - self.y
+            d = math.hypot(dx, dy) or 1; self.vx = dx/d; self.vy = dy/d
+        self.x += self.vx * step; self.y += self.vy * step
+        self._dist_left -= step
+        if self._dist_left <= 0: self.alive = False; return
+        # Shock: tick stun
+        for e in enemies:
+            if getattr(e, '_shock_stunned', False):
+                e._shock_stun_timer = getattr(e, '_shock_stun_timer', 0) - dt
+                if e._shock_stun_timer <= 0:
+                    e._shock_stunned = False
+                    orig = getattr(e, '_shock_pre_speed', None)
+                    if orig is not None: e.speed = orig
+        # Collision
+        for e in enemies:
+            if not e.alive or id(e) in self._hit_ids: continue
+            if math.hypot(e.x - self.x, e.y - self.y) < e.radius + 7:
+                e.take_damage(self.damage)
+                self._hit_ids.add(id(e))
+                self._apply_hit_effect(e)
+                # Explosive splash
+                if self.arrow_type == "explosive" and effects is not None:
+                    for oe in enemies:
+                        if not oe.alive or id(oe) == id(e): continue
+                        if math.hypot(oe.x - e.x, oe.y - e.y) <= self.splash_r:
+                            oe.take_damage(self.splash_dmg)
+                    effects.append(_ArcherExplosionEffect(e.x, e.y, self.splash_r))
+                self.hits_left -= 1
+                if self.hits_left <= 0:
+                    self.alive = False; return
+                self._ricochet(enemies)
+                return  # one hit per frame
+
+    def draw(self, surf, star_skin=False):
+        if not self.alive: return
+        t = self.arrow_type
+        # === Trail — максимальная яркость, насыщенные цвета ===
+        trail = self._trail
+        tlen = len(trail)
+        if tlen >= 2:
+            ts = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            for i in range(tlen - 1):
+                frac = i / max(tlen - 1, 1)
+                alpha = int(80 + frac * 175)   # min 80, max 255 — ярко даже у хвоста
+                if t == "flame":
+                    # Ярко-оранжевый → жёлто-белый к голове
+                    r2 = 255; g2 = int(60 + frac * 160); b2 = int(frac * 40)
+                    w2 = max(2, int(frac * 10))
+                    pygame.draw.line(ts, (r2, g2, b2, alpha),
+                                     (int(trail[i][0]), int(trail[i][1])),
+                                     (int(trail[i+1][0]), int(trail[i+1][1])), w2)
+                    # Яркое glow halo
+                    pygame.draw.line(ts, (255, 100, 0, alpha // 2),
+                                     (int(trail[i][0]), int(trail[i][1])),
+                                     (int(trail[i+1][0]), int(trail[i+1][1])), w2 + 8)
+                    if i % 2 == 0 and frac > 0.2:
+                        sx = trail[i][0] + random.uniform(-8, 8)
+                        sy = trail[i][1] + random.uniform(-8, 8)
+                        pygame.draw.circle(ts, (255, int(frac*200), 0, min(255, alpha + 40)),
+                                           (int(sx), int(sy)), random.randint(2, 5))
+                elif t == "shock":
+                    # Ярко-голубой/белый зигзаг
+                    if i % 2 == 0:
+                        mid_x = (trail[i][0]+trail[i+1][0])/2 + random.uniform(-8, 8)
+                        mid_y = (trail[i][1]+trail[i+1][1])/2 + random.uniform(-8, 8)
+                        pygame.draw.line(ts, (80, 200, 255, alpha),
+                                         (int(trail[i][0]), int(trail[i][1])), (int(mid_x), int(mid_y)), 5)
+                        pygame.draw.line(ts, (220, 250, 255, alpha),
+                                         (int(mid_x), int(mid_y)), (int(trail[i+1][0]), int(trail[i+1][1])), 5)
+                    # Белый яркий core
+                    pygame.draw.line(ts, (255, 255, 255, alpha),
+                                     (int(trail[i][0]), int(trail[i][1])),
+                                     (int(trail[i+1][0]), int(trail[i+1][1])), 2)
+                elif t == "explosive":
+                    # Ярко-красно-оранжевый
+                    w2 = max(2, int(frac * 12))
+                    pygame.draw.line(ts, (255, int(60 + frac*160), 0, alpha),
+                                     (int(trail[i][0]), int(trail[i][1])),
+                                     (int(trail[i+1][0]), int(trail[i+1][1])), w2)
+                    pygame.draw.line(ts, (255, 80, 0, alpha // 3),
+                                     (int(trail[i][0]), int(trail[i][1])),
+                                     (int(trail[i+1][0]), int(trail[i+1][1])), w2 + 10)
+                    if i % 2 == 0:
+                        gx = trail[i][0] + random.uniform(-10, 10)
+                        gy = trail[i][1] + random.uniform(-10, 10)
+                        pygame.draw.circle(ts, (255, 220, 60, min(255, alpha + 30)),
+                                           (int(gx), int(gy)), random.randint(3, 6))
+                else:
+                    # Обычная стрела — яркий коричнево-золотой trail
+                    pygame.draw.line(ts, (220, 150, 50, alpha),
+                                     (int(trail[i][0]), int(trail[i][1])),
+                                     (int(trail[i+1][0]), int(trail[i+1][1])), 4)
+                    pygame.draw.line(ts, (255, 200, 80, alpha // 2),
+                                     (int(trail[i][0]), int(trail[i][1])),
+                                     (int(trail[i+1][0]), int(trail[i+1][1])), 2)
+            surf.blit(ts, (0, 0))
+
+        # === Arrow tip — в 1.5× меньше предыдущего (÷1.5 от doubled = ~оригинал×1.33) ===
+        cx = int(self.x); cy = int(self.y)
+        if t == "flame":
+            pygame.draw.circle(surf, (255, 120, 0), (cx, cy), 8)   # glow
+            pygame.draw.circle(surf, (255, 60, 0),  (cx, cy), 6)
+            pygame.draw.circle(surf, (255, 230, 100), (cx, cy), 3)
+        elif t == "shock":
+            pygame.draw.circle(surf, (40, 140, 255), (cx, cy), 8)  # glow
+            pygame.draw.circle(surf, (80, 200, 255), (cx, cy), 6)
+            pygame.draw.circle(surf, (240, 255, 255), (cx, cy), 2)
+            for _ in range(3):
+                sx = cx + random.randint(-9, 9); sy = cy + random.randint(-9, 9)
+                pygame.draw.line(surf, (200, 240, 255), (cx, cy), (sx, sy), 2)
+        elif t == "explosive":
+            pygame.draw.circle(surf, (255, 80, 0),   (cx, cy), 9)  # glow
+            pygame.draw.circle(surf, (255, 130, 0),  (cx, cy), 7)
+            pygame.draw.circle(surf, (255, 255, 120), (cx, cy), 3)
+        else:
+            # Normal arrow — shaft + tip
+            tail_x = self.x - self.vx * 14; tail_y = self.y - self.vy * 14
+            pygame.draw.line(surf, (120, 70, 20), (int(tail_x), int(tail_y)), (cx, cy), 4)
+            pygame.draw.circle(surf, (230, 170, 70), (cx, cy), 4)
+
+
+class _ArcherExplosionEffect:
+    """Quick orange ring explosion VFX for explosive arrows."""
+    def __init__(self, x, y, radius):
+        self.x = x; self.y = y; self.max_r = radius; self.r = 0.0
+        self._t = 0.0; self._dur = 0.35; self.alive = True
+    def update(self, dt):
+        self._t += dt
+        self.r = self.max_r * min(1.0, self._t / self._dur)
+        if self._t >= self._dur: self.alive = False
+    def draw(self, surf):
+        frac = self._t / self._dur
+        a1 = int((1 - frac) * 220); a2 = int((1 - frac) * 100)
+        cx = int(self.x); cy = int(self.y); r = int(self.r)
+        if r < 2: return
+        pad = 24  # 2× padding for bigger glow
+        s = pygame.Surface((r*2+pad*2, r*2+pad*2), pygame.SRCALPHA)
+        hc = r + pad
+        # Outer soft glow (2× original inner fill)
+        pygame.draw.circle(s, (255, 100, 0,  a2 // 2), (hc, hc), r + 10)
+        pygame.draw.circle(s, (255, 140, 0,  a2),      (hc, hc), r)
+        # Ring — 2× thicker
+        pygame.draw.circle(s, (255, 60, 0,   a1),      (hc, hc), r, 8)
+        # Bright core flash
+        pygame.draw.circle(s, (255, 230, 100, a1),     (hc, hc), max(4, r // 3))
+        surf.blit(s, (cx - hc, cy - hc))
+
+
+class Archer(Unit):
+    PLACE_COST = 600
+    COLOR      = C_ARCHER
+    NAME       = "Archer"
+    hidden_detection = False
+    # Archer cannot stand on the path
+    CAN_PLACE_ON_PATH = False
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._arrows = []
+        self._anim_t = 0.0
+        self.arrow_mode = "arrow"   # "arrow", "flame", "shock", "explosive"
+        self._aim_angle = 0.0
+        self._apply_level()
+
+    def _apply_level(self):
+        d, fr, r, _, mh = ARCHER_LEVELS[self.level]
+        self.damage = d; self.firerate = fr; self.range_tiles = r; self.max_hits = mh
+        self.hidden_detection = (self.level >= 2)
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(ARCHER_LEVELS): return None
+        return ARCHER_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(ARCHER_LEVELS): self.level = nxt; self._apply_level()
+
+    def _make_arrow(self, target):
+        t = self.arrow_mode
+        # Validate unlock gating
+        if t == "flame"     and self.level < 3: t = "arrow"
+        if t == "shock"     and self.level < 4: t = "arrow"
+        if t == "explosive" and self.level < 5: t = "arrow"
+        kw = dict(arrow_type=t)
+        if t == "flame":
+            kw["fire_dmg"] = 2 + (2 if self.level >= 5 else 0)
+            kw["fire_dur"] = (3 if self.level < 5 else 4)
+        elif t == "shock":
+            kw["shock_stun"] = 0.3 + (0.15 if self.level >= 5 else 0)
+            kw["shock_hits"] = self.max_hits
+        elif t == "explosive":
+            kw["splash_dmg"] = 35; kw["splash_r"] = 5 * TILE * _am()
+        return ArcherArrow(self.px, self.py, target, self.damage, self.max_hits,
+                           archer_ox=self.px, archer_oy=self.py,
+                           archer_range=self.range_tiles * TILE, **kw)
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t += dt
+        if self.cd_left > 0: self.cd_left -= dt
+        targets = self._get_rightmost(enemies, 1)
+        if self.cd_left <= 0 and targets:
+            t = targets[0]
+            self._aim_angle = math.atan2(t.y - self.py, t.x - self.px)
+            self.cd_left = self.firerate
+            self.total_damage += self.damage
+            self._arrows.append(self._make_arrow(t))
+        for a in self._arrows: a.update(dt, enemies, effects)
+        self._arrows = [a for a in self._arrows if a.alive]
+        # Flame DoT tick
+        for e in enemies:
+            if not e.alive: continue
+            ft = getattr(e, '_fire_timer', 0)
+            if ft > 0:
+                e._fire_timer = max(0, ft - dt)
+                e._fire_tick = getattr(e, '_fire_tick', 0) + dt
+                if e._fire_tick >= 0.5:
+                    e._fire_tick -= 0.5
+                    e.take_damage(getattr(e, '_fire_dmg', 2))
 
     def draw(self, surf):
         import sys as _sys
-        # Check for Star Archer skin
         _game_mod = _sys.modules.get('__main__') or _sys.modules.get('game')
         _star_skin = False
-        try:
-            _star_skin = (_game_mod.get_equipped_skin("Archer") == "archer_star")
-        except Exception:
-            pass
+        try: _star_skin = (_game_mod.get_equipped_skin("Archer") == "archer_star")
+        except Exception: pass
 
-        cx,cy=int(self.px),int(self.py)
-        # Base circles — gold if star skin
+        cx, cy = int(self.px), int(self.py)
         if _star_skin:
-            pygame.draw.circle(surf,(60,40,0),(cx,cy),27)
-            pygame.draw.circle(surf,(200,160,30),(cx,cy),20)
-            pygame.draw.circle(surf,(255,220,80),(cx,cy),20,2)
-            # Spinning star orbits
-            t2=self._anim_t
+            pygame.draw.circle(surf, (60, 40, 0), (cx, cy), 27)
+            pygame.draw.circle(surf, (200, 160, 30), (cx, cy), 20)
+            pygame.draw.circle(surf, (255, 220, 80), (cx, cy), 20, 2)
+            t2 = self._anim_t
             for si2 in range(3):
-                sa2=math.radians(t2*140+si2*120)
-                ssx=cx+int(math.cos(sa2)*24); ssy=cy+int(math.sin(sa2)*24)
-                star_pts=[]
+                sa2 = math.radians(t2 * 140 + si2 * 120)
+                ssx = cx + int(math.cos(sa2) * 24); ssy = cy + int(math.sin(sa2) * 24)
+                star_pts = []
                 for pi2 in range(10):
-                    r2=5 if pi2%2==0 else 2
-                    a2=math.radians(-90+pi2*36)
-                    star_pts.append((ssx+int(math.cos(a2)*r2),ssy+int(math.sin(a2)*r2)))
-                pygame.draw.polygon(surf,(255,220,60),star_pts)
+                    r2 = 5 if pi2 % 2 == 0 else 2
+                    a2 = math.radians(-90 + pi2 * 36)
+                    star_pts.append((ssx + int(math.cos(a2) * r2), ssy + int(math.sin(a2) * r2)))
+                pygame.draw.polygon(surf, (255, 220, 60), star_pts)
         else:
-            pygame.draw.circle(surf,C_ARCHER_DARK,(cx,cy),27)
-            pygame.draw.circle(surf,C_ARCHER,(cx,cy),20)
+            pygame.draw.circle(surf, C_ARCHER_DARK, (cx, cy), 27)
+            pygame.draw.circle(surf, C_ARCHER, (cx, cy), 20)
 
-        # Draw bow + arrow rotated toward aim angle
-        SIZE=66
-        bow_surf=pygame.Surface((SIZE,SIZE),pygame.SRCALPHA)
-        bx,by=SIZE//2,SIZE//2
-
-        a=self._aim_angle
-        ca=math.cos(a); sa=math.sin(a)
-        pa=-sa; pb=ca
-
-        # Arrow shaft
-        ax0=int(bx+ca*(-14)); ay0=int(by+sa*(-14))
-        ax1=int(bx+ca*18);    ay1=int(by+sa*18)
-        shaft_col=(255,220,60) if _star_skin else (210,160,80)
-        pygame.draw.line(bow_surf,shaft_col,(ax0,ay0),(ax1,ay1),2)
-
-        # Arrowhead / star tip
-        tip_x=bx+ca*18; tip_y=by+sa*18
-        perp_x=pa*5;    perp_y=pb*5
-        back_x=bx+ca*12; back_y=by+sa*12
-        if _star_skin:
-            # 5-pointed star at tip
-            star_pts2=[]
-            for pi3 in range(10):
-                r3=6 if pi3%2==0 else 2
-                a3=math.radians(-90+pi3*36)
-                star_pts2.append((int(tip_x+math.cos(a3)*r3),int(tip_y+math.sin(a3)*r3)))
-            pygame.draw.polygon(bow_surf,(255,240,80),star_pts2)
-        else:
-            pygame.draw.polygon(bow_surf,(255,210,100),[
-                (int(tip_x),int(tip_y)),
-                (int(back_x+perp_x),int(back_y+perp_y)),
-                (int(back_x-perp_x),int(back_y-perp_y))
-            ])
-
-        # Fletching at tail
-        tail_x=bx+ca*(-14); tail_y=by+sa*(-14)
-        flt_col=(255,200,40) if _star_skin else (180,120,60)
-        pygame.draw.line(bow_surf,flt_col,
-            (int(tail_x),int(tail_y)),
-            (int(tail_x+pa*6-ca*4),int(tail_y+pb*6-sa*4)),2)
-        pygame.draw.line(bow_surf,flt_col,
-            (int(tail_x),int(tail_y)),
-            (int(tail_x-pa*6-ca*4),int(tail_y-pb*6-sa*4)),2)
-
-        # Bow arc
-        bow_cx=int(bx+ca*(-8)); bow_cy=int(by+sa*(-8))
-        bow_arm=16
-        bow_col=(255,200,40) if _star_skin else (220,170,90)
-        pygame.draw.line(bow_surf,bow_col,
-            (int(bow_cx+pa*bow_arm),int(bow_cy+pb*bow_arm)),
-            (int(bow_cx-pa*bow_arm),int(bow_cy-pb*bow_arm)),3)
-        # Bowstring
-        string_col=(255,255,180) if _star_skin else (200,200,180)
-        pygame.draw.line(bow_surf,string_col,
-            (int(bow_cx+pa*bow_arm),int(bow_cy+pb*bow_arm)),
-            (int(bx+ca*2),int(by+sa*2)),1)
-        pygame.draw.line(bow_surf,string_col,
-            (int(bow_cx-pa*bow_arm),int(bow_cy-pb*bow_arm)),
-            (int(bx+ca*2),int(by+sa*2)),1)
-
-        surf.blit(bow_surf,(cx-SIZE//2,cy-SIZE//2))
-
-        if self.hidden_detection:
-            pygame.draw.circle(surf,(100,255,100),(cx+21,cy-21),6)
-        for i in range(self.level):
-            pygame.draw.circle(surf,C_GOLD,(cx-14+i*6,cy+36),3)
+        SIZE = 66; bow_surf = pygame.Surface((SIZE, SIZE), pygame.SRCALPHA); bx, by = SIZE//2, SIZE//2
+        a = self._aim_angle; ca = math.cos(a); sa = math.sin(a); pa = -sa; pb = ca
+        ax0 = int(bx + ca*(-14)); ay0 = int(by + sa*(-14))
+        ax1 = int(bx + ca*18);   ay1 = int(by + sa*18)
+        shaft_col = (255, 220, 60) if _star_skin else (210, 160, 80)
+        pygame.draw.line(bow_surf, shaft_col, (ax0, ay0), (ax1, ay1), 2)
+        tip_x = bx + ca*18; tip_y = by + sa*18; perp_x = pa*5; perp_y = pb*5
+        back_x = bx + ca*12; back_y = by + sa*12
+        pygame.draw.polygon(bow_surf, (255, 210, 100), [
+            (int(tip_x), int(tip_y)),
+            (int(back_x + perp_x), int(back_y + perp_y)),
+            (int(back_x - perp_x), int(back_y - perp_y))
+        ])
+        tail_x = bx + ca*(-14); tail_y = by + sa*(-14)
+        flt_col = (255, 200, 40) if _star_skin else (180, 120, 60)
+        pygame.draw.line(bow_surf, flt_col, (int(tail_x), int(tail_y)),
+                         (int(tail_x + pa*6 - ca*4), int(tail_y + pb*6 - sa*4)), 2)
+        pygame.draw.line(bow_surf, flt_col, (int(tail_x), int(tail_y)),
+                         (int(tail_x - pa*6 - ca*4), int(tail_y - pb*6 - sa*4)), 2)
+        bow_cx = int(bx + ca*(-8)); bow_cy = int(by + sa*(-8)); bow_arm = 16
+        bow_col = (255, 200, 40) if _star_skin else (220, 170, 90)
+        pygame.draw.line(bow_surf, bow_col,
+                         (int(bow_cx + pa*bow_arm), int(bow_cy + pb*bow_arm)),
+                         (int(bow_cx - pa*bow_arm), int(bow_cy - pb*bow_arm)), 3)
+        string_col = (255, 255, 180) if _star_skin else (200, 200, 180)
+        pygame.draw.line(bow_surf, string_col,
+                         (int(bow_cx + pa*bow_arm), int(bow_cy + pb*bow_arm)),
+                         (int(bx + ca*2), int(by + sa*2)), 1)
+        pygame.draw.line(bow_surf, string_col,
+                         (int(bow_cx - pa*bow_arm), int(bow_cy - pb*bow_arm)),
+                         (int(bx + ca*2), int(by + sa*2)), 1)
+        surf.blit(bow_surf, (cx - SIZE//2, cy - SIZE//2))
+        if self.hidden_detection: pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
+        for i in range(self.level): pygame.draw.circle(surf, C_GOLD, (cx - 14 + i*6, cy + 36), 3)
         for arr in self._arrows: arr.draw(surf, star_skin=_star_skin)
 
     def get_info(self):
-        info={"Damage":self.damage,"Range":self.range_tiles,
-              "Firerate":f"{self.firerate:.3f}","Pierce":self.pierce,
-              "HidDet":"YES" if self.hidden_detection else "no"}
-        if self.arrow_mode=="flame_arrow" and self.level>=3: info["FlameArrow"]="ON"
-        if self.arrow_mode=="ice_arrow"   and self.level>=2: info["IceArrow"]="ON"
+        info = {"Damage": self.damage, "Range": self.range_tiles,
+                "Firerate": f"{self.firerate:.3f}", "Penetration": self.max_hits,
+                "HidDet": "YES" if self.hidden_detection else "no"}
+        if self.arrow_mode == "flame"     and self.level >= 3: info["FlameArrow"] = "ON"
+        if self.arrow_mode == "shock"     and self.level >= 4: info["ShockArrow"] = "ON"
+        if self.arrow_mode == "explosive" and self.level >= 5: info["ExplosiveArrow"] = "ON"
         return info
 
 

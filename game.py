@@ -122,6 +122,7 @@ from units import (
     Hixw5ytAbility, Pokaxw5ytAbility, ChiterAbility, Xw5ytUnit, XW5YT_LEVELS,
     LifestealerBullet, Lifestealer, LIFESTEALER_LEVELS,
     ArcherArrow, Archer, ARCHER_LEVELS,
+    ArcherOld,
     Farm, FARM_LEVELS,
     RedBall, REDBALL_LEVELS,
     Freezer, FREEZER_LEVELS,
@@ -615,6 +616,7 @@ class AdminPanel:
                 ("Assassin",Assassin,C_ASSASSIN),("Accelerator",Accelerator,C_ACCEL),
                 ("Frostcel.",Frostcelerator,(60,200,255)),("xw5yt",Xw5ytUnit,C_XW5YT),
                 ("Lifestealer",Lifestealer,(220,40,80)),("Archer",Archer,(200,160,60)),
+                ("ArcherOld",ArcherOld,(160,100,50)),
                 ("Farm",Farm,(80,180,60)),("Red Ball",RedBall,(220,40,40)),
                 ("FrostBlast",FrostBlaster,C_FROSTBLASTER),
                 ("Sledger",Sledger,C_SLEDGER),
@@ -916,15 +918,19 @@ class UI:
             # Archer arrow mode buttons
             if isinstance(self.open_unit, Archer):
                 u=self.open_unit
-                if btns.get("arrow_arrow") and btns["arrow_arrow"].collidepoint(pos):
+                if btns.get("arrow_normal") and btns["arrow_normal"].collidepoint(pos):
                     u.arrow_mode="arrow"; return 0
-                if btns.get("arrow_ice") and btns["arrow_ice"].collidepoint(pos):
-                    if u.level>=2: u.arrow_mode="ice_arrow"
-                    else: self.show_msg("Unlock at level 2!")
-                    return 0
                 if btns.get("arrow_flame") and btns["arrow_flame"].collidepoint(pos):
-                    if u.level>=3: u.arrow_mode="flame_arrow"
+                    if u.level>=3: u.arrow_mode="flame"
                     else: self.show_msg("Unlock at level 3!")
+                    return 0
+                if btns.get("arrow_shock") and btns["arrow_shock"].collidepoint(pos):
+                    if u.level>=4: u.arrow_mode="shock"
+                    else: self.show_msg("Unlock at level 4!")
+                    return 0
+                if btns.get("arrow_explosive") and btns["arrow_explosive"].collidepoint(pos):
+                    if u.level>=5: u.arrow_mode="explosive"
+                    else: self.show_msg("Unlock at level 5!")
                     return 0
             # Jester bomb mode buttons
             if isinstance(self.open_unit, Jester):
@@ -1005,7 +1011,8 @@ class UI:
         # Archer can be placed on the path; others cannot
         # units list may include peer units for collision — filter to own only for limit check
         own_units = [u for u in units if not getattr(u, '_mp_peer', False)]
-        if (on_path and not (UType and UType.NAME=="Archer")) or my>SLOT_AREA_Y-10 or any(dist((u.px,u.py),pos)<36 for u in units):
+        can_path = getattr(UType, 'CAN_PLACE_ON_PATH', False)
+        if (on_path and not can_path) or my>SLOT_AREA_Y-10 or any(dist((u.px,u.py),pos)<36 for u in units):
             self.show_msg("Can't place here!"); self.drag_unit=None; self.selected_slot=None; return 0
         # Check money
         _place_cost = int(UType.PLACE_COST * getattr(self, 'cost_mult', 1.0))
@@ -1032,11 +1039,12 @@ class UI:
         ab_sz=56
         btns["ability_sq"]=pygame.Rect(mx-ab_sz-8,my,ab_sz,ab_sz)
         if isinstance(unit, Archer):
-            btn_h=24; btn_w=(mw-20)//3
+            btn_h=24; btn_w=(mw-24)//4
             arrow_btn_y=my+260
-            btns["arrow_arrow"]=pygame.Rect(mx+8,               arrow_btn_y, btn_w, btn_h)
-            btns["arrow_ice"]  =pygame.Rect(mx+8+btn_w+3,       arrow_btn_y, btn_w, btn_h)
-            btns["arrow_flame"]=pygame.Rect(mx+8+(btn_w+3)*2,   arrow_btn_y, btn_w, btn_h)
+            btns["arrow_normal"]   =pygame.Rect(mx+8,               arrow_btn_y, btn_w, btn_h)
+            btns["arrow_flame"]    =pygame.Rect(mx+8+(btn_w+2),     arrow_btn_y, btn_w, btn_h)
+            btns["arrow_shock"]    =pygame.Rect(mx+8+(btn_w+2)*2,   arrow_btn_y, btn_w, btn_h)
+            btns["arrow_explosive"]=pygame.Rect(mx+8+(btn_w+2)*3,   arrow_btn_y, btn_w, btn_h)
         if isinstance(unit, Jester):
             btn_h=24; btn_w=(mw-20)//4
             bomb_btn_y=my+260
@@ -1070,6 +1078,11 @@ class UI:
                 ox2=int(cx+math.cos(a)*18); oy2=int(cy+math.sin(a)*18)
                 pygame.draw.circle(surf,(180,30,60),(ox2,oy2),5)
         elif isinstance(u,Archer):
+            pygame.draw.circle(surf,C_ARCHER_DARK,(cx,cy),28)
+            pygame.draw.circle(surf,C_ARCHER,(cx,cy),22)
+            if u.hidden_detection:
+                pygame.draw.circle(surf,(100,255,100),(cx+18,cy-18),5)
+        elif isinstance(u,ArcherOld):
             pygame.draw.circle(surf,C_ARCHER_DARK,(cx,cy),28)
             pygame.draw.circle(surf,C_ARCHER,(cx,cy),22)
             if u.hidden_detection:
@@ -1289,9 +1302,9 @@ class UI:
             return {"Damage":d,"Firerate":fr,"Range":r,"Money":f"{int(mp*100)}% HP"}
         elif cls==Archer:
             if nxt>=len(ARCHER_LEVELS): return None
-            d,fr,r,_,pc=ARCHER_LEVELS[nxt]
-            hd=nxt>=4
-            return {"Damage":d,"Firerate":fr,"Range":r,"Pierce":pc,"HidDet":hd}
+            d,fr,r,_,mh=ARCHER_LEVELS[nxt]
+            hd=nxt>=2
+            return {"Damage":d,"Firerate":fr,"Range":r,"Penetration":mh,"HidDet":hd}
         elif cls==RedBall:
             if nxt>=len(REDBALL_LEVELS): return None
             d,fr,_=REDBALL_LEVELS[nxt]
@@ -1677,7 +1690,7 @@ class UI:
 
             cls=type(u)
             nxt=self._get_next_stats(u)
-            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS}
+            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,ArcherOld:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS}
             lvl_list=levels_map.get(cls,[])
             if cls==Jester: lvl_list=JESTER_LEVELS
             total_lvls=len(lvl_list)
@@ -1687,7 +1700,8 @@ class UI:
             STAT_ICO={"RangedDamage":"ranged_damage_ico","Damage":"damage_ico","Firerate":"firerate_ico",
                       "Range":"range_ico","Slow":"slow_ico","HidDet":"hidden_detection_ico",
                       "FlameArrow":"flame_ico","IceArrow":"slow_ico","Income":"money_ico",
-                      "Pierce":"pierce_ico","Freeze":"slow_ico"}
+                      "Pierce":"pierce_ico","Penetration":"pierce_ico","Freeze":"slow_ico",
+                      "flame_unlock":"flame_ico","shock_unlock":"damage_ico","explosive_unlock":"damage_ico"}
             ICO_SZ=16
 
             if cls==Assassin:
@@ -1759,24 +1773,21 @@ class UI:
                 ]
             elif cls==Archer:
                 hd_now=u.hidden_detection
-                hd_next=bool(nxt and nxt.get("HidDet") and not hd_now)
-                flame_now=(u.arrow_mode=="flame_arrow" and u.level>=3)
-                ice_now  =(u.arrow_mode=="ice_arrow"   and u.level>=2)
-                flame_next=bool(nxt and (u.level+1)>=3 and not flame_now and u.arrow_mode=="flame_arrow")
-                ice_next  =bool(nxt and (u.level+1)>=2 and not ice_now   and u.arrow_mode=="ice_arrow")
+                hd_next=bool(nxt and not hd_now and (u.level+1)>=2)
                 stats=[]
-                if hd_now:    stats.append(("HidDet","Hidden Detection",None))
-                if flame_now: stats.append(("FlameArrow","Flame Arrow",None))
-                if ice_now:   stats.append(("IceArrow","Ice Arrow",None))
+                if hd_now: stats.append(("HidDet","Hidden Detection",None))
                 stats+=[
-                    ("Damage",  u.damage,        nxt.get("Damage")   if nxt else None),
+                    ("Damage",  u.damage,          nxt.get("Damage")    if nxt else None),
                     ("Firerate",f"{u.firerate:.3f}", f"{nxt['Firerate']:.3f}" if nxt else None),
-                    ("Range",   u.range_tiles,   nxt.get("Range")    if nxt else None),
-                    ("Pierce",  u.pierce,        nxt.get("Pierce")   if nxt else None),
+                    ("Range",   u.range_tiles,      nxt.get("Range")     if nxt else None),
+                    ("Penetration", u.max_hits,     nxt.get("Penetration") if nxt else None),
                 ]
-                if hd_next:    stats.append(("HidDet_unlock",None,"Hidden Detection"))
-                if flame_next: stats.append(("FlameArrow_unlock",None,"Flame Arrow"))
-                if ice_next:   stats.append(("IceArrow_unlock",None,"Ice Arrow"))
+                if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
+                # Unlock banners
+                lv_next = u.level + 1
+                if lv_next == 3: stats.append(("flame_unlock", None, "Unlocks Flame Arrow"))
+                if lv_next == 4: stats.append(("shock_unlock", None, "Unlocks Shock Arrow"))
+                if lv_next == 5: stats.append(("explosive_unlock", None, "Unlocks Explosive Arrow"))
             elif cls==RedBall:
                 hd_now=u.hidden_detection
                 hd_next=bool(nxt and not hd_now and (u.level+1)>=2)
@@ -2066,8 +2077,11 @@ class UI:
             STAT_COLORS={"HidDet":(80,255,120),"HidDet_unlock":(80,255,120),
                          "Damage":(255,120,80),"RangedDamage":(255,160,80),"Firerate":(255,220,60),
                          "Range":(80,200,255),"Dual_unlock":(200,100,255),"Slow":(100,200,255),
-                         "Money":(220,60,80),"Pierce":(200,160,80),
+                         "Money":(220,60,80),"Pierce":(200,160,80),"Penetration":(200,160,80),
                          "FlameArrow":(255,130,30),"FlameArrow_unlock":(255,130,30),
+                         "ShockArrow":(100,180,255),"ShockArrow_unlock":(100,180,255),
+                         "ExplosiveArrow":(255,80,30),"ExplosiveArrow_unlock":(255,80,30),
+                         "flame_unlock":(255,130,30),"shock_unlock":(100,180,255),"explosive_unlock":(255,80,30),
                          "IceArrow":(100,200,255),"IceArrow_unlock":(100,200,255),
                          "Income":(100,220,80),"Ability":(200,150,255),"Ability_unlock":(200,150,255),
                          "Freeze":(160,230,255),"ArmorShred":(255,160,60),"DefDrop":(255,100,80),
@@ -2152,11 +2166,12 @@ class UI:
             btns["close"]=pygame.Rect(mx_m+6,btn_bottom_y,38,38)
             btns["sell"]=pygame.Rect(mx_m+48,btn_bottom_y,mw-54,38)
             if cls==Archer:
-                btn_h=24; btn_w=(mw-20)//3
+                btn_h=24; btn_w=(mw-24)//4
                 arrow_btn_y=strip_y_actual+56
-                btns["arrow_arrow"]=pygame.Rect(mx_m+8,               arrow_btn_y, btn_w, btn_h)
-                btns["arrow_ice"]  =pygame.Rect(mx_m+8+btn_w+3,       arrow_btn_y, btn_w, btn_h)
-                btns["arrow_flame"]=pygame.Rect(mx_m+8+(btn_w+3)*2,   arrow_btn_y, btn_w, btn_h)
+                btns["arrow_normal"]   =pygame.Rect(mx_m+8,               arrow_btn_y, btn_w, btn_h)
+                btns["arrow_flame"]    =pygame.Rect(mx_m+8+(btn_w+2),     arrow_btn_y, btn_w, btn_h)
+                btns["arrow_shock"]    =pygame.Rect(mx_m+8+(btn_w+2)*2,   arrow_btn_y, btn_w, btn_h)
+                btns["arrow_explosive"]=pygame.Rect(mx_m+8+(btn_w+2)*3,   arrow_btn_y, btn_w, btn_h)
                 btns["upgrade"]=pygame.Rect(mx_m+6,strip_y_actual+54+btn_h+6,mw-12,44)
             if cls==Jester:
                 btn_h=24; btn_w=(mw-20)//4
@@ -2238,16 +2253,16 @@ class UI:
             # === ARCHER ARROW MODE SELECTOR ===
             if cls==Archer:
                 arrow_modes=[
-                    ("arrow",     "Arrow",      (200,140,60),  (255,180,80)),
-                    ("ice_arrow", "Ice Arrow",  (80,180,255),  (160,220,255)),
-                    ("flame_arrow","Flame Arrow",(220,80,20),  (255,150,50)),
+                    ("arrow",     "Normal",    (200,140,60),  (255,180,80),  0),
+                    ("flame",     "Flame",     (220,80,20),   (255,150,50),  3),
+                    ("shock",     "Shock",     (80,160,255),  (160,220,255), 4),
+                    ("explosive", "Explosive", (200,50,20),   (255,120,50),  5),
                 ]
-                for mode_key, mode_label, col_active, col_border in arrow_modes:
-                    if mode_key=="arrow":       br=btns["arrow_arrow"]
-                    elif mode_key=="ice_arrow": br=btns["arrow_ice"]
-                    else:                       br=btns["arrow_flame"]
+                for mode_key, mode_label, col_active, col_border, req_lv in arrow_modes:
+                    br=btns.get(f"arrow_{mode_key if mode_key != 'arrow' else 'normal'}")
+                    if not br: continue
                     is_sel=(u.arrow_mode==mode_key)
-                    locked=(mode_key=="ice_arrow" and u.level<2) or (mode_key=="flame_arrow" and u.level<3)
+                    locked=(u.level < req_lv)
                     if locked:
                         bg=(22,22,35); brd=(55,50,75); tcol=(80,75,100)
                     elif is_sel:
@@ -2259,8 +2274,7 @@ class UI:
                     lbl_s=font_sm.render(mode_label,True,tcol)
                     surf.blit(lbl_s,lbl_s.get_rect(center=br.center))
                     if locked:
-                        req_lvl="Lv2" if mode_key=="ice_arrow" else "Lv3"
-                        lock_s=pygame.font.SysFont("consolas",9).render(req_lvl,True,(90,80,120))
+                        lock_s=pygame.font.SysFont("consolas",9).render(f"Lv{req_lv}",True,(90,80,120))
                         surf.blit(lock_s,(br.right-lock_s.get_width()-2, br.y+2))
 
             # === JESTER BOMB MODE SELECTOR ===
@@ -4933,7 +4947,8 @@ class Game:
         _name_to_cls = {"Assassin": Assassin, "Accelerator": Accelerator,
                         "Frostcelerator": Frostcelerator, "xw5yt": Xw5ytUnit,
                         "Lifestealer": Lifestealer,
-                        "Archer": Archer, "Red Ball": RedBall, "Farm": Farm,
+                        "Archer": Archer,
+                        "ArcherOld": ArcherOld, "Red Ball": RedBall, "Farm": Farm,
                         "Freezer": Freezer, "Frost Blaster": FrostBlaster,
                         "Sledger": Sledger, "Gladiator": Gladiator,
                         "Toxic Gunner": ToxicGunner, "Slasher": Slasher,

@@ -207,6 +207,7 @@ UNIT_LIMITS = {
     "xw5yt":          1,
     "Lifestealer":    4,
     "Archer":         4,
+    "ArcherOld":      4,
     "Red Ball":       4,
     "Farm":           8,
     "Freezer":        6,
