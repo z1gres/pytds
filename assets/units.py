@@ -1363,7 +1363,7 @@ class Freezer(Unit):
         pygame.draw.circle(surf, C_FREEZER, (cx, cy), 27, 2)
         # Level pips
         for i in range(self.level):
-            pygame.draw.circle(surf, C_FREEZER, (cx - 7 + i * 7, cy + 36), 3)
+            pygame.draw.circle(surf, C_GOLD, (cx - 7 + i * 7, cy + 36), 3)
         # Bullets
         for b in self._bullets: b.draw(surf)
 
@@ -2502,15 +2502,15 @@ C_SLASHER_DARK = (50,  10, 10)
 
 SLASHER_LEVELS = [
     # lv0 – place $1500
-    (6,  0.508, 6.0, None,  3, 1.75, False, 0, 30, 0),
+    (6,  0.508, 3.0, None,  3, 1.75, False, 0, 30, 0),
     # lv1 – +$1250
-    (6,  0.408, 6.0, 1250,  3, 2.50, True,  0, 30, 0),
+    (6,  0.408, 2.6, 1250,  3, 2.50, True,  0, 30, 0),
     # lv2 – +$3500  (bleed unlocked)
-    (20, 0.708, 6.5, 3500,  3, 3.00, True,  1, 30, 1),
+    (20, 0.708, 2.6, 3500,  3, 3.00, True,  1, 30, 1),
     # lv3 – +$6500
-    (45, 0.608, 7.0, 6500,  3, 3.50, True,  2, 30, 1),
+    (45, 0.608, 3.0, 6500,  3, 3.50, True,  2, 30, 1),
     # lv4 – +$20000
-    (60, 0.508, 7.5,20000,  3, 4.00, True,  3, 30, 2),
+    (60, 0.508, 3.4,20000,  3, 4.00, True,  3, 30, 2),
 ]
 
 _SLASHER_BLEED_HP_FACTOR = 0.005  # per stack: 0.5% of enemy maxhp
@@ -4517,20 +4517,17 @@ class HackerLaserTest(Unit):
         if self._lightning_flash > 0:
             self._lightning_flash -= dt
 
-        # ALL alive enemies in range are targeted
-        targets = self._get_targets(enemies, 9999)
+        # Only ONE target at a time
+        targets = self._get_targets(enemies, 1)
         self._laser_targets = targets
 
         if self.cd_left <= 0 and targets:
             self.cd_left = self.firerate
-            dmg_dealt = 0
-            for t in targets:
-                t.take_damage(self.damage)
-                dmg_dealt += self.damage
-            self.total_damage += dmg_dealt
+            targets[0].take_damage(self.damage)
+            self.total_damage += self.damage
             # Charge lightning (lv2+)
             if self.level >= 2:
-                self._charge += dmg_dealt
+                self._charge += self.damage
                 if self._charge >= LIGHTNING_THRESHOLD:
                     self._charge -= LIGHTNING_THRESHOLD
                     self._trigger_lightning(enemies, effects)
@@ -4708,7 +4705,7 @@ class HackerLaserTest(Unit):
             "Damage":   self.damage,
             "Firerate": f"{self.firerate:.2f}",
             "Range":    self.range_tiles,
-            "Targets":  "∞",
+            "Targets":  "1",
             "HidDet":   "YES" if self.hidden_detection else "no",
         }
         if self.level >= 2:
@@ -4740,17 +4737,17 @@ C_WARLOCK_DARK = (50,  10,  80)
 #          upgrade_cost, hidden_det, melee_pierce, knockback_dist)
 WARLOCK_LEVELS = [
     # lv0
-    (45,  2.0,  6.0,  25, 1.0, 12.0,  None,  False, 1,  0.0),
+    (30,  2.0,  3.0,  15, 1.0,  6.0,  None,  False, 1,  0.0),
     # lv1
-    (75,  2.0,  6.0,  40, 1.0, 13.0,  2500,  False, 1,  0.0),
-    # lv2  — knockback 15px, hidden detect, ranged: 0.8 fr, +1 range, melee +0.5 range
-    (140, 2.0,  6.5,  60, 0.8, 14.0,  6800,  True,  1,  15.0),
+    (45,  2.0,  4.0,  20, 1.0,  6.0,  2500,  False, 1,  0.0),
+    # lv2  — knockback 7.5px, hidden detect
+    (60,  2.0,  4.0,  30, 0.8,  6.0,  6800,  True,  1,  7.5),
     # lv3
-    (200, 2.0,  6.5, 115, 0.8, 14.0, 12000,  True,  1,  17.5),
+    (68,  2.0,  6.3,  40, 0.8,  6.0, 12000,  True,  1,  8.75),
     # lv4  — melee pierce 2
-    (200, 1.808,6.5, 190, 0.8, 14.5, 22500,  True,  2,  17.5),
+    (100, 1.808,4.3, 140, 0.8,  6.0, 22500,  True,  2,  8.75),
     # lv5  — ranged 0.708 fr
-    (400, 1.808,7.5, 260, 0.708,17.0, 32500,  True,  2,  20.0),
+    (200, 1.808,4.5, 160, 0.708, 6.0, 32500,  True,  2,  10.0),
 ]
 
 
