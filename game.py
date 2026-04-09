@@ -6255,7 +6255,10 @@ class Game:
                     if farm_income>0:
                         self.money+=farm_income
                         self.ui.show_msg(f"+{farm_income} Farm income",2.5)
-                    if self._wave_leaked:
+                    _timer_expired = (getattr(self.wave_mgr, '_prev_wave_timer_expired', False)
+                                      if _skipped_pending else
+                                      getattr(self.wave_mgr, '_timer_expired', False))
+                    if self._wave_leaked or _timer_expired:
                         if lm: self.money+=lm; self.ui.show_msg(f"+{lm} Wave bonus",2.5)
                     else:
                         msgs=[]

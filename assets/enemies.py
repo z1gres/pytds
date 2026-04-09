@@ -745,7 +745,7 @@ class FallenBreaker(Enemy):
         if hovered: self._hover_label(surf)
 
 class FallenRusher(Enemy):
-    DISPLAY_NAME="Fallen Rusher"; BASE_HP=350; BASE_SPEED=140; ARMOR=0.10; KILL_REWARD=1500
+    DISPLAY_NAME="Fallen Rusher"; BASE_HP=350; BASE_SPEED=61; ARMOR=0.10; KILL_REWARD=1500
     def __init__(self, wave=1):
         super().__init__(wave)
         self.hp=350; self.maxhp=350; self.speed=self.BASE_SPEED+(wave-1)*5; self.radius=13
@@ -2216,10 +2216,19 @@ class WaveManager:
                 else: self.state="done"
 
     def _start_wave(self):
+        prev_wave = self.wave
         self.wave+=1; self.state="spawning"
         self.spawn_queue=self._build_queue(self.wave)
         self.spawn_timer=self.spawn_interval
         self._bonus_paid=False; self._lmoney_paid=False; self._gd_spawned=False
+        # If the previous wave ended by timer expiry (enemies may still be alive),
+        # mark lmoney as pending so the payment block pays out for it.
+        # Also preserve _timer_expired as _prev_wave_timer_expired so game.py
+        # can check it when deciding whether to award the wave-clear bonus.
+        if self._timer_expired and not self._lmoney_pay_pending:
+            self._lmoney_pay_pending = True
+            self._lmoney_pending_wave = prev_wave
+        self._prev_wave_timer_expired = self._timer_expired
         self._timer_expired=False
         # Note: _lmoney_pay_pending is cleared by the game payment block, not here
         # Start the wave-duration timer for this wave
