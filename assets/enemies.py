@@ -119,6 +119,7 @@ class ScoutEnemy(Enemy):
 
 class NormalBoss(Enemy):
     DISPLAY_NAME="Normal Boss"; BASE_HP=200; BASE_SPEED=55
+    _shock_immune = True  # боссы не стопорятся шок-стрелой
     def __init__(self, wave=1):
         super().__init__(wave)
         self.hp=200; self.maxhp=200
@@ -193,6 +194,7 @@ class ArmoredEnemy(Enemy):
 
 class SlowBoss(Enemy):
     DISPLAY_NAME="Slow Boss"; BASE_HP=25; BASE_SPEED=28
+    _shock_immune = True
     def __init__(self, wave=1):
         super().__init__(wave)
         self.hp=25; self.maxhp=25; self.speed=self.BASE_SPEED; self.radius=34
@@ -2107,6 +2109,7 @@ class WaveManager:
         self.spawn_queue=[]; self.spawn_timer=0.0; self.spawn_interval=0.9
         self._bonus_paid=False; self._lmoney_paid=False; self._gd_spawned=False
         self._lmoney_pay_pending=False; self._lmoney_pending_wave=None
+        self._timer_expired=False  # True когда волна завершилась по таймеру (враги могут быть живы)
         # Which timing table to use (set by Game after construction)
         self._mode = "easy"
         # Wave-duration timer: counts down during spawning/waiting, shown to player
@@ -2169,6 +2172,13 @@ class WaveManager:
                             s._wp_index = e._wp_index
                             enemies.append(s)
                     e._pending_summons = []
+            # Wave timer expired while still spawning → go to between immediately
+            if self._wave_timer is not None and self._wave_timer <= 0:
+                self.spawn_queue = []
+                self._wave_timer = None
+                self._timer_expired = True
+                self.state = "between"
+                self.prep_timer = self._BETWEEN_TIME
 
         elif self.state=="waiting":
             # Wave timer still ticking after all enemies are spawned
@@ -2189,9 +2199,12 @@ class WaveManager:
                 if alive_count==0:
                     enemies.append(GraveDigger()); self._gd_spawned=True
             else:
-                # As soon as all enemies are dead — start 5s countdown immediately
-                if alive_count==0:
+                # Timer expired OR all enemies dead → start between countdown
+                timer_expired = (self._wave_timer is not None and self._wave_timer <= 0)
+                if alive_count==0 or timer_expired:
                     self._wave_timer = None
+                    if timer_expired:
+                        self._timer_expired = True
                     self.state="between"
                     self.prep_timer = self._BETWEEN_TIME
 
@@ -2207,6 +2220,7 @@ class WaveManager:
         self.spawn_queue=self._build_queue(self.wave)
         self.spawn_timer=self.spawn_interval
         self._bonus_paid=False; self._lmoney_paid=False; self._gd_spawned=False
+        self._timer_expired=False
         # Note: _lmoney_pay_pending is cleared by the game payment block, not here
         # Start the wave-duration timer for this wave
         wt, su = self._get_wave_time(self.wave)

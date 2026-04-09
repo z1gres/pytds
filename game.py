@@ -6162,8 +6162,10 @@ class Game:
                 # tf_test: always track 1M miniboss and TFK in boss bars regardless of mode
     
                 _skipped_pending = getattr(self.wave_mgr, '_lmoney_pay_pending', False)
+                _timer_expired = getattr(self.wave_mgr, '_timer_expired', False)
+                _all_dead = not any(e.alive for e in self.enemies)
                 if ((self.wave_mgr.state in ("waiting", "between", "done")
-                        and not any(e.alive for e in self.enemies) and not self.wave_mgr._lmoney_paid)
+                        and (_all_dead or _timer_expired) and not self.wave_mgr._lmoney_paid)
                         or _skipped_pending):
                     # For skipped waves: look up lmoney for the wave that was skipped,
                     # and do NOT award bmoney (wave clear bonus) since it wasn't cleared normally.
@@ -6174,6 +6176,8 @@ class Game:
                         lm = self.wave_mgr.wave_lmoney()
                         self.wave_mgr.wave = _saved_wave
                         bm = 0  # no wave-clear bonus on skip
+                    elif _timer_expired and not _all_dead:
+                        lm=self.wave_mgr.wave_lmoney(); bm=0  # no clear bonus if enemies still alive
                     else:
                         lm=self.wave_mgr.wave_lmoney(); bm=self.wave_mgr.wave_bmoney()
                     if self.mode == "hardcore":

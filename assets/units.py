@@ -923,11 +923,21 @@ class ArcherArrow:
             e._fire_dmg = self.fire_dmg
             e._fire_tick = 0.0
         elif self.arrow_type == "shock":
-            if self.shock_stun > 0 and not getattr(e, '_shock_stunned', False):
-                e._shock_stunned = True
-                e._shock_stun_timer = self.shock_stun * _dm()
-                e._shock_pre_speed = e.speed
-                e.speed = 0.0
+            # Не применяем стан к иммунным врагам (боссы)
+            if getattr(e, '_shock_immune', False): return
+            if self.shock_stun > 0:
+                stun_dur = self.shock_stun * _dm()
+                if not getattr(e, '_shock_stunned', False):
+                    # Враг не заморожен — применяем
+                    e._shock_stunned = True
+                    e._shock_stun_timer = stun_dur
+                    e._shock_pre_speed = e.speed
+                    e.speed = 0.0
+                else:
+                    # Уже заморожен — обновляем только если новый стан ДЛИННЕЕ
+                    if stun_dur > getattr(e, '_shock_stun_timer', 0):
+                        e._shock_stun_timer = stun_dur
+                        # скорость уже 0, pre_speed уже сохранён — не трогаем
         elif self.arrow_type == "explosive":
             pass  # handled in update via splash
 
