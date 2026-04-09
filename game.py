@@ -34,6 +34,7 @@ from game_core import (
 # ── Unit limit overrides (applied on top of game_core defaults) ────────────────
 UNIT_LIMITS["Archer"]   = 8   # increased from default (was 6)
 UNIT_LIMITS["Militant"] = 6   # new starter unit
+UNIT_LIMITS["Swarmer"]  = 14
 
 
 
@@ -171,6 +172,7 @@ from units import (
     RubberDuck, RubberDuckProjectile, DUCK_LEVELS, DUCK_LEVEL_NAMES, C_DUCK, C_DUCK_DARK,
     ArcherPrime, C_ARCHERPRIME,
     Militant, MILITANT_LEVELS, C_MILITANT, C_MILITANT_DARK,
+    Swarmer, SWARMER_LEVELS, C_SWARMER, C_SWARMER_DARK,
 )
 
 class DevConsole:
@@ -624,6 +626,7 @@ class AdminPanel:
                 ("Lifestealer",Lifestealer,(220,40,80)),("Archer",Archer,(200,160,60)),
                 ("ArcherOld",ArcherOld,(160,100,50)),
                 ("Militant",Militant,C_MILITANT),
+                ("Swarmer",Swarmer,C_SWARMER),
                 ("Farm",Farm,(80,180,60)),("Red Ball",RedBall,(220,40,40)),
                 ("FrostBlast",FrostBlaster,C_FROSTBLASTER),
                 ("Sledger",Sledger,C_SLEDGER),
@@ -1241,6 +1244,17 @@ class UI:
                 oy = cy + int(math.sin(angle) * 32)
                 pygame.draw.circle(surf, (200, 140, 255), (ox, oy), 5)
                 pygame.draw.circle(surf, (255, 220, 255), (ox, oy), 5, 1)
+        elif isinstance(u, Swarmer):
+            pygame.draw.circle(surf, C_SWARMER_DARK, (cx, cy), 28)
+            pygame.draw.circle(surf, C_SWARMER,      (cx, cy), 22)
+            # Mini соты
+            for hx, hy in [(0,0),(-7,-6),(7,-6),(-7,6),(7,6)]:
+                pts = []
+                for k in range(6):
+                    a2 = math.radians(60*k+30)
+                    pts.append((cx+hx+int(math.cos(a2)*4), cy+hy+int(math.sin(a2)*4)))
+                pygame.draw.polygon(surf, (200,140,0), pts)
+                pygame.draw.polygon(surf, (80,40,0), pts, 1)
         else:
             pygame.draw.circle(surf,(70,40,100),(cx,cy),28)
             pygame.draw.circle(surf,u.COLOR,(cx,cy),22)
@@ -1274,6 +1288,7 @@ class UI:
         elif cls==Jester: levels=JESTER_LEVELS; cost_idx=3
         elif cls==SoulWeaver: levels=_SW_LEVELS; cost_idx=1
         elif cls==RubberDuck: levels=DUCK_LEVELS; cost_idx=3
+        elif cls==Swarmer: levels=SWARMER_LEVELS; cost_idx=3
         else: levels=[]; cost_idx=3
         for i in range(1,unit.level+1):
             if i<len(levels) and levels[i][cost_idx]: total+=levels[i][cost_idx]
@@ -1450,6 +1465,11 @@ class UI:
             result={"Damage":d,"Firerate":fr,"Range":r}
             if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
             return result
+        elif cls==Swarmer:
+            if nxt>=len(SWARMER_LEVELS): return None
+            bdmg,fr,r,_,st,sl,ti=SWARMER_LEVELS[nxt]
+            return {"Bee Dmg":bdmg,"Firerate":f"{fr:.3f}","Range":r,
+                    "Sting Time":f"{st:.2f}s","Stack Limit":sl,"Tick":f"{ti:.2f}s"}
         return None
 
     def draw(self,surf,units,money,wave_mgr,player_hp,player_maxhp,enemies,
@@ -2100,6 +2120,15 @@ class UI:
                     ("Range",    u.range_tiles,           nxt.get("Range")   if nxt else None),
                 ]
                 if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
+            elif cls==Swarmer:
+                stats=[
+                    ("Bee Dmg",    u.bee_damage,           nxt.get("Bee Dmg")    if nxt else None),
+                    ("Firerate",   f"{u.firerate:.3f}",     nxt.get("Firerate")   if nxt else None),
+                    ("Range",      u.range_tiles,           nxt.get("Range")      if nxt else None),
+                    ("Sting Time", f"{u.sting_time:.2f}s",  nxt.get("Sting Time") if nxt else None),
+                    ("Stack Limit",u.stack_limit,           nxt.get("Stack Limit")if nxt else None),
+                    ("Tick",       f"{u.tick_interval:.2f}s",nxt.get("Tick")      if nxt else None),
+                ]
             else:
                 stats=[(k,v,None) for k,v in u.get_info().items()]
 
@@ -2107,6 +2136,7 @@ class UI:
                          "Damage":(255,120,80),"RangedDamage":(255,160,80),"Firerate":(255,220,60),
                          "Range":(80,200,255),"Dual_unlock":(200,100,255),"Slow":(100,200,255),
                          "Money":(220,60,80),"Pierce":(200,160,80),"Penetration":(200,160,80),
+                         "Bee Dmg":(255,200,40),"Sting Time":(255,180,0),"Stack Limit":(255,220,80),"Tick":(200,200,100),
                          "FlameArrow":(255,130,30),"FlameArrow_unlock":(255,130,30),
                          "ShockArrow":(100,180,255),"ShockArrow_unlock":(100,180,255),
                          "ExplosiveArrow":(255,80,30),"ExplosiveArrow_unlock":(255,80,30),
@@ -2588,6 +2618,7 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
         _col_map = {
             "Assassin": C_ASSASSIN,
             "Militant": C_MILITANT,
+            "Swarmer":  C_SWARMER,
             "Lifestealer": C_LIFESTEALER,
             "Archer": C_ARCHER,
             "Red Ball": C_REDBALL,
@@ -2621,7 +2652,7 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
     surf.blit(ns, ns.get_rect(center=(cx, cy + 56)))
 
     cost_map = {"Assassin": 300, "Accelerator": 5000, "Frostcelerator": 3500, "Freezer": 400,
-                "Militant": 300,
+                "Militant": 300, "Swarmer": 900,
                 "Lifestealer": 400, "Archer": 400, "Red Ball": 1000, "Farm": 250,
                 "Frost Blaster": 800, "Sledger": 950, "Gladiator": 500,
                 "Toxic Gunner": 525, "Slasher": 1700, "Cowboy": 550,
@@ -4127,6 +4158,7 @@ ALL_UNITS_POOL = [
     {"name": "Archer",         "rarity": "common"},
     {"name": "Red Ball",       "rarity": "rare"},
     {"name": "Farm",           "rarity": "common"},
+    {"name": "Swarmer",        "rarity": "common"},
     {"name": "Freezer",        "rarity": "common"},
     {"name": "Frost Blaster",  "rarity": "rare"},
     {"name": "Sledger",        "rarity": "epic"},
@@ -4150,6 +4182,7 @@ UNIT_SHOP_PRICES = {
     "Assassin":       None,
     "Militant":       300,
     "Archer":         1000,
+    "Swarmer":        600,
     "Lifestealer":    300,
     "Accelerator":    4000,
     "Red Ball":       500,
@@ -4444,7 +4477,7 @@ class LoadoutScreen:
 
         _col_map_slot = {
             "Assassin": C_ASSASSIN,        "Lifestealer": C_LIFESTEALER,
-            "Militant": C_MILITANT,
+            "Militant": C_MILITANT,        "Swarmer":     C_SWARMER,
             "Archer":   C_ARCHER,          "Red Ball":    C_REDBALL,
             "Farm":     C_FARM,            "Freezer":     C_FREEZER,
             "Frost Blaster": C_FROSTBLASTER, "Sledger":   C_SLEDGER,
@@ -4998,6 +5031,7 @@ class Game:
                         "Lifestealer": Lifestealer,
                         "Archer": Archer,
                         "Militant": Militant,
+                        "Swarmer": Swarmer,
                         "ArcherOld": ArcherOld, "Red Ball": RedBall, "Farm": Farm,
                         "Freezer": Freezer, "Frost Blaster": FrostBlaster,
                         "Sledger": Sledger, "Gladiator": Gladiator,
@@ -6162,10 +6196,8 @@ class Game:
                 # tf_test: always track 1M miniboss and TFK in boss bars regardless of mode
     
                 _skipped_pending = getattr(self.wave_mgr, '_lmoney_pay_pending', False)
-                _timer_expired = getattr(self.wave_mgr, '_timer_expired', False)
-                _all_dead = not any(e.alive for e in self.enemies)
                 if ((self.wave_mgr.state in ("waiting", "between", "done")
-                        and (_all_dead or _timer_expired) and not self.wave_mgr._lmoney_paid)
+                        and not any(e.alive for e in self.enemies) and not self.wave_mgr._lmoney_paid)
                         or _skipped_pending):
                     # For skipped waves: look up lmoney for the wave that was skipped,
                     # and do NOT award bmoney (wave clear bonus) since it wasn't cleared normally.
@@ -6176,8 +6208,6 @@ class Game:
                         lm = self.wave_mgr.wave_lmoney()
                         self.wave_mgr.wave = _saved_wave
                         bm = 0  # no wave-clear bonus on skip
-                    elif _timer_expired and not _all_dead:
-                        lm=self.wave_mgr.wave_lmoney(); bm=0  # no clear bonus if enemies still alive
                     else:
                         lm=self.wave_mgr.wave_lmoney(); bm=self.wave_mgr.wave_bmoney()
                     if self.mode == "hardcore":

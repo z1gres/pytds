@@ -7134,3 +7134,229 @@ class RubberDuck(Unit):
             "Firerate": f"{self.firerate:.2f}",
             "Range":    self.range_tiles,
         }
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Swarmer — common rarity
+#   Атакует, накладывая стаки "Bee Debuff" на цель.
+#   Каждый стак тикает каждые Sting Time секунд, нанося урон.
+#   Стаки от разных Swarmer суммируются, но общий лимит на цель — 15000.
+#   Каждый стак имеет собственный таймер жизни (= Sting Time * ticks_per_stack).
+#
+# Уровни (damage_per_bee, firerate, range_tiles, cost, sting_time, stack_limit, ticks_per_stack):
+#   lv0  base   — dmg=2, fr=1.208, range=5.5, sting=4.0, stacks_limit=10,  ticks=3
+#   lv1  $600   — +1 Bee Damage
+#   lv2  $1200  — fr=1.008, +2 Range→7.5, +2 Damage, 1→1 Tick, sting=4.5, stacks=15
+#   lv3  $2500  — -4 Damage(bee rebalance→2), +3 Range→10.5, fr=2.008, 1→0.75Tick, sting=5.25, stacks=25
+#   lv4  $6000  — fr=1.608, +2 Range→12.5, +1 Bee Damage, sting=7.5, stacks=30
+#   lv5  $12000 — fr=1.208, sting=15.0, stacks=45
+# ══════════════════════════════════════════════════════════════════════════════
+
+C_SWARMER      = (255, 200, 40)   # золотисто-жёлтый — цвет пчелы
+C_SWARMER_DARK = (130, 90,  10)
+
+# (bee_damage, firerate, range_tiles, cost, sting_time, stack_limit, tick_interval)
+# tick_interval — как часто каждый стак наносит урон (сек)
+SWARMER_LEVELS = [
+    (2, 1.208, 5.5,  None,  4.0,  10, 1.0),   # lv0
+    (3, 1.208, 5.5,   600,  4.0,  10, 1.0),   # lv1  +1 Bee Damage
+    (5, 1.008, 7.5,  1200,  4.5,  15, 1.0),   # lv2  fr↑, +2 Range, +2 Dmg, sting↑, stacks↑
+    (2, 2.008, 10.5, 2500,  5.25, 25, 0.75),  # lv3  fr↑↑, +3 Range, -4 Dmg(rebalance), tick↓
+    (3, 1.608, 12.5, 6000,  7.5,  30, 0.75),  # lv4  fr↑, +2 Range, +1 Dmg, sting↑, stacks↑
+    (3, 1.208, 12.5, 12000, 15.0, 45, 0.75),  # lv5  fr↑, sting↑, stacks↑
+]
+
+# Максимальное число стаков на одну цель от всех Swarmer вместе
+SWARMER_GLOBAL_STACK_LIMIT = 15000
+
+
+class SwarmBeeEffect:
+    """Маленькая анимация пчелы летящей от башни к цели."""
+    def __init__(self, ox, oy, target):
+        self.x = float(ox); self.y = float(oy)
+        self.target = target
+        self.alive = True
+        self._t = 0.0
+        dx = target.x - ox; dy = target.y - oy
+        d = math.hypot(dx, dy) or 1
+        self.speed = 340.0
+        self.vx = dx/d; self.vy = dy/d
+        self._wobble = random.uniform(0, math.pi * 2)
+
+    def update(self, dt):
+        if not self.alive: return
+        self._t += dt
+        # Wobble perpendicular
+        perp_x = -self.vy; perp_y = self.vx
+        wobble = math.sin(self._t * 18 + self._wobble) * 4
+        self.x += (self.vx + perp_x * wobble * dt) * self.speed * dt
+        self.y += (self.vy + perp_y * wobble * dt) * self.speed * dt
+        if not self.target.alive:
+            self.alive = False; return
+        if math.hypot(self.target.x - self.x, self.target.y - self.y) < self.target.radius + 6:
+            self.alive = False
+
+    def draw(self, surf):
+        if not self.alive: return
+        cx, cy = int(self.x), int(self.y)
+        # Тело пчелы
+        pygame.draw.ellipse(surf, (255, 200, 0), (cx - 5, cy - 3, 10, 6))
+        pygame.draw.ellipse(surf, (30, 20, 0),   (cx - 5, cy - 3, 10, 6), 1)
+        # Полоски
+        for i in range(3):
+            stripe_x = cx - 3 + i * 3
+            pygame.draw.line(surf, (30, 20, 0), (stripe_x, cy - 3), (stripe_x, cy + 3), 1)
+        # Крылышки
+        wa = math.sin(self._t * 30) * 0.3
+        wing_s = pygame.Surface((12, 8), pygame.SRCALPHA)
+        pygame.draw.ellipse(wing_s, (220, 240, 255, 160), (0, 0, 10, 6))
+        surf.blit(wing_s, (cx - 4, cy - 7 + int(wa * 3)))
+        surf.blit(wing_s, (cx - 4, cy + 1 + int(wa * 3)))
+
+
+class Swarmer(Unit):
+    PLACE_COST       = 900
+    COLOR            = C_SWARMER
+    NAME             = "Swarmer"
+    hidden_detection = False
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._anim_t  = 0.0
+        self._bees    = []   # активные анимации пчёл
+        self._apply_level()
+
+    def _apply_level(self):
+        row = SWARMER_LEVELS[self.level]
+        (self.bee_damage, self.firerate, self.range_tiles,
+         _, self.sting_time, self.stack_limit, self.tick_interval) = row
+        self.damage = self.bee_damage  # для совместимости с UI
+        self.cd_left = 0.0
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(SWARMER_LEVELS): return None
+        return SWARMER_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(SWARMER_LEVELS):
+            self.level = nxt; self._apply_level()
+
+    def _apply_bee_stack(self, e):
+        """Накладывает один стак Bee Debuff на врага."""
+        if not hasattr(e, '_bee_stacks'):
+            e._bee_stacks = []     # список: {"dmg": int, "life": float, "tick": float}
+
+        # Считаем суммарный урон всех стаков (глобальный лимит)
+        total = sum(s["dmg"] for s in e._bee_stacks)
+        if total >= SWARMER_GLOBAL_STACK_LIMIT:
+            return  # лимит достигнут — не добавляем
+
+        # Лимит на башню (stack_limit = лимит per-unit, тут считаем все стаки суммарно)
+        if len(e._bee_stacks) >= self.stack_limit:
+            return  # личный лимит этого уровня
+
+        # Добавляем стак
+        e._bee_stacks.append({
+            "dmg":  self.bee_damage,
+            "life": self.sting_time * 3,   # живёт 3 тика
+            "tick": self.tick_interval,     # до первого тика
+        })
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t += dt
+        if self.cd_left > 0: self.cd_left -= dt
+
+        # Атака: накладываем стак на ближайшего врага
+        if self.cd_left <= 0:
+            targets = self._get_targets(enemies, 1)
+            if targets:
+                t = targets[0]
+                self._apply_bee_stack(t)
+                self.cd_left = self.firerate
+                self.total_damage += self.bee_damage
+                self._bees.append(SwarmBeeEffect(self.px, self.py, t))
+
+        # Тикаем стаки на всех врагах в диапазоне (и за его пределами — стаки живут сами)
+        for e in enemies:
+            if not e.alive: continue
+            if not hasattr(e, '_bee_stacks'): continue
+            new_stacks = []
+            for s in e._bee_stacks:
+                s["tick"] -= dt
+                s["life"] -= dt
+                if s["tick"] <= 0:
+                    e.take_damage(s["dmg"])
+                    s["tick"] = self.tick_interval  # сброс таймера тика
+                if s["life"] > 0:
+                    new_stacks.append(s)
+            e._bee_stacks = new_stacks
+
+        # Обновляем анимации пчёл
+        for b in self._bees: b.update(dt)
+        self._bees = [b for b in self._bees if b.alive]
+
+    def draw(self, surf):
+        cx, cy = int(self.px), int(self.py)
+        t = self._anim_t
+
+        # Тень
+        pygame.draw.circle(surf, (20, 15, 5), (cx + 2, cy + 2), 27)
+        # Тело
+        pygame.draw.circle(surf, C_SWARMER_DARK, (cx, cy), 27)
+        pygame.draw.circle(surf, C_SWARMER,      (cx, cy), 21)
+
+        # Соты — hex-паттерн из 7 маленьких шестигранников
+        for i, (hx, hy) in enumerate([
+            (0, 0), (-9, -8), (9, -8), (-9, 8), (9, 8), (0, -14), (0, 14)
+        ]):
+            if math.hypot(hx, hy) > 18: continue
+            pts = []
+            for k in range(6):
+                a2 = math.radians(60 * k + 30)
+                pts.append((cx + hx + int(math.cos(a2) * 5),
+                             cy + hy + int(math.sin(a2) * 5)))
+            col = (200, 140, 0) if i % 2 == 0 else (240, 180, 20)
+            pygame.draw.polygon(surf, col, pts)
+            pygame.draw.polygon(surf, (100, 60, 0), pts, 1)
+
+        # Вращающиеся пчёлки вокруг башни
+        for i in range(3):
+            angle = t * 2.5 + i * (math.pi * 2 / 3)
+            bx2 = cx + int(math.cos(angle) * 28)
+            by2 = cy + int(math.sin(angle) * 28)
+            pygame.draw.ellipse(surf, C_SWARMER, (bx2 - 4, by2 - 2, 8, 5))
+            pygame.draw.ellipse(surf, (30, 20, 0), (bx2 - 4, by2 - 2, 8, 5), 1)
+            # крыло
+            ws2 = pygame.Surface((8, 5), pygame.SRCALPHA)
+            pygame.draw.ellipse(ws2, (220, 240, 255, 140), (0, 0, 7, 4))
+            surf.blit(ws2, (bx2 - 2, by2 - 6))
+
+        # Hidden detection dot
+        if self.hidden_detection:
+            pygame.draw.circle(surf, (100, 255, 100), (cx + 19, cy - 19), 5)
+
+        # Level pips
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_GOLD, (cx - 10 + i * 7, cy + 33), 3)
+
+        # Анимации летящих пчёл
+        for b in self._bees: b.draw(surf)
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (255, 200, 0, 18), (r, r), r)
+        pygame.draw.circle(s, (255, 200, 0, 60), (r, r), r, 2)
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+
+    def get_info(self):
+        stacks_info = {}
+        return {
+            "Bee Dmg":    self.bee_damage,
+            "Firerate":   f"{self.firerate:.3f}",
+            "Range":      self.range_tiles,
+            "Sting Time": f"{self.sting_time:.2f}s",
+            "Stack Limit": self.stack_limit,
+            "Tick":       f"{self.tick_interval:.2f}s",
+        }
