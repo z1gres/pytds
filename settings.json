@@ -1,1 +1,1 @@
-{"music_volume": 0.11, "music_muted": false, "colored_range": false, "sfx_volume": 0.16, "sfx_muted": false, "show_fps": true, "screen_shake": true, "particles": true, "show_damage": true, "compact_numbers": false, "auto_skip": false}
+{"music_volume": 0.11, "music_muted": false, "colored_range": true, "sfx_volume": 0.16, "sfx_muted": false, "show_fps": true, "screen_shake": true, "particles": true, "show_damage": true, "compact_numbers": false, "auto_skip": false}

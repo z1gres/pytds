@@ -17,7 +17,7 @@ SKILLS = [
     {
         "id": "enhanced_optics",
         "name": "Enhanced Optics",
-        "desc": "Увеличивает радиус атаки всех башен на 0.5% за уровень.",
+        "desc": "Tower range +0.5% per level.",
         "max_levels": 20,
         "effect_label": "+0.5% range",
         "base_cost": 3,
@@ -29,7 +29,7 @@ SKILLS = [
     {
         "id": "improved_gunpowder",
         "name": "Improved Gunpowder",
-        "desc": "Увеличивает радиус AoE взрывов на 0.5% за уровень.\nТребует: Enhanced Optics 10.",
+        "desc": "AoE radius +0.5% per level.\nRequires: Enhanced Optics 10.",
         "max_levels": 25,
         "effect_label": "+0.5% AoE",
         "base_cost": 3,
@@ -42,7 +42,7 @@ SKILLS = [
     {
         "id": "fight_dirty",
         "name": "Fight Dirty",
-        "desc": "Длительность дебаффов (стан, заморозка, яд…) +1% за уровень.\nТребует: Improved Gunpowder 10.",
+        "desc": "Debuff duration +1% per level.\nRequires: Improved Gunpowder 10.",
         "max_levels": 25,
         "effect_label": "+1% debuff dur.",
         "base_cost": 3,
@@ -54,7 +54,7 @@ SKILLS = [
     {
         "id": "precision",
         "name": "Precision",
-        "desc": "Каждые X выстрелов башни — крит (×1.25 урон).\nНачинает с 29, каждый уровень −1.\nТребует: Fight Dirty 10.",
+        "desc": "Every X shots is a crit (x1.25).\nStarts at 29, -1 per level.\nRequires: Fight Dirty 10.",
         "max_levels": 15,
         "effect_label": "−1 shot to crit",
         "base_cost": 4,
@@ -67,7 +67,7 @@ SKILLS = [
     {
         "id": "resourcefulness",
         "name": "Resourcefulness",
-        "desc": "Продажа башен возвращает на 1.2% больше монет за уровень.",
+        "desc": "Sell refund +1.2% per level.",
         "max_levels": 25,
         "effect_label": "+1.2% sell value",
         "base_cost": 2,
@@ -79,7 +79,7 @@ SKILLS = [
     {
         "id": "bigger_budget",
         "name": "Bigger Budget",
-        "desc": "Стартовое золото +1% за уровень.\nТребует: Resourcefulness 10.",
+        "desc": "Starting gold +1% per level.\nRequires: Resourcefulness 10.",
         "max_levels": 25,
         "effect_label": "+1% start cash",
         "base_cost": 2,
@@ -91,7 +91,7 @@ SKILLS = [
     {
         "id": "stonks",
         "name": "Stonks",
-        "desc": "Награда за прохождение волны +0.5% за уровень.\nТребует: Bigger Budget 10.",
+        "desc": "Wave clear reward +0.5% per level.\nRequires: Bigger Budget 10.",
         "max_levels": 20,
         "effect_label": "+0.5% wave reward",
         "base_cost": 4,
@@ -103,7 +103,7 @@ SKILLS = [
     {
         "id": "scavenger",
         "name": "Scavenger",
-        "desc": "Каждые X убийств врагов — бонусная награда ×1.5.\nНачинает с 29, каждый уровень −1.\nТребует: Stonks 10.",
+        "desc": "Every X kills gives 1.5x reward.\nStarts at 29, -1 per level.\nRequires: Stonks 10.",
         "max_levels": 20,
         "effect_label": "−1 kill to bonus",
         "base_cost": 4,
@@ -214,14 +214,14 @@ class SkillTreeScreen:
     def _can_upgrade(self, skill):
         lvl = self._lvl(skill["id"])
         if lvl >= skill["max_levels"]:
-            return False, "Максимальный уровень"
+            return False, "Max Level"
         if not self._req_met(skill):
             rid, rlvl = skill["requires"]
             req_name = SKILL_BY_ID[rid]["name"]
-            return False, f"Требует {req_name} lvl {rlvl}"
+            return False, f"Requires {req_name} lvl {rlvl}"
         cost = _level_cost(skill, lvl + 1)
         if self._coins() < cost:
-            return False, f"Нужно {cost} монет"
+            return False, f"Need {cost} coins"
         return True, ""
 
     def _upgrade(self, skill):
@@ -235,7 +235,7 @@ class SkillTreeScreen:
         # persist
         from game_core import write_save
         write_save(self.save_data)
-        self.msg = f"Улучшено {skill['name']} до {lvl+1}!"
+        self.msg = f"Upgraded {skill['name']} to lvl {lvl+1}!"
         self.msg_t = 2.0
 
     # ── main loop ─────────────────────────────────────────────────────────────
@@ -377,7 +377,7 @@ class SkillTreeScreen:
         pygame.draw.rect(surf, (60, 70, 110), pygame.Rect(px, py, pw, ph), 2, border_radius=14)
 
         if self.selected is None:
-            hint = self.f_body.render("Выбери скилл для подробностей", True, _C_GRAY)
+            hint = self.f_body.render("Select skill for details", True, _C_GRAY)
             surf.blit(hint, hint.get_rect(center=(px + pw // 2, py + ph // 2)))
             return
 
@@ -397,7 +397,7 @@ class SkillTreeScreen:
         if lvl > 0:
             fw = int(pbar_w * lvl / sk["max_levels"])
             pygame.draw.rect(surf, accent, (tx, ty, fw, 14), border_radius=6)
-        lvl_s = self.f_body.render(f"Уровень: {lvl} / {sk['max_levels']}", True, _C_WHITE)
+        lvl_s = self.f_body.render(f"Level: {lvl} / {sk['max_levels']}", True, _C_WHITE)
         surf.blit(lvl_s, (tx, ty + 20)); ty += 50
 
         # Description
@@ -410,9 +410,9 @@ class SkillTreeScreen:
         if lvl > 0:
             bonus = skill_tree_bonus(self.selected, self.save_data)
             if self.selected in ("precision", "scavenger"):
-                effect_str = f"Сейчас: {int(bonus)} выстрелов/убийств до бонуса"
+                effect_str = f"Currently: {int(bonus)} shots/kills to bonus"
             else:
-                effect_str = f"Сейчас: +{bonus * 100:.1f}%"
+                effect_str = f"Currently: +{bonus * 100:.1f}%"
             es = self.f_body.render(effect_str, True, accent)
             surf.blit(es, (tx, ty)); ty += 30
 
@@ -422,7 +422,7 @@ class SkillTreeScreen:
             total_c = _total_cost(sk, lvl)
             ok, reason = self._can_upgrade(sk)
             cost_col = _C_GREEN if ok else _C_RED
-            cs = self.f_body.render(f"Цена: {next_cost} монет  (итого: {_total_cost(sk, lvl+1)})", True, cost_col)
+            cs = self.f_body.render(f"Cost: {next_cost} coins (total: {_total_cost(sk, lvl+1)})", True, cost_col)
             surf.blit(cs, (tx, ty)); ty += 26
             if not ok:
                 rs = self.f_small.render(reason, True, _C_RED)
@@ -432,7 +432,7 @@ class SkillTreeScreen:
             surf.blit(ms, (tx, ty)); ty += 26
 
         # Coin balance
-        coin_s = self.f_body.render(f"Монеты: {self._coins()}", True, _C_GOLD)
+        coin_s = self.f_body.render(f"Coins: {self._coins()}", True, _C_GOLD)
         surf.blit(coin_s, (tx, ty)); ty += 30
 
         # Upgrade button
@@ -444,7 +444,7 @@ class SkillTreeScreen:
             br.x = px + 20; br.y = py + ph - 72; br.w = pw - 40; br.h = 48
             pygame.draw.rect(surf, btn_col, br, border_radius=12)
             pygame.draw.rect(surf, btn_brd, br, 2, border_radius=12)
-            label = "УЛУЧШИТЬ" if ok2 else "НЕДОСТУПНО"
+            label = "UPGRADE" if ok2 else "LOCKED"
             ls = self.f_head.render(label, True, _C_WHITE)
             surf.blit(ls, ls.get_rect(center=br.center))
 
@@ -461,7 +461,7 @@ class SkillTreeScreen:
         surf.blit(ts, ts.get_rect(midleft=(220, 42)))
 
         # Coin display
-        coin_s = self.f_head.render(f"Монеты: {self._coins()}", True, _C_GOLD)
+        coin_s = self.f_head.render(f"Coins: {self._coins()}", True, _C_GOLD)
         surf.blit(coin_s, coin_s.get_rect(midright=(self.W // 2 - 40, 42)))
 
         # Back button
@@ -469,5 +469,5 @@ class SkillTreeScreen:
         hov = b.collidepoint(pygame.mouse.get_pos())
         pygame.draw.rect(surf, (28, 36, 62) if hov else (18, 22, 38), b, border_radius=10)
         pygame.draw.rect(surf, (80, 120, 220) if hov else (50, 70, 140), b, 2, border_radius=10)
-        bs = self.f_head.render("← Назад", True, _C_WHITE)
+        bs = self.f_head.render("← Back", True, _C_WHITE)
         surf.blit(bs, bs.get_rect(center=b.center))

@@ -7170,7 +7170,7 @@ SWARMER_GLOBAL_STACK_LIMIT = 15000
 
 
 class SwarmBeeEffect:
-    """Маленькая анимация пчелы летящей от башни к цели."""
+    """Small bee animation."""
     def __init__(self, ox, oy, target):
         self.x = float(ox); self.y = float(oy)
         self.target = target
@@ -7185,6 +7185,11 @@ class SwarmBeeEffect:
     def update(self, dt):
         if not self.alive: return
         self._t += dt
+        # Home toward live target each frame so the bee never misses moving enemies
+        if self.target and self.target.alive:
+            dx = self.target.x - self.x; dy = self.target.y - self.y
+            d = math.hypot(dx, dy) or 1
+            self.vx = dx / d; self.vy = dy / d
         # Wobble perpendicular
         perp_x = -self.vy; perp_y = self.vx
         wobble = math.sin(self._t * 18 + self._wobble) * 4
@@ -7243,7 +7248,7 @@ class Swarmer(Unit):
             self.level = nxt; self._apply_level()
 
     def _apply_bee_stack(self, e):
-        """Накладывает один стак Bee Debuff на врага."""
+        """Applies one Bee Debuff stack."""
         if not hasattr(e, '_bee_stacks'):
             e._bee_stacks = []     # список: {"dmg": int, "life": float, "tick": float}
 
