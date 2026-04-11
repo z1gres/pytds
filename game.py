@@ -345,7 +345,7 @@ ADMIN_ENEMY_LIST = [
     # Frosty
     ("Frozen",      FrozenEnemy,      (80,200,255),  120,   55),
     ("Snowy",       SnowyEnemy,       (160,220,255), 80,    83),
-    ("PackedIce",   PackedIceEnemy,   (60,160,220),  300,   42),
+    ("PackedIce",   PackedIceEnemy,   (60,160,220),  300,   38),
     ("SnowMinion",  SnowMinion,       (140,210,255), 40,    120),
     ("FrostMystery",FrostMystery,     (30,130,200),  200,   140),
     ("Frostmite",   Frostmite,        (50,180,230),  60,    180),
@@ -1526,8 +1526,8 @@ class UI:
             surf.blit(_hs, (_hbg.x + 5, _hbg.y + 1))
 
         # Base Health (HP bar)
-        bx_hp, by_hp_raw = getattr(self, "ui_layout", {}).get("hp", (SCREEN_W//2 - 200, 36))
-        by_hp = max(26, by_hp_raw)
+        bx_hp, by_hp_raw = getattr(self, "ui_layout", {}).get("hp", (SCREEN_W//2 - 200, 20))
+        by_hp = max(16, by_hp_raw)
         bw_hp = 400; bh_hp = 30
         ratio = max(0, player_hp/player_maxhp)
         
@@ -1552,18 +1552,17 @@ class UI:
             tl_ceil = math.ceil(tl); mins = tl_ceil//60; secs = tl_ceil%60
             timer_str = f"{mins:02d}:{secs:02d}"
             
-            tx, ty_raw = getattr(self, "ui_layout", {}).get("timer", (SCREEN_W - 140, 20))
-            ty = max(10, ty_raw)
+            tx, ty_raw = getattr(self, "ui_layout", {}).get("timer", (SCREEN_W - 226, 10))
+            ty = max(6, ty_raw)
             
             ico_hr = load_icon("firerate_ico", 22)
             lbl_x = tx
             if ico_hr:
-                surf.blit(ico_hr, (tx, ty))
+                surf.blit(ico_hr, (tx, ty + 1))
                 lbl_x = tx + 26
-                
             self._outline_text(surf, "Time Left:", f_lbl, (lbl_x, ty), C_WHITE, outline_px=2)
             f_time = pygame.font.SysFont("segoeui", 38, bold=True)
-            self._outline_text(surf, timer_str, f_time, (tx + 50, ty + 26), C_WHITE, outline_px=3, center_x=True)
+            self._outline_text(surf, timer_str, f_time, (tx + 50, ty + 22), C_WHITE, outline_px=3, center_x=True)
             
             pass
         else:
@@ -1661,7 +1660,7 @@ class UI:
 
         # ── Money display ──────────────────────────────────────
         money_cy = SLOT_AREA_Y + panel_h // 2
-        mx, my = getattr(self, "ui_layout", {}).get("money", (14, money_cy - 18))
+        mx, my = getattr(self, "ui_layout", {}).get("money", (SCREEN_W - 220, money_cy - 23))
         
         ico_money = load_icon("money_ico", 36)
         if gl or is_sandbox:
@@ -2234,6 +2233,17 @@ class UI:
                     ("Stack Limit",u.stack_limit,           nxt.get("Stack Limit")if nxt else None),
                     ("Tick",       f"{u.tick_interval:.2f}s",nxt.get("Tick")      if nxt else None),
                 ]
+            elif cls==SoulWeaver:
+                nxt_sw = _SW_LEVELS[u.level+1] if u.level+1 < len(_SW_LEVELS) else None
+                p_sw = _SW_SURGE_PARAMS[u.level+1] if u.level+1 < len(_SW_SURGE_PARAMS) else None
+                stats=[
+                    ("Range",      u.range_tiles,           nxt_sw[0]   if nxt_sw else None),
+                    ("MaxStacks",  u.max_stacks,            nxt_sw[3]   if nxt_sw else None),
+                    ("AbilCD",     f"{u._cd:.0f}s",          f"{nxt_sw[2]:.0f}s" if nxt_sw else None),
+                ]
+                if p_sw:
+                    stats.append(("Surge DMG", f"x{_SW_SURGE_PARAMS[u.level][0]:.1f}", f"x{p_sw[0]:.1f}"))
+                    stats.append(("Surge FR",  f"x{_SW_SURGE_PARAMS[u.level][1]:.2f}", f"x{p_sw[1]:.2f}"))
             else:
                 stats=[(k,v,None) for k,v in u.get_info().items()]
 
@@ -3532,10 +3542,10 @@ class InterfaceSettingsScreen:
         total_slots_w = 5 * SLOT_W + 4 * 8
         self.elements = {
             "wave": {"w": 120, "h": 60, "def": (24, 20), "label": "Wave Info"},
-            "hp":   {"w": 400, "h": 40, "def": (SCREEN_W//2-200, 36), "label": "HP Bar"},
-            "timer":{"w": 150, "h": 70, "def": (SCREEN_W-140, 20), "label": "Time Left"},
+            "hp":   {"w": 400, "h": 40, "def": (SCREEN_W//2-200, 20), "label": "HP Bar"},
+            "timer":{"w": 200, "h": 70, "def": (SCREEN_W-226, 10), "label": "Time Left"},
             "skip": {"w": 280, "h": 90, "def": (SCREEN_W//2-140, 150), "label": "Skip Prompt"},
-            "money":{"w": 160, "h": 46, "def": (14, SLOT_AREA_Y + (SCREEN_H - SLOT_AREA_Y)//2 - 18), "label": "Money Counter"},
+            "money":{"w": 160, "h": 46, "def": (SCREEN_W - 220, SLOT_AREA_Y + (SCREEN_H - SLOT_AREA_Y)//2 - 23), "label": "Money Counter"},
             "slots":{"w": total_slots_w, "h": SLOT_H, "def": ((SCREEN_W - total_slots_w)//2, SLOT_AREA_Y + 8), "label": "Loadout Slots"},
             "upgrade":{"w": 340, "h": 520, "def": (SCREEN_W-364, 80), "label": "Upgrade Menu"},
             "speed":{"w": 88,  "h": SLOT_H, "def": (((SCREEN_W - total_slots_w)//2)-100, SLOT_AREA_Y + 8), "label": "Speed Ctrl"},
@@ -3635,11 +3645,11 @@ class InterfaceSettingsScreen:
                 ico_hr = load_icon("firerate_ico", 22)
                 lbl_x = tx
                 if ico_hr:
-                    surf.blit(ico_hr, (tx, ty))
+                    surf.blit(ico_hr, (tx, ty + 1))
                     lbl_x = tx + 26
                 _out_txt("Time Left:", f_lbl, (lbl_x, ty))
                 f_time = pygame.font.SysFont("segoeui", 38, bold=True)
-                _out_txt("00:45", f_time, (tx + 50, ty + 26), cx=True)
+                _out_txt("00:45", f_time, (tx + 50, ty + 22), cx=True)
             elif k == "skip":
                 cx_skip = ex + 140
                 sy = ey
@@ -7634,4 +7644,4 @@ if __name__ == "__main__":
             except Exception as e:
                 import traceback; traceback.print_exc()
                 input("Press Enter to continue...")
-            save_data = load_save() 
+            save_data = load_save()

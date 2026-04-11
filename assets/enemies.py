@@ -1261,7 +1261,7 @@ class SnowyEnemy(Enemy):
         if hovered: self._hover_label(surf)
 
 class PackedIceEnemy(Enemy):
-    DISPLAY_NAME="Packed Ice"; BASE_HP=75; BASE_SPEED=55; KILL_REWARD=100
+    DISPLAY_NAME="Packed Ice"; BASE_HP=75; BASE_SPEED=38; KILL_REWARD=100
     def __init__(self, wave=1):
         super().__init__(wave)
         self.hp=75; self.maxhp=75; self.speed=self.BASE_SPEED+(wave-1)*2; self.radius=20

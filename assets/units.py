@@ -975,6 +975,10 @@ class ArcherArrow:
         if self._target and self._target.alive and id(self._target) not in self._hit_ids:
             dx = self._target.x - self.x; dy = self._target.y - self.y
             d = math.hypot(dx, dy) or 1; self.vx = dx/d; self.vy = dy/d
+        elif not (self._target and self._target.alive):
+            # Target dead — vanish if no alive enemies remain
+            if not any(e.alive for e in enemies):
+                self.alive = False; return
         self.x += self.vx * step; self.y += self.vy * step
         self._dist_left -= step
         if self._dist_left <= 0: self.alive = False; return
@@ -2090,6 +2094,10 @@ class FrostBlasterBullet:
                 # Perfect tracking — always point directly at target
                 self.vx = dx / d
                 self.vy = dy / d
+        else:
+            # Target is dead/exhausted — vanish if no alive enemies remain
+            if not any(e.alive for e in enemies):
+                self.alive = False; return
 
         step = self.speed * dt
         self.x += self.vx * step
@@ -2909,6 +2917,10 @@ class ToxicGunnerBullet:
             dx = self._target.x - self.x; dy = self._target.y - self.y
             d  = math.hypot(dx, dy) or 1
             self.vx = dx / d; self.vy = dy / d
+        else:
+            # Target dead — vanish if no alive enemies remain
+            if not any(e.alive for e in enemies):
+                self.alive = False; return
         step = self.speed * dt
         self.x += self.vx * step; self.y += self.vy * step
         self._dist_left -= step
@@ -5705,7 +5717,7 @@ JESTER_LEVELS = [
     # lv2 – +$670  (unlocks ice bomb)
     ( 10, 1.008,   7.6, 670,    2,   4.0,  1.0,   4,    0.20, 0.50, 3.0,  0.00, 4,    0,    0.0,  0.4,  0.0,  6.0,  False,False),
     # lv3 – +$2750 (unlocks poison bomb, hidden det, enhanced ice)
-    ( 30, 1.008,   7.8,2750,    8,   4.0,  1.0,   4,    0.40, 0.50, 3.0,  0.01, 7,    3,   30.0,  0.4,  2.0,  6.0,  False,True),
+    ( 30, 1.008,   7.8,2750,    8,   4.0,  1.0,   4,    0.40, 0.50, 3.0,  0.01, 7,    3,   30.0,  0.4,  0.0,  6.0,  False,True),
     # lv4 – +$8500 (unlocks confusion bomb, dual bombs, faster firerate)
     ( 50, 0.608,   8.5,8500,   14,   4.0,  1.0,   4,    0.50, 0.50, 3.0,  0.01, 7,    5,   30.0,  0.4,  2.0,  6.0,  True, True),
 ]
