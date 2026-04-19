@@ -7309,6 +7309,10 @@ class MainMenu(_OrigMainMenu):
         self.btn_achievements= pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*4, btn_w, btn_h)
         self.btn_settings    = pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*5, btn_w, btn_h)
         self.btn_quit        = pygame.Rect(cx - btn_w//2, y0 + (btn_h+gap)*6, btn_w, btn_h)
+        # ── HARDCORE BETA button — bottom-left corner ──────────────────────────
+        hc_w, hc_h = 200, 46
+        self.btn_hardcore    = pygame.Rect(18, SCREEN_H - hc_h - 18, hc_w, hc_h)
+        self._hc_pulse       = 0.0  # animation timer
 
     def run(self):
         clock = pygame.time.Clock()
@@ -7348,6 +7352,11 @@ class MainMenu(_OrigMainMenu):
                     if self.btn_achievements.collidepoint(pos): self.action = "achievements"
                     if self.btn_settings.collidepoint(pos):     self.action = "settings"
                     if self.btn_quit.collidepoint(pos):         self.action = "quit"
+                    if self.btn_hardcore.collidepoint(pos):
+                        map_choice = MapSelectMenu(self.screen).run()
+                        if map_choice != "back":
+                            game_core.CURRENT_MAP = map_choice
+                            self.action = "play_hardcore"
             self._draw()
             pygame.display.flip()
         return self.action
@@ -7574,6 +7583,37 @@ class MainMenu(_OrigMainMenu):
 
         ver = font_sm.render("v1.3", True, (40, 48, 65))
         surf.blit(ver, (10, SCREEN_H - 20))
+
+        # ── HARDCORE BETA button — bottom-left ────────────────────────────────
+        hc_btn   = self.btn_hardcore
+        hc_hov   = hc_btn.collidepoint(mx, my)
+        # pulsing red glow behind button
+        glow_alpha = int(abs(math.sin(t * 2.4)) * 60 + 30)
+        glow_surf  = pygame.Surface((hc_btn.w + 24, hc_btn.h + 24), pygame.SRCALPHA)
+        pygame.draw.rect(glow_surf, (210, 40, 20, glow_alpha),
+                         (0, 0, hc_btn.w + 24, hc_btn.h + 24), border_radius=14)
+        surf.blit(glow_surf, (hc_btn.x - 12, hc_btn.y - 12))
+        # button body
+        hc_bg  = (100, 18, 8) if hc_hov else (72, 10, 4)
+        hc_brd_col = (255, 80, 30) if hc_hov else (int(160 + abs(math.sin(t * 2.4)) * 60), 40, 18)
+        pygame.draw.rect(surf, hc_bg,      hc_btn, border_radius=10)
+        pygame.draw.rect(surf, hc_brd_col, hc_btn, 2, border_radius=10)
+        # skull icon (drawn inline — no file needed)
+        sk_x = hc_btn.x + 12
+        sk_y = hc_btn.centery
+        sk_r = 10
+        pygame.draw.circle(surf, (230, 60, 30), (sk_x + sk_r, sk_y - 1), sk_r)
+        pygame.draw.rect(surf, (230, 60, 30), (sk_x + 2, sk_y + 6, sk_r * 2 - 4, 7), border_radius=2)
+        for ex, ey in [(sk_x + sk_r - 4, sk_y - 3), (sk_x + sk_r + 4, sk_y - 3)]:
+            pygame.draw.circle(surf, hc_bg, (ex, ey), 3)
+        # label
+        hc_f1  = pygame.font.SysFont("consolas", 18, bold=True)
+        hc_f2  = pygame.font.SysFont("segoeui",  12, bold=False)
+        hc_lbl = hc_f1.render("HARDCORE", True, (255, 100, 60) if hc_hov else (210, 65, 30))
+        hc_sub = hc_f2.render("BETA", True, (255, 200, 50))
+        text_x = hc_btn.x + 36
+        surf.blit(hc_lbl, (text_x, hc_btn.y + 6))
+        surf.blit(hc_sub, (text_x, hc_btn.y + hc_lbl.get_height() + 4))
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
