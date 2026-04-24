@@ -140,13 +140,20 @@ ACHIEVEMENT_DEFS = [
     {"id": "shard_1000",        "name": "Crystal",         "desc": "Gather 1000 shards",                       "color": (60,160,255),  "border": (140,220,255)},
     {"id": "april_fools_2026", "name": "April Fools 2026",    "desc": "Beat April Fools 2026",                "color": (255, 80, 120), "border": (255, 160, 200)},
     # ── New achievements ──────────────────────────────────────────────────────
-    {"id": "hardcore_clear",   "name": "Hardcore Player",          "desc": "Beat Hardcore mode",                       "color": (220, 60, 20),  "border": (255, 120, 60)},
-    {"id": "hardcore_loss50",  "name": "Almost...",             "desc": "Lose on wave 50 in Hardcore",            "color": (160, 30, 30),  "border": (220, 80, 60)},
     {"id": "has_skin",         "name": "Stylist",              "desc": "Own at least 1 skin",                        "color": (200, 100, 220),"border": (230, 160, 255)},
-    {"id": "hardcore_beta",    "name": "Beta Tester",          "desc": "Finish at least one Hardcore BETA","color": (80, 180, 255), "border": (140, 220, 255)},
     {"id": "naked_run",        "name": "Lightweight",              "desc": "Start game with no units equipped",            "color": (120, 120, 120),"border": (180, 180, 180)},
     {"id": "fallen_duo",       "name": "Duo",                 "desc": "Beat Fallen with max 2 units",          "color": (180, 60, 255), "border": (210, 120, 255)},
     {"id": "grand_slam",       "name": "Grand Slam",           "desc": "Beat Easy->Fallen->Frosty->Hardcore in a row", "color": (255, 200, 0), "border": (255, 240, 80)},
+    # ── Batch 2 achievements ──────────────────────────────────────────────────
+    {"id": "capitalist",       "name": "Capitalist",           "desc": "Build 8 Farms all upgraded to max level",     "color": (80, 180, 60),  "border": (140, 255, 100)},
+    {"id": "overkill",         "name": "Overkill",             "desc": "Apply Freeze, Burn and Armor Shred to one boss at once", "color": (180, 60, 220), "border": (220, 120, 255)},
+    {"id": "moonwalk",         "name": "Moonwalk",             "desc": "Have 15 enemies walking in reverse simultaneously", "color": (80, 160, 255), "border": (140, 210, 255)},
+    {"id": "why",              "name": "Why",                  "desc": "Do nothing for 1 hour",                       "color": (60, 60, 80),   "border": (100, 100, 140)},
+    {"id": "gold_rush",        "name": "Gold Rush",            "desc": "Earn $10,000 in one game using only Cowboys",  "color": (220, 170, 20), "border": (255, 230, 80)},
+    {"id": "hacker",           "name": "Hacker",               "desc": "Open the admin panel in Sandbox mode",        "color": (40, 200, 120), "border": (80, 255, 180)},
+    {"id": "no_refunds",       "name": "No Refunds",           "desc": "Beat Fallen without selling any tower",       "color": (200, 80, 60),  "border": (255, 130, 100)},
+    {"id": "absolute_zero",    "name": "Absolute Zero",        "desc": "Keep a boss frozen for 15 seconds straight",  "color": (140, 220, 255),"border": (200, 250, 255)},
+    {"id": "speedrunner",      "name": "Speedrunner",          "desc": "Beat Fallen with Auto-skip on all game",      "color": (255, 140, 40), "border": (255, 200, 100)},
 ]
 
 def load_achievements():

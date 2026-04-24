@@ -124,7 +124,6 @@ class Assassin(Unit):
         pygame.draw.circle(surf,self.COLOR,(cx,cy),21)
         pygame.draw.line(surf,(220,220,255),(cx+12,cy-27),(cx+27,cy-12),4)
         pygame.draw.line(surf,(180,180,220),(cx+18,cy-21),(cx+15,cy-18),7)
-        if self.hidden_detection: pygame.draw.circle(surf,(100,255,100),(cx+21,cy-21),6)
         for i in range(self.level): pygame.draw.circle(surf,C_GOLD,(cx-10+i*7,cy+33),3)
     def get_info(self):
         return {"Damage":self.damage,"Range":self.range_tiles,
@@ -850,7 +849,6 @@ class ArcherOld(Unit):
         pygame.draw.line(bow_surf,(200,200,180),(int(bow_cx+pa*bow_arm),int(bow_cy+pb*bow_arm)),(int(bx+ca*2),int(by+sa*2)),1)
         pygame.draw.line(bow_surf,(200,200,180),(int(bow_cx-pa*bow_arm),int(bow_cy-pb*bow_arm)),(int(bx+ca*2),int(by+sa*2)),1)
         surf.blit(bow_surf,(cx-SIZE//2,cy-SIZE//2))
-        if self.hidden_detection: pygame.draw.circle(surf,(100,255,100),(cx+21,cy-21),6)
         for i in range(self.level): pygame.draw.circle(surf,C_GOLD,(cx-14+i*6,cy+36),3)
         for arr in self._arrows: arr.draw(surf)
     def get_info(self):
@@ -873,11 +871,11 @@ class ArcherOld(Unit):
 
 # (damage, firerate, range_tiles, upgrade_cost, max_hits)
 ARCHER_LEVELS = [
-    (4,  1.708, 6.0, None, 1),   # lv0
-    (4,  1.708, 7.0, 100,  1),   # lv1  +1 Range
-    (6,  1.608, 7.0, 400,  2),   # lv2  +2 Dmg, faster, hid det, max_hits=2
-    (8,  1.508, 7.6, 1000, 3),   # lv3  +2 Dmg, faster, +0.6 Range, max_hits=3, flame
-    (16, 1.508, 8.6, 2750, 4),   # lv4  +8 Dmg, +1 Range, max_hits=4, shock
+    (6,  1.708, 6.0, None, 1),   # lv0  dmg 4→6
+    (6,  1.708, 7.0, 100,  1),   # lv1  dmg 4→6, +1 Range
+    (8,  1.608, 7.0, 400,  2),   # lv2  dmg 6→8, faster, hid det, max_hits=2
+    (12, 1.508, 7.6, 1000, 3),   # lv3  dmg 8→12, faster, +0.6 Range, max_hits=3, flame
+    (16, 1.508, 8.6, 2750, 4),   # lv4  +4 Dmg, +1 Range, max_hits=4, shock
     (35, 1.258, 9.6, 8575, 5),   # lv5  +19 Dmg, faster, +1 Range, max_hits=5, explosive
 ]
 
@@ -1255,7 +1253,6 @@ class Archer(Unit):
                          (int(bow_cx - pa*bow_arm), int(bow_cy - pb*bow_arm)),
                          (int(bx + ca*2), int(by + sa*2)), 1)
         surf.blit(bow_surf, (cx - SIZE//2, cy - SIZE//2))
-        if self.hidden_detection: pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
         for i in range(self.level): pygame.draw.circle(surf, C_GOLD, (cx - 14 + i*6, cy + 36), 3)
         for arr in self._arrows: arr.draw(surf, star_skin=_star_skin)
 
@@ -1556,11 +1553,11 @@ C_REDBALL_DARK = (120, 10,  10)
 
 # (damage, firerate, upgrade_cost)  — range is always 7
 REDBALL_LEVELS = [
-    (7,   0.7, None),
-    (15,  0.8, 750),
-    (20,  0.8, 1250),
-    (35,  0.6, 3000),
-    (50,  0.6, 4000),
+    (12,  0.7, None),
+    (20,  0.8, 750),
+    (35,  0.8, 1250),
+    (45,  0.6, 3000),
+    (100, 0.6, 4000),
 ]
 
 class RedBall(Unit):
@@ -1856,8 +1853,6 @@ class Militant(Unit):
         pygame.draw.line(surf, (180, 150, 80), (bx, by), (ex, ey), 3)
 
         # Hidden detection eye dot
-        if self.hidden_detection:
-            pygame.draw.circle(surf, (100, 255, 100), (cx + 19, cy - 19), 5)
 
         # Level pips
         for i in range(self.level):
@@ -2256,8 +2251,6 @@ class FrostBlaster(Unit):
         pygame.draw.circle(surf, C_FROSTBLASTER, (cx, cy), 27, 2)
 
         # Hidden detection indicator
-        if self.hidden_detection:
-            pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
 
         # Level pips
         for i in range(self.level):
@@ -2828,8 +2821,6 @@ class Gladiator(Unit):
         # Swing arc trail — only shown briefly after a real swing
 
         # Hidden detection dot
-        if self.hidden_detection:
-            pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
 
         # Level pips
         for i in range(self.level):
@@ -3103,8 +3094,6 @@ class ToxicGunner(Unit):
             pygame.draw.circle(surf, (60, 160, 40), (ring_x, ring_y), 3)
 
         # Hidden/flying detection
-        if self.hidden_detection:
-            pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
 
         # Level pips
         for i in range(self.level):
@@ -3317,8 +3306,6 @@ class Slasher(Unit):
                     (cx + int(math.cos(a)*arc_r), cy + int(math.sin(a)*arc_r)), 2)
             surf.blit(arc_s, (0, 0))
 
-        if self.hidden_detection:
-            pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
 
         for i in range(self.level):
             pygame.draw.circle(surf, C_SLASHER, (cx - 8 + i * 6, cy + 36), 3)
@@ -3553,8 +3540,6 @@ class GoldenCowboy(Unit):
         surf.blit(cs2, cs2.get_rect(center=(cx, cy - 42)))
 
         # Hidden detection dot
-        if self.hidden_detection:
-            pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
 
         # Level pips
         for i in range(self.level):
@@ -4358,8 +4343,6 @@ class Commander(Unit):
                 pygame.draw.circle(ring_s, (255,240,60,80), (ring_r+2,ring_r+2), ring_r, 3)
             surf.blit(ring_s, (cx-ring_r-2, cy-ring_r-2))
         # Detection dots
-        if self.hidden_detection:
-            pygame.draw.circle(surf, (100,255,100), (cx+21, cy-21), 6)
         for i in range(self.level):
             pygame.draw.circle(surf, C_COMMANDER, (cx-10+i*7, cy+36), 3)
 
@@ -4799,7 +4782,6 @@ class SnowballerOld(Unit):
         pygame.draw.circle(surf,(255,255,255),(cx,cy),3)
         ca,sa=math.cos(self._aim_angle),math.sin(self._aim_angle)
         pygame.draw.line(surf,(160,220,255),(cx+int(ca*8),cy+int(sa*8)),(cx+int(ca*26),cy+int(sa*26)),3)
-        if self.hidden_detection: pygame.draw.circle(surf,(100,255,100),(cx+21,cy-21),6)
         for b in self._balls: b.draw(surf)
         for i in range(self.level): pygame.draw.circle(surf,C_SNOWBALLER,(cx-10+i*7,cy+36),3)
     def draw_range(self, surf):
@@ -5054,8 +5036,6 @@ class Commando(Unit):
         bcol = (100, 220, 80) if burst_frac > 0.4 else (220, 200, 60)
         pygame.draw.rect(surf, bcol, (bx3, by3, int(bw2 * burst_frac), bh2), border_radius=2)
 
-        if self.hidden_detection:
-            pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
 
         for b in self._bullets: b.draw(surf)
         for g in self._grenades: g.draw(surf)
@@ -6124,8 +6104,6 @@ class Jester(Unit):
             surf.blit(bs, (bx2 - 5, by2 - 5))
 
         # Hidden detection indicator
-        if self.hidden_detection:
-            pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
 
         # Level pips
         for i in range(self.level):
@@ -6802,8 +6780,6 @@ class Medic(Unit):
         pygame.draw.rect(surf, (220, 255, 230), (cx - 10, cy - 3, 20, 6))
 
         # ── Hidden detection dot ──────────────────────────────────────────────
-        if self.hidden_detection:
-            pygame.draw.circle(surf, (100, 255, 100), (cx + 21, cy - 21), 6)
 
         # ── Level pips ───────────────────────────────────────────────────────
         for i in range(self.level):
@@ -7350,8 +7326,6 @@ class Swarmer(Unit):
             surf.blit(ws2, (bx2 - 2, by2 - 6))
 
         # Hidden detection dot
-        if self.hidden_detection:
-            pygame.draw.circle(surf, (100, 255, 100), (cx + 19, cy - 19), 5)
 
         # Level pips
         for i in range(self.level):
