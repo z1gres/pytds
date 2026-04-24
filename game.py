@@ -1439,8 +1439,6 @@ class UI:
             tl_ceil = math.ceil(tl); mins = tl_ceil//60; secs = tl_ceil%60
             timer_str = f"{mins:02d}:{secs:02d}"
             
-            tx, ty_raw = getattr(self, "ui_layout", {}).get("timer", None), None
-            ty = max(6, 10)
             RIGHT_EDGE = SCREEN_W - 12
 
             f_time = pygame.font.SysFont("segoeui", 38, bold=True)
@@ -1451,8 +1449,14 @@ class UI:
             tim_surf = f_time.render(timer_str, True, C_WHITE)
             ico_w = (ico_hr.get_width() + 4) if ico_hr else 0
             block_w = max(ico_w + lbl_surf.get_width(), tim_surf.get_width())
-            tx = RIGHT_EDGE - block_w
-            if tx is None: tx = RIGHT_EDGE - block_w  # fallback already set
+
+            _timer_pos = getattr(self, "ui_layout", {}).get("timer", None)
+            if _timer_pos:
+                tx = _timer_pos[0]
+                ty = max(6, _timer_pos[1])
+            else:
+                tx = RIGHT_EDGE - block_w
+                ty = 10
 
             lbl_x = tx
             if ico_hr:
@@ -1657,8 +1661,7 @@ class UI:
                     else:
                         surf.blit(ps, ps.get_rect(centerx=cx2, top=ry))
             else:
-                qs = pygame.font.SysFont("consolas", 22, bold=True).render("?", True, (60, 65, 90))
-                surf.blit(qs, qs.get_rect(center=slot.center))
+                pass
 
         # ── Speed button (left of loadout) ───────────────────────────────────
         spd_val = self._SPEED_STEPS[self._speed_idx]
@@ -1720,7 +1723,7 @@ class UI:
 
             cls=type(u)
             nxt=self._get_next_stats(u)
-            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,ArcherOld:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS}
+            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,ArcherOld:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS,Farm:FARM_LEVELS}
             lvl_list=levels_map.get(cls,[])
             if cls==Jester: lvl_list=JESTER_LEVELS
             total_lvls=len(lvl_list)
@@ -1822,9 +1825,6 @@ class UI:
                 hd_next=bool(nxt and not hd_now and (u.level+1)>=2)
                 stats=[]
                 if hd_now: stats.append(("HidDet","Hidden Detection",None))
-                if u.arrow_mode=="flame"     and u.level>=3: stats.append(("FlameArrow","Flame Arrow",None))
-                if u.arrow_mode=="shock"     and u.level>=4: stats.append(("ShockArrow","Shock Arrow",None))
-                if u.arrow_mode=="explosive" and u.level>=5: stats.append(("ExplosiveArrow","Explosive Arrow",None))
                 stats+=[
                     ("Damage",  u.damage,          nxt.get("Damage")    if nxt else None),
                     ("Firerate",f"{u.firerate:.3f}", f"{nxt['Firerate']:.3f}" if nxt else None),
@@ -3337,8 +3337,8 @@ class DifficultyMenu:
         ("play_endless", "ENDLESS", "endless_ico",
          (160, 100, 255),
          "Survive as long as you can.",
-         ["HP: 450", "Starting cash: $900"],
-         ("0.5/wave", (200, 150, 255))),
+         ["HP: 450", "Starting cash: $900", "+5 shards every 5 waves"],
+         ("—", (200, 150, 255))),
         ("play_sandbox", "SANDBOX", "sandbox_ico",
          (220, 180, 80),
          "No rules. Test anything.",
@@ -3507,9 +3507,22 @@ class DifficultyMenu:
         # Stats
         stat_f = pygame.font.SysFont("segoeui", 12, bold=True)
         for line in stats:
-            st_s = stat_f.render(line, True, (120, 130, 160))
-            surf.blit(st_s, (r.x + 14, text_y))
-            text_y += st_s.get_height() + 3
+            if line.startswith("+5 shards"):
+                # Render shard reward line with icon + highlight
+                ico_sh = load_icon("shard_ico", 13)
+                sh_col = (140, 190, 255)
+                sh_s = stat_f.render(line, True, sh_col)
+                if ico_sh:
+                    surf.blit(ico_sh, (r.x + 14, text_y + (sh_s.get_height() - ico_sh.get_height()) // 2))
+                    surf.blit(sh_s, (r.x + 14 + ico_sh.get_width() + 3, text_y))
+                else:
+                    sh_s2 = stat_f.render("◆ " + line, True, sh_col)
+                    surf.blit(sh_s2, (r.x + 14, text_y))
+                text_y += sh_s.get_height() + 3
+            else:
+                st_s = stat_f.render(line, True, (120, 130, 160))
+                surf.blit(st_s, (r.x + 14, text_y))
+                text_y += st_s.get_height() + 3
 
         # Reward badge — bottom right of card
         ico_m = load_icon("coin_ico", 14)
@@ -3980,9 +3993,9 @@ class InterfaceSettingsScreen:
         
         total_slots_w = 5 * SLOT_W + 4 * 8
         self.elements = {
-            "wave": {"w": 120, "h": 60, "def": (24, 20), "label": "Wave Info"},
+            "wave": {"w": 120, "h": 60, "def": (24, 10), "label": "Wave Info"},
             "hp":   {"w": 400, "h": 40, "def": (SCREEN_W//2-200, 20), "label": "HP Bar"},
-            "timer":{"w": 200, "h": 70, "def": (SCREEN_W-226, 10), "label": "Time Left"},
+            "timer":{"w": 200, "h": 70, "def": (SCREEN_W-214, 10), "label": "Time Left"},
             "skip": {"w": 280, "h": 90, "def": (SCREEN_W//2-140, 150), "label": "Skip Prompt"},
             "money":{"w": 160, "h": 46, "def": (SCREEN_W - 220, SLOT_AREA_Y + (SCREEN_H - SLOT_AREA_Y)//2 - 23), "label": "Money Counter"},
             "slots":{"w": total_slots_w, "h": SLOT_H, "def": ((SCREEN_W - total_slots_w)//2, SLOT_AREA_Y + 8), "label": "Loadout Slots"},
@@ -4082,13 +4095,17 @@ class InterfaceSettingsScreen:
             elif k == "timer":
                 tx, ty = ex, ey
                 ico_hr = load_icon("firerate_ico", 22)
+                ico_w_t = (ico_hr.get_width() + 4) if ico_hr else 0
+                f_time = pygame.font.SysFont("segoeui", 38, bold=True)
+                lbl_surf_t = f_lbl.render("Time Left:", True, C_WHITE)
+                tim_surf_t = f_time.render("00:45", True, C_WHITE)
+                block_w_t = max(ico_w_t + lbl_surf_t.get_width(), tim_surf_t.get_width())
                 lbl_x = tx
                 if ico_hr:
                     surf.blit(ico_hr, (tx, ty + 1))
-                    lbl_x = tx + 26
+                    lbl_x = tx + ico_w_t
                 _out_txt("Time Left:", f_lbl, (lbl_x, ty))
-                f_time = pygame.font.SysFont("segoeui", 38, bold=True)
-                _out_txt("00:45", f_time, (tx + 50, ty + 22), cx=True)
+                _out_txt("00:45", f_time, (tx + block_w_t // 2, ty + 22), cx=True)
             elif k == "skip":
                 cx_skip = ex + 140
                 sy = ey
@@ -6111,7 +6128,7 @@ class EndlessWaveManager:
             if not self.spawn_queue: self.state = "waiting"
         elif self.state == "waiting":
             if alive_count == 0:
-                self.state = "between"; self.prep_timer = 60.0
+                self.state = "between"; self.prep_timer = 5.0
         elif self.state == "between":
             self.prep_timer -= dt
             if self.prep_timer <= 0: self._start_wave()
