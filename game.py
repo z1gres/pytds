@@ -2338,7 +2338,8 @@ class UI:
                 if not ico_drawn:
                     dot_s=font_md.render("●",True,sc)
                     surf.blit(dot_s,(rx,siy))
-                val_s=font_md.render(str(sval),True,(230,230,230))
+                _sval_disp = int(sval) if isinstance(sval, float) and sval == int(sval) else sval
+                val_s=font_md.render(str(_sval_disp),True,(230,230,230))
                 surf.blit(val_s,(rx+ICO_SZ+5,siy))
                 siy+=22
 
@@ -2443,7 +2444,9 @@ class UI:
                     surf.blit(_nn_s, _nn_s.get_rect(center=_nn_r.center))
                     ch_y = dot_y + 38
             # === CHANGING STATS ===
-            changing=[(s,v,n) for s,v,n in stats if n is not None and (v is None or str(n)!=str(v))]
+            def _norm(x):
+                return int(x) if isinstance(x, float) and x == int(x) else x
+            changing=[(s,v,n) for s,v,n in stats if n is not None and (v is None or str(_norm(n))!=str(_norm(v)))]
             ch_y=dot_y+20
 
             # === ARCHER ARROW MODE SELECTOR ===
@@ -2543,7 +2546,8 @@ class UI:
                     dot_s=font_md.render("●",True,sc)
                     surf.blit(dot_s,(xp,ch_y)); xp+=ICO_SZ+5
                 if sval is not None:
-                    old_s=font_md.render(str(sval),True,(190,185,210))
+                    _sval_old = int(sval) if isinstance(sval, float) and sval == int(sval) else sval
+                    old_s=font_md.render(str(_sval_old),True,(190,185,210))
                     surf.blit(old_s,(xp,ch_y)); xp+=old_s.get_width()+4
                 if sval is not None:
                     arr_img=load_icon("arrow_ico",ARR_SZ)
@@ -2552,7 +2556,8 @@ class UI:
                     else:
                         arr_s=font_md.render("→",True,(160,155,180))
                         surf.blit(arr_s,(xp,ch_y)); xp+=arr_s.get_width()+3
-                new_s=font_md.render(str(snext),True,(100,220,100))
+                _snext_disp = int(snext) if isinstance(snext, float) and snext == int(snext) else snext
+                new_s=font_md.render(str(_snext_disp),True,(100,220,100))
                 surf.blit(new_s,(xp,ch_y))
                 ch_y+=20
 
