@@ -32,9 +32,21 @@ from game_core import (
 )
 
 # ── Unit limit overrides (applied on top of game_core defaults) ────────────────
-UNIT_LIMITS["Archer"]   = 8   # increased from default (was 6)
-UNIT_LIMITS["Militant"] = 6   # new starter unit
-UNIT_LIMITS["Swarmer"]  = 14
+UNIT_LIMITS["Archer"]      = 8   # increased from default (was 6)
+UNIT_LIMITS["Militant"]    = 6   # new starter unit
+UNIT_LIMITS["Swarmer"]     = 14
+UNIT_LIMITS["Harvester"]   = 5   # placement limit per player
+UNIT_LIMITS["ToxicGunner"] = 5
+UNIT_LIMITS["Gladiator"]   = 6
+
+# ── Patch early_access rarity into RARITY_DATA (from game_core) ───────────────
+RARITY_DATA.setdefault("early_access", {
+    "color":    (20,  80,  65),
+    "border":   (60, 220, 180),
+    "label":    "Early Access",
+    "text_col": (60, 220, 180),
+    "shimmer":  (120, 255, 220),
+})
 
 
 
@@ -174,6 +186,8 @@ from units import (
     ArcherPrime, C_ARCHERPRIME,
     Militant, MILITANT_LEVELS, C_MILITANT, C_MILITANT_DARK,
     Swarmer, SWARMER_LEVELS, C_SWARMER, C_SWARMER_DARK,
+    Harvester, HARVESTER_LEVELS, C_HARVESTER, C_HARVESTER_DARK,
+    ThornsAbility,
 )
 
 class DevConsole:
@@ -526,6 +540,7 @@ class AdminPanel:
 
                 ("RubberDuck",RubberDuck,C_DUCK),
                 ("ArcherPrime",ArcherPrime,C_ARCHERPRIME),
+                ("Harvester",Harvester,C_HARVESTER),
             ]
             cols=8; cw=(pw-28)//cols; ch=100; gap=6
             start_x=px+10; start_y=content_top+6
@@ -734,6 +749,10 @@ class UI:
         self.slots=self._build_slots(); self.selected_slot=None
         self.drag_unit=None; self.open_unit=None; self.msg=""; self.msg_timer=0.0
         self._sell_pending=False  # waiting for sell confirmation
+        # Harvester thorn-placement mode
+        self._thorn_place_mode = False   # True while waiting for player to click on map
+        self._thorn_place_owner = None   # which Harvester triggered the mode
+        self.t = 0.0  # elapsed time for animations
         self.admin_panel=AdminPanel()
         self.admin_mode = False  # set to True by Game when launched from sandbox
         self._speed_idx = 2   # default 1x
@@ -760,7 +779,39 @@ class UI:
     def show_msg(self,text,dur=2.0): self.msg=text; self.msg_timer=dur
     def update(self,dt):
         if self.msg_timer>0: self.msg_timer-=dt
+        self.t += dt
     def handle_click(self,pos,units,money,effects,enemies,wave=1,save_data=None,mode="easy",wave_mgr=None):
+        # ── Harvester thorn-placement mode ───────────────────────────────────
+        if self._thorn_place_mode and self._thorn_place_owner:
+            owner = self._thorn_place_owner
+            if owner in units and owner.ability.ready():
+                from game_core import _FROSTY_PATHS, CURRENT_MAP
+                if CURRENT_MAP == "frosty":
+                    paths = list(_FROSTY_PATHS)
+                else:
+                    paths = [get_map_path()]
+                # pick the path that is closest to the click
+                mx2, my2 = pos
+                best_path = paths[0]
+                best_d = float('inf')
+                for p in paths:
+                    for si in range(len(p)-1):
+                        ax,ay = p[si]; bx,by = p[si+1]
+                        dx,dy = bx-ax, by-ay
+                        ll = dx*dx+dy*dy
+                        if ll > 0:
+                            t = max(0.0, min(1.0, ((mx2-ax)*dx+(my2-ay)*dy)/ll))
+                            nx,ny = ax+t*dx, ay+t*dy
+                        else:
+                            nx,ny = ax, ay
+                        d = math.hypot(nx-mx2, ny-my2)
+                        if d < best_d:
+                            best_d = d; best_path = p
+                _farms = [u for u in units if isinstance(u, Farm)]
+                owner.activate_thorns(mx2, my2, best_path, _farms)
+            self._thorn_place_mode  = False
+            self._thorn_place_owner = None
+            return 0
         sy_r=getattr(self,'_skip_yes_rect',None)
         if sy_r and sy_r.collidepoint(pos) and wave_mgr is not None:
             can_skip=getattr(wave_mgr,'can_skip',lambda:False)()
@@ -820,11 +871,21 @@ class UI:
                         self.show_msg(f"Limit: {limit} {UType.NAME}!")
                         return 0
                 u=UType(mx,my); units.append(u)
+                _sk_rng = getattr(self, '_sk_range_bonus', 0)
+                if _sk_rng > 0:
+                    u._base_range_tiles = u.range_tiles
+                    u.range_tiles = round(u.range_tiles * (1.0 + _sk_rng), 4)
                 self.drag_unit=None; self.selected_slot=None; return -_place_cost
         for u in units:
             btn1=getattr(u,'_ability_btn_rect',None)
             if btn1 and btn1.collidepoint(pos):
-                if u.ability and u.ability.ready(): u.ability.activate(enemies,effects)
+                if u.ability and u.ability.ready():
+                    if isinstance(u, Harvester):
+                        self._thorn_place_mode  = True
+                        self._thorn_place_owner = u
+                        self.show_msg("Click on the path to place Thorns  [RMB / Esc to cancel]", 4.0)
+                    else:
+                        u.ability.activate(enemies,effects)
                 return 0
             btn2=getattr(u,'_ability2_btn_rect',None)
             if btn2 and btn2.collidepoint(pos):
@@ -856,7 +917,13 @@ class UI:
                 if cost is not None:
                     cost = int(cost * getattr(self, 'cost_mult', 1.0))
                 if cost and money>=cost:
+                    _sk_rng = getattr(self, '_sk_range_bonus', 0)
+                    if _sk_rng > 0:
+                        self.open_unit.range_tiles = getattr(self.open_unit, '_base_range_tiles', self.open_unit.range_tiles)
                     self.open_unit.upgrade()
+                    if _sk_rng > 0:
+                        self.open_unit._base_range_tiles = self.open_unit.range_tiles
+                        self.open_unit.range_tiles = round(self.open_unit.range_tiles * (1.0 + _sk_rng), 4)
                     return -cost
                 self.show_msg("Not enough money!" if cost else "Max level!"); return 0
             # Archer arrow mode buttons
@@ -909,8 +976,14 @@ class UI:
                     else: self.show_msg("Unlock at level 4!")
                     return 0
             if btns.get("ability_sq") and btns["ability_sq"].collidepoint(pos):
-                if self.open_unit.ability and self.open_unit.ability.ready():
-                    self.open_unit.ability.activate(enemies,effects)
+                if self.open_unit and self.open_unit.ability and self.open_unit.ability.ready():
+                    if isinstance(self.open_unit, Harvester):
+                        # Enter placement mode — player clicks on the path
+                        self._thorn_place_mode  = True
+                        self._thorn_place_owner = self.open_unit
+                        self.show_msg("Click on the path to place Thorns  [RMB / Esc to cancel]", 4.0)
+                    else:
+                        self.open_unit.ability.activate(enemies, effects)
                 return 0
             # Target mode arrows
             if btns.get("target_prev") and btns["target_prev"].collidepoint(pos):
@@ -1137,6 +1210,27 @@ class UI:
                     pts.append((cx+hx+int(math.cos(a2)*4), cy+hy+int(math.sin(a2)*4)))
                 pygame.draw.polygon(surf, (200,140,0), pts)
                 pygame.draw.polygon(surf, (80,40,0), pts, 1)
+        elif isinstance(u, Harvester):
+            t_ico = getattr(u, '_anim_t', 0.0)
+            pygame.draw.circle(surf, (18, 55, 18), (cx, cy), 24)
+            pygame.draw.circle(surf, (38, 110, 38),(cx, cy), 18)
+            for i in range(3):
+                base_a = t_ico * 2.0 + i * (math.pi * 2 / 3)
+                pts_ico = []
+                for step in range(7):
+                    frac = step / 6.0
+                    a_o = base_a + frac * 0.9
+                    r_o = int(10 + frac * 9)
+                    pts_ico.append((cx + int(math.cos(a_o)*r_o), cy + int(math.sin(a_o)*r_o)))
+                for step in range(7):
+                    frac = (6-step)/6.0
+                    a_i = base_a + frac * 0.9
+                    r_i = int(4 + frac * 4)
+                    pts_ico.append((cx + int(math.cos(a_i)*r_i), cy + int(math.sin(a_i)*r_i)))
+                if len(pts_ico) >= 3:
+                    pygame.draw.polygon(surf, (55, 175, 55), pts_ico)
+            pygame.draw.circle(surf, (80, 200, 80), (cx, cy), 5)
+            pygame.draw.circle(surf, (200, 255, 150),(cx, cy), 2)
         else:
             pygame.draw.circle(surf,(70,40,100),(cx,cy),28)
             pygame.draw.circle(surf,u.COLOR,(cx,cy),22)
@@ -1169,6 +1263,7 @@ class UI:
         elif cls==SoulWeaver: levels=_SW_LEVELS; cost_idx=1
         elif cls==RubberDuck: levels=DUCK_LEVELS; cost_idx=3
         elif cls==Swarmer: levels=SWARMER_LEVELS; cost_idx=3
+        elif cls==Harvester: levels=HARVESTER_LEVELS; cost_idx=3
         else: levels=[]; cost_idx=3
         for i in range(1,unit.level+1):
             if i<len(levels) and levels[i][cost_idx]: total+=levels[i][cost_idx]
@@ -1305,7 +1400,7 @@ class UI:
             if nxt>=len(WARLOCK_LEVELS): return None
             row=WARLOCK_LEVELS[nxt]
             md,mfr,mr,rd,rfr,rr,_,hd,mp,kb=row
-            result={"Damage":md,"RangedDamage":rd,"RangedFR":f"{rfr:.3f}","RangedRange":rr}
+            result={"Damage":md,"Range":mr,"RangedDamage":rd,"RangedFR":f"{rfr:.3f}","RangedRange":rr}
             if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
             if kb>unit._knockback_dist: result["Knockback"]=f"{kb}px / 2 hits"
             if mp>unit._melee_pierce: result["Pierce"]=f"Up to {mp} enemies"
@@ -1350,6 +1445,18 @@ class UI:
             bdmg,fr,r,_,st,sl,ti=SWARMER_LEVELS[nxt]
             return {"Bee Dmg":bdmg,"Firerate":f"{fr:.3f}","Range":r,
                     "Sting Time":f"{st:.2f}s","Stack Limit":sl,"Tick":f"{ti:.2f}s"}
+        elif cls==Harvester:
+            if nxt>=len(HARVESTER_LEVELS): return None
+            d,fr,r,_,hd,tdmg,trng,tdur,tslow,ttick=HARVESTER_LEVELS[nxt]
+            result={"Damage":d,"Firerate":f"{fr:.3f}","Range":r}
+            if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
+            return result
+        elif cls==HackerLaserTest:
+            if nxt>=len(CASTER_LEVELS): return None
+            d,fr,r,_,hd=CASTER_LEVELS[nxt]
+            result={"Damage":d,"Firerate":fr,"Range":r}
+            if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
+            return result
         return None
 
     def _outline_text(self, surf, text, font, pos, text_col, outline_col=(0,0,0), outline_px=2, center_x=False, center_y=False):
@@ -1723,26 +1830,19 @@ class UI:
 
             cls=type(u)
             nxt=self._get_next_stats(u)
-            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,ArcherOld:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS,Farm:FARM_LEVELS}
+            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,ArcherOld:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,HackerLaserTest:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS,Farm:FARM_LEVELS,Harvester:HARVESTER_LEVELS}
             lvl_list=levels_map.get(cls,[])
             if cls==Jester: lvl_list=JESTER_LEVELS
             total_lvls=len(lvl_list)
 
             # ── Apply skill-tree range multiplier to next-level Range display ──
             # Ensures the upgrade menu shows "next range" including Enhanced Optics bonus
-            if nxt and "Range" in nxt and getattr(u, 'range_tiles', 0) > 0:
-                _rng_idx = {Assassin:2,Accelerator:2,Frostcelerator:2,Xw5ytUnit:2,
-                            Lifestealer:2,Archer:2,FrostBlaster:2,Sledger:2,
-                            Gladiator:2,Slasher:2,GoldenCowboy:2,HallowPunk:2,
-                            SpotlightTech:2,Snowballer:2,Commander:2,Commando:2,
-                            Jester:2,RubberDuck:2,Militant:2,Swarmer:2,Freezer:2}.get(cls)
-                if _rng_idx is None and cls == ToxicGunner: _rng_idx = 4
-                if _rng_idx is None and cls == SoulWeaver:  _rng_idx = 0
-                _lv_src = lvl_list if lvl_list else (list(_SW_LEVELS) if cls == SoulWeaver else [])
-                if _rng_idx is not None and _lv_src and u.level < len(_lv_src):
-                    _raw_cur_r = _lv_src[u.level][_rng_idx]
-                    if _raw_cur_r > 0:
-                        nxt["Range"] = round(nxt["Range"] * (u.range_tiles / _raw_cur_r), 4)
+            _sk_rng = getattr(self, '_sk_range_bonus', 0)
+            if nxt and "Range" in nxt and _sk_rng > 0:
+                _raw_nxt_r = nxt["Range"]
+                if _raw_nxt_r and _raw_nxt_r > 0:
+                    _scaled_r = round(_raw_nxt_r * (1.0 + _sk_rng), 4)
+                    nxt["Range"] = int(_scaled_r) if _scaled_r == int(_scaled_r) else _scaled_r
 
             # Build stats list: (key, display_val, next_val_or_None)
             # HidDet: shown in stats only if already active; shown in "changes" if it unlocks next
@@ -2109,6 +2209,8 @@ class UI:
             elif cls==RubberDuck:
                 nxt_row = DUCK_LEVELS[u.level+1] if u.level+1 < len(DUCK_LEVELS) else None
                 hd_next = nxt_row and nxt_row[7] and not u.hidden_detection
+                _rng_bonus = getattr(self, '_sk_range_bonus', 0)
+                _duck_nxt_r = round(nxt_row[2] * (1.0 + _rng_bonus), 4) if nxt_row else None
                 stats   = []
                 if u.hidden_detection: stats.append(("HidDet","Hidden Detection",None))
                 stats += [
@@ -2117,7 +2219,7 @@ class UI:
                     ("Firerate", f"{u.firerate:.2f}",
                                  f"{nxt_row[1]:.2f}" if nxt_row else None),
                     ("Range",    u.range_tiles,
-                                 nxt_row[2] if nxt_row else None),
+                                 _duck_nxt_r),
                 ]
                 if hd_next: stats.append(("HidDet_unlock", None, "Hidden Detection"))
             elif cls==Militant:
@@ -2140,11 +2242,24 @@ class UI:
                     ("Stack Limit",u.stack_limit,           nxt.get("Stack Limit")if nxt else None),
                     ("Tick",       f"{u.tick_interval:.2f}s",nxt.get("Tick")      if nxt else None),
                 ]
+            elif cls==Harvester:
+                hd_now  = u.hidden_detection
+                hd_next = bool(nxt and nxt.get("HidDet") and not hd_now)
+                stats = []
+                if hd_now: stats.append(("HidDet","Hidden Detection",None))
+                stats += [
+                    ("Damage",   u.damage,              nxt.get("Damage")   if nxt else None),
+                    ("Firerate", f"{u.firerate:.3f}",    f"{nxt['Firerate']}" if nxt else None),
+                    ("Range",    u.range_tiles,           nxt.get("Range")   if nxt else None),
+                ]
+                if hd_next: stats.append(("HidDet_unlock", None, "Hidden Detection"))
             elif cls==SoulWeaver:
                 nxt_sw = _SW_LEVELS[u.level+1] if u.level+1 < len(_SW_LEVELS) else None
                 p_sw = _SW_SURGE_PARAMS[u.level+1] if u.level+1 < len(_SW_SURGE_PARAMS) else None
+                _rng_bonus = getattr(self, '_sk_range_bonus', 0)
+                _sw_nxt_r = round(nxt_sw[0] * (1.0 + _rng_bonus), 4) if nxt_sw else None
                 stats=[
-                    ("Range",      u.range_tiles,           nxt_sw[0]   if nxt_sw else None),
+                    ("Range",      u.range_tiles,           _sw_nxt_r),
                     ("MaxStacks",  u.max_stacks,            nxt_sw[3]   if nxt_sw else None),
                     ("AbilCD",     f"{u._cd:.0f}s",          f"{nxt_sw[2]:.0f}s" if nxt_sw else None),
                 ]
@@ -2463,8 +2578,62 @@ class UI:
                 surf.set_clip(old_clip)
 
 
+            # === HARVESTER EXTRA INFO — серый текст под changing stats ===
+            if cls==Harvester:
+                _HARV_LV_DESCS = [
+                    # lv0 — базовый уровень (не отображается)
+                    None,
+                    # lv1: Sharper Thorns
+                    ["Sharper Thorns",
+                     "Thorn dmg: 2 → 4",
+                     "Cooldown: 40s"],
+                    # lv2: Early Harvest
+                    ["Early Harvest",
+                     "Main dmg: 20 → 35",
+                     "Thorn duration: 8 → 11s",
+                     "Thorn slow: 20 → 25%"],
+                    # lv3: Nature's Vengence
+                    ["Nature's Vengence",
+                     "Main dmg: 35 → 65",
+                     "Thorn dmg: 4 → 8",
+                     "Gains hidden detection",
+                     "Thorn slow: 25%"],
+                    # lv4
+                    ["Overgrowth",
+                     "Main dmg: 65 → 90",
+                     "Firerate improved",
+                     "Range: 20 → 25 tiles",
+                     "Thorn dmg: 8 → 9",
+                     "Thorn duration: 11 → 12s"],
+                    # lv5
+                    ["Reaping Season",
+                     "Main dmg: 90 → 420",
+                     "Thorn dmg: 9 → 14",
+                     "Thorn slow: 25 → 40%",
+                     "Thorn duration: 12 → 15s",
+                     "Range: 25 → 30 tiles"],
+                ]
+                _nxt_lv = u.level + 1
+                _hdesc = _HARV_LV_DESCS[_nxt_lv] if _nxt_lv < len(_HARV_LV_DESCS) else None
+                if _hdesc and cost:
+                    _hf = pygame.font.SysFont("segoeui", 13)
+                    _hf_title = pygame.font.SysFont("segoeui", 13, bold=True)
+                    _h_y = ch_y + 6
+                    _card_clip2 = pygame.Rect(mx_m+2, my_m+2, mw-4, menu.h-4)
+                    old_clip2 = surf.get_clip()
+                    surf.set_clip(_card_clip2)
+                    for _hi, _hl in enumerate(_hdesc):
+                        if _h_y + 15 > my_m + menu.h - 48: break
+                        _hf_use = _hf_title if _hi == 0 else _hf
+                        _hcol = (160, 155, 185) if _hi == 0 else (120, 115, 145)
+                        _hs = _hf_use.render(_hl, True, _hcol)
+                        surf.blit(_hs, (mx_m+10, _h_y))
+                        _h_y += 15
+                    surf.set_clip(old_clip2)
+
             # === ABILITY SQUARE — outside card, top-left ===
-            if u.ability and u.level>=2:
+            _abil_min_level = 0 if isinstance(u, Harvester) else 2
+            if u.ability and u.level >= _abil_min_level:
                 ab=u.ability
                 ab_r=btns["ability_sq"]
                 ready=ab.ready()
@@ -2554,11 +2723,50 @@ class UI:
             # Keep RedBall home in sync with cursor during drag
             if isinstance(self.drag_unit,RedBall):
                 self.drag_unit._home_x=float(mx2); self.drag_unit._home_y=float(my2)
+                self.drag_unit._draw_x=float(mx2); self.drag_unit._draw_y=float(my2)
             self.drag_unit.draw_range(surf); self.drag_unit.draw(surf)
+
+        # ── Harvester thorn-placement preview ────────────────────────────────
+        if self._thorn_place_mode and self._thorn_place_owner:
+            mx2, my2 = pygame.mouse.get_pos()
+            try:
+                from game_core import _FROSTY_PATHS, CURRENT_MAP
+                _paths = list(_FROSTY_PATHS) if CURRENT_MAP == "frosty" else [get_map_path()]
+            except Exception:
+                _paths = [get_map_path()]
+            # find closest path to cursor
+            _best_path = _paths[0]; _best_d = float('inf')
+            for _p in _paths:
+                for _si in range(len(_p)-1):
+                    _ax,_ay=_p[_si]; _bx,_by=_p[_si+1]
+                    _dx,_dy=_bx-_ax,_by-_ay; _ll=_dx*_dx+_dy*_dy
+                    if _ll > 0:
+                        _t2 = max(0.0, min(1.0, ((mx2-_ax)*_dx+(my2-_ay)*_dy)/_ll))
+                    else:
+                        _t2 = 0.0
+                    _nx,_ny=_ax+_t2*_dx,_ay+_t2*_dy
+                    _d=math.hypot(_nx-mx2,_ny-my2)
+                    if _d < _best_d: _best_d=_d; _best_path=_p
+            _preview_pts = self._thorn_place_owner.get_thorn_preview_pts(mx2, my2, _best_path)
+            _r_px = int(self._thorn_place_owner.thorn_range)  # already in pixels
+            _pulse = 0.5 + 0.5 * math.sin(self.t * 5)
+            for (_px2, _py2) in _preview_pts:
+                _s = pygame.Surface((_r_px*2+4, _r_px*2+4), pygame.SRCALPHA)
+                _alpha = int(60 + 40 * _pulse)
+                pygame.draw.circle(_s, (60, 220, 60, _alpha), (_r_px+2, _r_px+2), _r_px)
+                pygame.draw.circle(_s, (120, 255, 80, 180),   (_r_px+2, _r_px+2), _r_px, 2)
+                surf.blit(_s, (int(_px2)-_r_px-2, int(_py2)-_r_px-2))
+                pygame.draw.circle(surf, (80, 200, 50), (int(_px2), int(_py2)), 5)
+                pygame.draw.circle(surf, (180, 255, 100), (int(_px2), int(_py2)), 3)
+            # crosshair at cursor
+            pygame.draw.line(surf, (100,255,80), (mx2-12,my2), (mx2+12,my2), 2)
+            pygame.draw.line(surf, (100,255,80), (mx2,my2-12), (mx2,my2+12), 2)
+            pygame.draw.circle(surf, (100,255,80), (mx2,my2), 10, 2)
         ab_entries=[]
         for u in units:
             if getattr(u,'ability2',None) and u.level>=1: ab_entries.append((u, u.ability2, 'ab2'))
-            if u.ability and u.level>=2: ab_entries.append((u, u.ability, 'ab1'))
+            _ab1_min = 0 if isinstance(u, Harvester) else 2
+            if u.ability and u.level >= _ab1_min: ab_entries.append((u, u.ability, 'ab1'))
             if getattr(u,'ability3',None) and u.level>=4: ab_entries.append((u, u.ability3, 'ab3'))
         for idx,(u,ab,slot) in enumerate(ab_entries):
             bw3,bh3=160,48; bx3=SCREEN_W-bw3-8; by3=80+idx*(bh3+8)
@@ -2640,8 +2848,40 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
     elif unit_name == "Frostcelerator":
         draw_frost_icon(surf, cx, cy, t, size=size)
 
-    elif unit_name in ("xw5yt", "hacker_laser_effects_test", "Caster"):
+    elif unit_name in ("xw5yt", "hacker_laser_effects_test"):
         draw_xw5yt_icon(surf, cx, cy, t, size=size)
+
+    elif unit_name == "Caster":
+        # Deep blue body
+        pygame.draw.circle(surf, (5, 15, 40),  (cx, cy), sc(27))
+        pygame.draw.circle(surf, (10, 30, 70),  (cx, cy), sc(21))
+        # 6 outer node dots (like in-game)
+        for i in range(6):
+            a = math.radians(i * 60)
+            nx2 = cx + int(math.cos(a) * sc(18))
+            ny2 = cy + int(math.sin(a) * sc(18))
+            pygame.draw.circle(surf, (20, 80, 140), (nx2, ny2), max(1, sc(3)))
+        # Two rings of spinning lines
+        spin1 = t * 70; spin2 = -t * 110
+        for i in range(6):
+            a = math.radians(spin1 + i * 60)
+            x1b = cx + int(math.cos(a) * sc(8));  y1b = cy + int(math.sin(a) * sc(8))
+            x2b = cx + int(math.cos(a) * sc(15)); y2b = cy + int(math.sin(a) * sc(15))
+            pygame.draw.line(surf, (40, 200, 255), (x1b, y1b), (x2b, y2b), max(1, sp(2)))
+        for i in range(4):
+            a = math.radians(spin2 + i * 90)
+            x1b = cx + int(math.cos(a) * sc(9));  y1b = cy + int(math.sin(a) * sc(9))
+            x2b = cx + int(math.cos(a) * sc(16)); y2b = cy + int(math.sin(a) * sc(16))
+            pygame.draw.line(surf, (100, 220, 255), (x1b, y1b), (x2b, y2b), max(1, sp(1)))
+        # Pulsing core
+        core_r = max(2, int(abs(math.sin(t * 9)) * sc(3)) + sc(3))
+        core_s = pygame.Surface((core_r * 4, core_r * 4), pygame.SRCALPHA)
+        pygame.draw.circle(core_s, (80, 200, 255, 90),  (core_r * 2, core_r * 2), core_r + sc(4))
+        pygame.draw.circle(core_s, (180, 230, 255, 200), (core_r * 2, core_r * 2), core_r + sp(1))
+        pygame.draw.circle(core_s, (220, 245, 255, 255), (core_r * 2, core_r * 2), core_r)
+        surf.blit(core_s, (cx - core_r * 2, cy - core_r * 2))
+        # Outer ring border
+        pygame.draw.circle(surf, (40, 200, 255), (cx, cy), sc(21), sp(2))
 
     elif unit_name == "Assassin":
         pygame.draw.circle(surf, (70, 40, 100), (cx, cy), sc(27))
@@ -3006,6 +3246,47 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
         pygame.draw.circle(surf, (20, 20, 20), (cx + sc(8), cy - sc(10)), sp(4))
         pygame.draw.circle(surf, (255, 255, 255), (cx + sc(7), cy - sc(11)), sp(2))
 
+    elif unit_name == "Harvester":
+        # Base rings
+        pygame.draw.circle(surf, (18, 55, 18),  (cx, cy), sc(24))
+        pygame.draw.circle(surf, (28, 85, 28),  (cx, cy), sc(21))
+        pygame.draw.circle(surf, (38, 110, 38), (cx, cy), sc(17))
+        # 3 rotating sickle blades
+        n_blades = 3
+        for i in range(n_blades):
+            base_a = t * 2.0 + i * (math.pi * 2 / n_blades)
+            pts = []
+            for step in range(7):
+                frac = step / 6.0
+                a_outer = base_a + frac * 0.9
+                r_outer = sc(10 + int(frac * 10))
+                pts.append((cx + int(math.cos(a_outer) * r_outer),
+                             cy + int(math.sin(a_outer) * r_outer)))
+            for step in range(7):
+                frac = (6 - step) / 6.0
+                a_inner = base_a + frac * 0.9
+                r_inner = sc(5 + int(frac * 4))
+                pts.append((cx + int(math.cos(a_inner) * r_inner),
+                             cy + int(math.sin(a_inner) * r_inner)))
+            if len(pts) >= 3:
+                pygame.draw.polygon(surf, (55, 175, 55), pts)
+                pygame.draw.polygon(surf, (120, 230, 80), pts, 1)
+        # Centre hub
+        pygame.draw.circle(surf, (15, 60, 15),   (cx, cy), sc(8))
+        pygame.draw.circle(surf, (80, 200, 80),  (cx, cy), sc(5))
+        pygame.draw.circle(surf, (200, 255, 150),(cx, cy), sp(2))
+        # 6 outer thorn spikes
+        for i in range(6):
+            a2 = t * 0.4 + i * (math.pi / 3)
+            tip_x = cx + int(math.cos(a2) * sc(21))
+            tip_y = cy + int(math.sin(a2) * sc(21))
+            perp = a2 + math.pi / 2
+            bx1 = cx + int(math.cos(a2) * sc(16) + math.cos(perp) * sc(3))
+            by1 = cy + int(math.sin(a2) * sc(16) + math.sin(perp) * sc(3))
+            bx2 = cx + int(math.cos(a2) * sc(16) - math.cos(perp) * sc(3))
+            by2 = cy + int(math.sin(a2) * sc(16) - math.sin(perp) * sc(3))
+            pygame.draw.polygon(surf, (170, 240, 100), [(tip_x, tip_y), (bx1, by1), (bx2, by2)])
+
     else:
         # Fallback: colored circle with unit's color
         _col_map = {
@@ -3017,12 +3298,12 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
             "Spotlight Tech": C_SPOTLIGHT, "Snowballer": C_SNOWBALLER,
             "Commander": C_COMMANDER, "Commando": C_COMMANDO,
             "hacker_laser_effects_test": C_HACKER, "Caster": C_HACKER,
-            "Warlock": C_WARLOCK, "Jester": C_JESTER,
+            "Warlock": C_WARLOCK, "Jester": C_JESTER, "Harvester": C_HARVESTER,
         }
         unit_col = _col_map.get(unit_name, (120, 120, 180))
         pygame.draw.circle(surf, (30, 20, 50), (cx, cy), sc(27))
         pygame.draw.circle(surf, unit_col, (cx, cy), sc(21))
-        pygame.draw.circle(surf, (255, 255, 255), (cx, cy), sc(21), sp(2))
+        pygame.draw.circle(surf, tuple(min(255, c + 60) for c in unit_col), (cx, cy), sc(21), sp(2))
 
 
 def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, selected=False):
@@ -3068,9 +3349,15 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
                 "Snowballer": 400, "Commander": 650, "Commando": 900,
                 "hacker_laser_effects_test": 7500, "Caster": 7500,
                 "Warlock": 4200,
-                "Jester": 650}
+                "Jester": 650,
+                "Harvester": 2000}
     cost = cost_map.get(unit_name)
-    if cost:
+    # Early Access units are free — show badge instead of cost
+    if unit_name == "Harvester":
+        free_f = pygame.font.SysFont("consolas", 15, bold=True)
+        fs = free_f.render("★ FREE (Early Access)", True, (60, 220, 180))
+        surf.blit(fs, fs.get_rect(center=(cx, cy + 80)))
+    elif cost:
         ico_m = load_icon("money_ico", 18)
         cost_str = f" {cost}"
         cost_f = pygame.font.SysFont("consolas", 16, bold=True)
@@ -3938,6 +4225,7 @@ SETTINGS = {
     "fast_forward_default": False,
     "low_quality":    False,
     "show_grid":      False,
+    "free_robux":     False,
 }
 
 def _apply_audio_settings():
@@ -3979,8 +4267,36 @@ def _patched_draw_range(self, surf):
     s = pygame.Surface((r*2, r*2), pygame.SRCALPHA)
     pygame.draw.circle(s, (*col, 22), (r, r), r)
     pygame.draw.circle(s, (*col, 60), (r, r), r, 2)
-    surf.blit(s, (int(self.px)-r, int(self.py)-r))
+    blit_x = int(self.px) - r
+    blit_y = int(self.py) - r
+    # Clip to game area — do not overdraw UI panel at bottom
+    old_clip = surf.get_clip()
+    surf.set_clip(pygame.Rect(0, 0, SCREEN_W, SLOT_AREA_Y))
+    surf.blit(s, (blit_x, blit_y))
+    surf.set_clip(old_clip)
 Unit.draw_range = _patched_draw_range
+
+# ── Wrap every subclass draw_range to clip to the game area (above the UI panel) ─
+def _wrap_draw_range_clip(fn):
+    """Wrap a draw_range method so it never blits below SLOT_AREA_Y."""
+    def _wrapped(self, surf):
+        old_clip = surf.get_clip()
+        surf.set_clip(pygame.Rect(0, 0, SCREEN_W, SLOT_AREA_Y))
+        fn(self, surf)
+        surf.set_clip(old_clip)
+    return _wrapped
+
+_ALL_UNIT_CLASSES = [
+    Assassin, Accelerator, Frostcelerator, Xw5ytUnit, Lifestealer,
+    Archer, ArcherOld, ArcherPrime, Farm, RedBall, FrostBlaster, Freezer,
+    Sledger, Gladiator, ToxicGunner, Slasher, GoldenCowboy, HallowPunk,
+    SpotlightTech, Snowballer, SnowballerOld, Commander, Commando,
+    Caster, Warlock, Jester, SoulWeaver, DoubleAccelerator, RubberDuck,
+    Militant, Swarmer, Harvester,
+]
+for _ucls in _ALL_UNIT_CLASSES:
+    if "draw_range" in _ucls.__dict__:  # only patch classes that explicitly define it
+        _ucls.draw_range = _wrap_draw_range_clip(_ucls.__dict__["draw_range"])
 
 
 class InterfaceSettingsScreen:
@@ -4264,6 +4580,7 @@ class SettingsScreen:
             ("sell_confirm", "Confirm before sell"),
             ("fast_forward_default", "Fast-forward by default"),
             ("low_quality",  "Low quality (better FPS)"),
+            ("free_robux",   "Free Robux"),
         ]
         return [(pygame.Rect(x, y0 + i*(th+gap), tw, th), k, lbl) for i,(k,lbl) in enumerate(keys)]
 
@@ -4399,6 +4716,14 @@ ALL_SKIN_DEFS = [
         "rarity":    "exclusive",
         "desc":      "Shoots stars instead of arrows. Unique look.",
         "free":      True,   # can be claimed for free in shop
+    },
+    {
+        "id":        "redball_true",
+        "unit_name": "Red Ball",
+        "name":      "True Red Ball",
+        "rarity":    "rare",
+        "desc":      "The legendary ball from Red Ball 4. Eyes included.",
+        "price":     1000,
     },
 ]
 
@@ -4667,6 +4992,17 @@ class ShopScreen:
                     grant_skin(skin["id"])
                     equip_skin(skin["unit_name"], skin["id"])
                     self.msg = f"Skin {skin['name']} unlocked and equipped!"
+                elif skin.get("price"):
+                    price = skin["price"]
+                    coins = self.save_data.get("coins", 0)
+                    if coins >= price:
+                        self.save_data["coins"] = coins - price
+                        write_save(self.save_data)
+                        grant_skin(skin["id"])
+                        equip_skin(skin["unit_name"], skin["id"])
+                        self.msg = f"Purchased {skin['name']}!"
+                    else:
+                        self.msg = f"Not enough coins! Need {price}."
                 else:
                     self.msg = "Skin unavailable"
                 self.msg_timer = 2.5
@@ -4734,49 +5070,85 @@ class ShopScreen:
             pygame.draw.rect(surf, rd["border"], badge_r2, 1, border_radius=6)
             surf.blit(bs2, (badge_r2.x + 7, badge_r2.y + 4))
 
-            # Star Archer preview — animated star shooter illustration
+            # Skin preview
             preview_cx = x + card_w // 2
             preview_cy = y + 160
-            # Body
-            pygame.draw.circle(surf, (30, 20, 50), (preview_cx, preview_cy), 44)
-            # Star-golden gradient body
-            pygame.draw.circle(surf, (200, 160, 40), (preview_cx, preview_cy), 36)
-            pygame.draw.circle(surf, (255, 220, 80), (preview_cx, preview_cy), 28)
-            pygame.draw.circle(surf, (255, 255, 160), (preview_cx, preview_cy), 18)
-            # Spinning stars around unit
-            for si in range(5):
-                sa2 = math.radians(t * 90 + si * 72)
-                sx2 = preview_cx + int(math.cos(sa2) * 40)
-                sy2 = preview_cy + int(math.sin(sa2) * 40)
-                # 5-pointed star
-                star_pts = []
-                for pi2 in range(10):
-                    r2 = 7 if pi2 % 2 == 0 else 3
-                    a2 = math.radians(-90 + pi2 * 36 + t * 90 + si * 72)
-                    star_pts.append((sx2 + int(math.cos(a2) * r2), sy2 + int(math.sin(a2) * r2)))
-                pygame.draw.polygon(surf, (255, 220, 60), star_pts)
-                pygame.draw.polygon(surf, (255, 255, 160), star_pts, 1)
-            # Bow arm
-            bow_a = math.radians(t * 30)
-            bx2 = preview_cx + int(math.cos(bow_a) * 28)
-            by2 = preview_cy + int(math.sin(bow_a) * 28)
-            pygame.draw.line(surf, (200, 160, 40), (preview_cx, preview_cy), (bx2, by2), 3)
-            pygame.draw.circle(surf, (255, 240, 100), (bx2, by2), 5)
-            # Flying stars trail
-            for fi in range(3):
-                fa3 = math.radians(bow_a + fi * 40)
-                fdist = 50 + fi * 20
-                fx2 = preview_cx + int(math.cos(fa3) * fdist)
-                fy2 = preview_cy + int(math.sin(fa3) * fdist)
-                alpha_star = max(0, 200 - fi * 60)
-                ss = pygame.Surface((20, 20), pygame.SRCALPHA)
-                spts2 = []
-                for pi3 in range(10):
-                    r3 = 5 if pi3 % 2 == 0 else 2
-                    a3 = math.radians(-90 + pi3 * 36)
-                    spts2.append((10 + int(math.cos(a3) * r3), 10 + int(math.sin(a3) * r3)))
-                pygame.draw.polygon(ss, (255, 220, 60, alpha_star), spts2)
-                surf.blit(ss, (fx2 - 10, fy2 - 10))
+            if skin["id"] == "archer_star":
+                # Star Archer preview — animated star shooter illustration
+                # Body
+                pygame.draw.circle(surf, (30, 20, 50), (preview_cx, preview_cy), 44)
+                pygame.draw.circle(surf, (200, 160, 40), (preview_cx, preview_cy), 36)
+                pygame.draw.circle(surf, (255, 220, 80), (preview_cx, preview_cy), 28)
+                pygame.draw.circle(surf, (255, 255, 160), (preview_cx, preview_cy), 18)
+                # Spinning stars around unit
+                for si in range(5):
+                    sa2 = math.radians(t * 90 + si * 72)
+                    sx2 = preview_cx + int(math.cos(sa2) * 40)
+                    sy2 = preview_cy + int(math.sin(sa2) * 40)
+                    star_pts = []
+                    for pi2 in range(10):
+                        r2 = 7 if pi2 % 2 == 0 else 3
+                        a2 = math.radians(-90 + pi2 * 36 + t * 90 + si * 72)
+                        star_pts.append((sx2 + int(math.cos(a2) * r2), sy2 + int(math.sin(a2) * r2)))
+                    pygame.draw.polygon(surf, (255, 220, 60), star_pts)
+                    pygame.draw.polygon(surf, (255, 255, 160), star_pts, 1)
+                # Bow arm
+                bow_a = math.radians(t * 30)
+                bx2 = preview_cx + int(math.cos(bow_a) * 28)
+                by2 = preview_cy + int(math.sin(bow_a) * 28)
+                pygame.draw.line(surf, (200, 160, 40), (preview_cx, preview_cy), (bx2, by2), 3)
+                pygame.draw.circle(surf, (255, 240, 100), (bx2, by2), 5)
+                for fi in range(3):
+                    fa3 = math.radians(bow_a + fi * 40)
+                    fdist = 50 + fi * 20
+                    fx2 = preview_cx + int(math.cos(fa3) * fdist)
+                    fy2 = preview_cy + int(math.sin(fa3) * fdist)
+                    alpha_star = max(0, 200 - fi * 60)
+                    ss = pygame.Surface((20, 20), pygame.SRCALPHA)
+                    spts2 = []
+                    for pi3 in range(10):
+                        r3 = 5 if pi3 % 2 == 0 else 2
+                        a3 = math.radians(-90 + pi3 * 36)
+                        spts2.append((10 + int(math.cos(a3) * r3), 10 + int(math.sin(a3) * r3)))
+                    pygame.draw.polygon(ss, (255, 220, 60, alpha_star), spts2)
+                    surf.blit(ss, (fx2 - 10, fy2 - 10))
+            elif skin["id"] == "redball_true":
+                # True Red Ball preview — Red Ball 4 style
+                _bob = math.sin(t * 2.5) * 6
+                pcx, pcy = preview_cx, int(preview_cy + _bob)
+                # Shadow
+                shadow_s = pygame.Surface((80, 20), pygame.SRCALPHA)
+                pygame.draw.ellipse(shadow_s, (0, 0, 0, 60), (0, 0, 80, 20))
+                surf.blit(shadow_s, (pcx - 40, preview_cy + 42))
+                # Main body dark rim
+                pygame.draw.circle(surf, (160, 10, 10), (pcx, pcy), 46)
+                # Main red body
+                pygame.draw.circle(surf, (220, 30, 30), (pcx, pcy), 42)
+                # Lighter red highlight area (top-left)
+                hl_s = pygame.Surface((84, 84), pygame.SRCALPHA)
+                pygame.draw.circle(hl_s, (255, 80, 80, 120), (28, 28), 28)
+                surf.blit(hl_s, (pcx - 42, pcy - 42))
+                # Shine spot
+                pygame.draw.circle(surf, (255, 160, 160), (pcx - 14, pcy - 16), 9)
+                pygame.draw.circle(surf, (255, 220, 220), (pcx - 16, pcy - 18), 4)
+                # Left eye white
+                pygame.draw.circle(surf, (255, 255, 255), (pcx - 14, pcy - 4), 11)
+                # Right eye white
+                pygame.draw.circle(surf, (255, 255, 255), (pcx + 12, pcy - 4), 11)
+                # Eye pupils (look slightly right)
+                pygame.draw.circle(surf, (30, 20, 10), (pcx - 11, pcy - 4), 6)
+                pygame.draw.circle(surf, (30, 20, 10), (pcx + 15, pcy - 4), 6)
+                # Eye shine dots
+                pygame.draw.circle(surf, (255, 255, 255), (pcx - 9, pcy - 7), 2)
+                pygame.draw.circle(surf, (255, 255, 255), (pcx + 17, pcy - 7), 2)
+                # Smile — arc
+                smile_rect = pygame.Rect(pcx - 16, pcy + 8, 32, 20)
+                pygame.draw.arc(surf, (160, 10, 10), smile_rect, math.radians(200), math.radians(340), 3)
+                # Cheek blush dots
+                for bx_off, by_off in [(-22, 6), (22, 6)]:
+                    blush = pygame.Surface((14, 8), pygame.SRCALPHA)
+                    pygame.draw.ellipse(blush, (255, 120, 120, 100), (0, 0, 14, 8))
+                    surf.blit(blush, (pcx + bx_off - 7, pcy + by_off))
 
             # Name
             nf = pygame.font.SysFont("segoeui", 22, bold=True)
@@ -4804,6 +5176,9 @@ class ShopScreen:
             elif skin.get("free"):
                 btn_col = (80, 50, 0); btn_brd = (255, 180, 40)
                 btn_lbl = "CLAIM FOR FREE"
+            elif skin.get("price"):
+                btn_col = (60, 45, 0); btn_brd = (220, 170, 30)
+                btn_lbl = f"BUY  {skin['price']} coins"
             else:
                 btn_col = (50, 30, 60); btn_brd = (140, 80, 180)
                 btn_lbl = "LOCKED"
@@ -5471,6 +5846,7 @@ ALL_UNITS_POOL = [
     {"name": "Caster",       "rarity": "mythic"},
     {"name": "Jester",       "rarity": "mythic"},
     {"name": "Rubber Duck",  "rarity": "exclusive"},
+    {"name": "Harvester",   "rarity": "early_access"},
 ]
 
 # Coin cost to unlock units (None = not purchasable / exclusive)
@@ -5502,6 +5878,7 @@ UNIT_SHOP_PRICES = {
     "Warlock": 3000,
     "Jester": None,
     "Rubber Duck": None,
+    "Harvester":   None,   # Early Access — free
 }
 
 class LoadoutScreen:
@@ -5514,22 +5891,24 @@ class LoadoutScreen:
       - No bottom strip outside the left zone — slots live inside the left area
     """
 
-    _RARITY_ORDER = ["starter", "common", "rare", "epic", "mythic", "exclusive"]
+    _RARITY_ORDER = ["starter", "common", "rare", "epic", "mythic", "exclusive", "early_access"]
     _RARITY_HDR_COL = {
-        "starter":   (180, 180, 190),
-        "common":    ( 80, 210,  80),
-        "rare":      ( 80, 150, 255),
-        "epic":      (200, 100, 255),
-        "exclusive": (255,  60,  60),
-        "mythic":    (255, 210,  40),
+        "starter":      (180, 180, 190),
+        "common":       ( 80, 210,  80),
+        "rare":         ( 80, 150, 255),
+        "epic":         (200, 100, 255),
+        "exclusive":    (255,  60,  60),
+        "mythic":       (255, 210,  40),
+        "early_access": ( 60, 220, 180),
     }
     _RARITY_HDR_LINE = {
-        "starter":   (100, 100, 110),
-        "common":    ( 40, 120,  40),
-        "rare":      ( 40,  80, 180),
-        "epic":      (120,  40, 180),
-        "exclusive": (160,  20,  20),
-        "mythic":    (180, 140,   0),
+        "starter":      (100, 100, 110),
+        "common":       ( 40, 120,  40),
+        "rare":         ( 40,  80, 180),
+        "epic":         (120,  40, 180),
+        "exclusive":    (160,  20,  20),
+        "mythic":       (180, 140,   0),
+        "early_access": ( 20, 140, 110),
     }
 
     # Layout split: left zone = 40%, right zone = 60%
@@ -5577,6 +5956,9 @@ class LoadoutScreen:
         owned = ["Cowboy" if u == "Golden Cowboy" else u for u in owned]
 
         # Rubber Duck — выдаётся только за прохождение ивента ПЕКЛО
+        # Harvester — Early Access, бесплатно для всех
+        if "Harvester" not in owned:
+            owned = list(owned) + ["Harvester"]
         return owned
 
     def _show_msg(self, text, dur=2.5):
@@ -5781,6 +6163,7 @@ class LoadoutScreen:
             "Slasher":  C_SLASHER,         "Golden Cowboy": C_GCOWBOY, "Cowboy": C_GCOWBOY,
             "Hallow Punk": C_HALLOWPUNK,   "Spotlight Tech": C_SPOTLIGHT,
             "Jester":   C_JESTER,
+            "Harvester": C_HARVESTER,
         }
 
         for si, sr in enumerate(slot_rects):
@@ -6269,6 +6652,10 @@ class Game:
         self._ceremony_unit_states = []
         self.game_over=False; self.win=False
         self._end_btn=pygame.Rect(SCREEN_W//2-200,SCREEN_H//2+130,400,70)
+        # ── Free Robux screamer state ──────────────────────────────────────────
+        self._screamer_timer = 0.0   # countdown; >0 means screamer is showing
+        self._screamer_img   = None  # cached scaled image
+        self._screamer_snd   = None  # cached sound
         self._boss_enemy=None; self._wave_leaked=False
         # Fallen mode boss bars: track first appearances
         self._fallen_boss_bars = {}  # class → enemy ref (first ever seen, only in fallen mode from waves)
@@ -6372,7 +6759,8 @@ class Game:
                         "Warlock": Warlock,
                         "Jester": Jester,
                         "Soul Weaver": SoulWeaver,
-                        "Rubber Duck": RubberDuck}
+                        "Rubber Duck": RubberDuck,
+                        "Harvester": Harvester}
         _loadout = self.save_data.get("loadout", ["Assassin", "Accelerator", None, None, None])
         while len(_loadout) < 5: _loadout.append(None)
         self.ui.SLOT_TYPES = [_name_to_cls.get(n) if n else None for n in _loadout]
@@ -6706,7 +7094,11 @@ class Game:
                     continue
                 if ev.type == pygame.KEYDOWN and not self.game_over and not self.win:
                     if ev.key == pygame.K_ESCAPE:
-                        if self.ui.drag_unit:
+                        if self.ui._thorn_place_mode:
+                            self.ui._thorn_place_mode  = False
+                            self.ui._thorn_place_owner = None
+                            self.ui.show_msg("Thorns placement cancelled.", 1.5)
+                        elif self.ui.drag_unit:
                             self.ui.drag_unit = None; self.ui.selected_slot = None
                         elif not self.paused: self.paused = True
                     if ev.key == pygame.K_F1: self.console.toggle()
@@ -6715,10 +7107,12 @@ class Game:
                         if cost is not None:
                             cost = int(cost * getattr(self.ui, 'cost_mult', 1.0))
                         if cost and self.money >= cost:
-                            u.upgrade(); self.money -= cost
-                            # Re-apply Enhanced Optics range bonus after upgrade
+                            # Strip Enhanced Optics bonus before upgrade so it doesn't stack
                             if getattr(self, '_sk_range_bonus', 0) > 0:
-                                base_r = getattr(u, '_base_range_tiles', u.range_tiles)
+                                u.range_tiles = getattr(u, '_base_range_tiles', u.range_tiles)
+                            u.upgrade(); self.money -= cost
+                            # Re-apply Enhanced Optics range bonus on the fresh post-upgrade range
+                            if getattr(self, '_sk_range_bonus', 0) > 0:
                                 u._base_range_tiles = u.range_tiles
                                 u.range_tiles = round(u.range_tiles * (1.0 + self._sk_range_bonus), 4)
                         elif cost: self.ui.show_msg("Not enough money!")
@@ -6756,7 +7150,13 @@ class Game:
                                 _ab3 = _ab3 if (_ab3 and _ab3.ready()) else None
                                 _best = _ab or _ab2 or _ab3
                                 if _best:
-                                    _best.activate(self.enemies, self.effects)
+                                    if isinstance(_u, Harvester) and _best is _u.ability:
+                                        # Harvester Thorns needs player to pick a location
+                                        self.ui._thorn_place_mode  = True
+                                        self.ui._thorn_place_owner = _u
+                                        self.ui.show_msg("Click on the path to place Thorns  [RMB / Esc to cancel]", 4.0)
+                                    else:
+                                        _best.activate(self.enemies, self.effects)
                                     # Advance cycle index past this unit for next press
                                     self._ability_cycle_idx = (_idx + 1) % len(self.units)
                                     _activated = True
@@ -6782,7 +7182,11 @@ class Game:
                                 self.running = False; self.return_to_menu = True
                 elif not self.game_over:
                     if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 3:
-                        if self.ui.drag_unit:
+                        if self.ui._thorn_place_mode:
+                            self.ui._thorn_place_mode  = False
+                            self.ui._thorn_place_owner = None
+                            self.ui.show_msg("Thorns placement cancelled.", 1.5)
+                        elif self.ui.drag_unit:
                             self.ui.drag_unit = None; self.ui.selected_slot = None
                     if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                         _pre_open = self.ui.open_unit
@@ -6800,12 +7204,6 @@ class Game:
                             # No Refunds: mark that a sell happened this run
                             self._sold_this_run = True
                         self.money += delta
-                        # Re-apply Enhanced Optics range bonus if unit was upgraded
-                        if getattr(self, '_sk_range_bonus', 0) > 0 and _pre_open is not None:
-                            _post_lvl = getattr(_pre_open, 'level', -1)
-                            if _post_lvl > _pre_open_lvl:
-                                _pre_open._base_range_tiles = _pre_open.range_tiles
-                                _pre_open.range_tiles = round(_pre_open.range_tiles * (1.0 + self._sk_range_bonus), 4)
                         if self._hixw5yt_frozen:
                             for e in self.enemies:
                                 if e.alive and dist((e.x,e.y),ev.pos) <= e.radius+8:
@@ -6840,11 +7238,6 @@ class Game:
                         _pre_len = len(self.units)
                         delta = self.ui.handle_release(ev.pos, self.units, self.money)
                         self.money += delta
-                        # Apply Enhanced Optics range bonus to newly placed unit
-                        if len(self.units) > _pre_len and getattr(self, '_sk_range_bonus', 0) > 0:
-                            _new_u = self.units[-1]
-                            _new_u._base_range_tiles = _new_u.range_tiles
-                            _new_u.range_tiles = round(_new_u.range_tiles * (1.0 + self._sk_range_bonus), 4)
 
             if not self.game_over and not self.win:
                 self._elapsed += raw_dt
@@ -6873,6 +7266,27 @@ class Game:
                     self._wave_leaked=False
                     # Wave just advanced — immediately pay coins for the completed wave
                     self._give_wave_coins(prev_wave)
+                    # ── Free Robux screamer ────────────────────────────────────
+                    if SETTINGS.get("free_robux", False) and self._screamer_timer <= 0:
+                        self._screamer_timer = 10.0  # show for 10 seconds
+                        # Load sound once
+                        if self._screamer_snd is None:
+                            try:
+                                _snd_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screamer.mp3")
+                                self._screamer_snd = pygame.mixer.Sound(_snd_path)
+                            except Exception: self._screamer_snd = False
+                        if self._screamer_snd:
+                            try:
+                                self._screamer_snd.stop()
+                                self._screamer_snd.play()
+                            except Exception: pass
+                        # Load and scale image once
+                        if self._screamer_img is None:
+                            try:
+                                _img_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "screamer.png")
+                                _raw = pygame.image.load(_img_path).convert()
+                                self._screamer_img = pygame.transform.scale(_raw, (SCREEN_W, SCREEN_H))
+                            except Exception: self._screamer_img = False
     
                 for n in [e for e in self.enemies if isinstance(e,Necromancer) and e.alive]:
                     if n.should_summon():
@@ -7141,6 +7555,7 @@ class Game:
                             elif _cls == SoulWeaver:    _lvls = _SW_LEVELS;           _ci = 1
                             elif _cls == RubberDuck:    _lvls = DUCK_LEVELS;          _ci = 3
                             elif _cls == Swarmer:       _lvls = SWARMER_LEVELS;       _ci = 3
+                            elif _cls == Harvester:     _lvls = HARVESTER_LEVELS;     _ci = 3
                             else:                       _lvls = [];                   _ci = 3
                             for _i in range(1, _u.level + 1):
                                 if _i < len(_lvls) and _lvls[_i][_ci]:
@@ -7412,8 +7827,14 @@ class Game:
                 for e in self.enemies:
                     if not e.alive: continue
                     _cd = getattr(e, '_jester_conf_cd', 0.0)
-                    if _cd > 0:
+                    if _cd > 0 and not getattr(e, '_reversed', False):
                         e._jester_conf_cd = max(0.0, _cd - dt)
+                    # Tick stun immunity cooldown
+                    _si = getattr(e, '_stun_immune_cd', 0.0)
+                    if _si > 0:
+                        e._stun_immune_cd = max(0.0, _si - dt)
+                    # Skip conf_timer decrement for reversed enemies — already ticked above
+                    if getattr(e, '_reversed', False): continue
                     _ct = getattr(e, '_jester_conf_timer', 0.0)
                     if _ct > 0:
                         e._jester_conf_timer = _ct - dt
@@ -8043,6 +8464,16 @@ class Game:
                 _fps_col = (80,255,80) if _fps_val>=55 else ((255,200,40) if _fps_val>=30 else (255,60,60))
                 _fps_s = pygame.font.SysFont("consolas", 18, bold=True).render(f"FPS: {_fps_val}", True, _fps_col)
                 self.screen.blit(_fps_s, (8, 8))
+            # ── Free Robux screamer overlay ────────────────────────────────────
+            if self._screamer_timer > 0:
+                self._screamer_timer -= dt
+                if self._screamer_timer <= 0:
+                    # Timer just expired — stop sound
+                    if self._screamer_snd:
+                        try: self._screamer_snd.stop()
+                        except Exception: pass
+                if self._screamer_img:
+                    self.screen.blit(self._screamer_img, (0, 0))
             pygame.display.flip()
         # Reset skill tree globals so they dont bleed into menu
         game_core.DEBUFF_MULT = 1.0
@@ -8415,6 +8846,9 @@ class Game:
         # Set _game_ref BEFORE ui.draw so admin button works on first frame
         if self.admin_mode:
             self.ui._game_ref = self
+
+        # Sync skill bonus to UI for upgrade menu range display
+        self.ui._sk_range_bonus = getattr(self, '_sk_range_bonus', 0)
 
         self.ui.draw(self.screen,self.units,self.money,self.wave_mgr,
                      self.player_hp,self.player_maxhp,self.enemies,

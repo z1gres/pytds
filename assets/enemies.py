@@ -1475,11 +1475,11 @@ class FrostWraith(Enemy):
         if hovered: self._hover_label(surf)
 
 class FrostAcolyte(Enemy):
-    DISPLAY_NAME="Frost Acolyte"; BASE_HP=3050; BASE_SPEED=28; KILL_REWARD=5000
+    DISPLAY_NAME="Frost Acolyte"; BASE_HP=3050; BASE_SPEED=22; KILL_REWARD=5000
     SLOW_RESISTANCE=1.0
     def __init__(self, wave=1):
         super().__init__(wave)
-        self.hp=3050; self.maxhp=3050; self.speed=self.BASE_SPEED+(wave-1); self.radius=28
+        self.hp=3050; self.maxhp=3050; self.speed=self.BASE_SPEED+int((wave-1)*0.8); self.radius=28
         self._rot=0.0; self._stun_immune=True
     def update(self, dt):
         # Fully immune to freeze/slow — reset all slow/freeze state every frame

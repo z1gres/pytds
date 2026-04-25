@@ -130,7 +130,7 @@ class Assassin(Unit):
                 "Firerate":f"{self.firerate:.3f}","HidDet":"YES" if self.hidden_detection else "no"}
 
 ACCEL_LEVELS=[(12,0.208,7,None,False),(15,0.208,7,2000,False),(25,0.208,7,4500,False),
-              (32,0.208,7,10000,False),(34,0.158,7,17000,True),(36,0.108,7,27000,True)]
+              (32,0.208,7.5,10000,False),(34,0.158,8,17000,True),(36,0.108,8.5,27000,True)]
 
 class Accelerator(Unit):
     PLACE_COST=5000; COLOR=C_ACCEL; NAME="Accelerator"; hidden_detection=False
@@ -443,7 +443,7 @@ class Frostcelerator(Unit):
 # ── XW5YT ──────────────────────────────────────────────────────────────────────
 C_XW5YT      = (40, 220, 80)
 XW5YT_LEVELS = [(12,0.208,7,None,False),(15,0.208,7,2000,False),(25,0.208,7,4500,False),
-                (32,0.208,7,10000,False),(34,0.158,7,17000,True),(36,0.108,7,27000,True)]
+                (32,0.208,7.5,10000,False),(34,0.158,8,17000,True),(36,0.108,8.5,27000,True)]
 
 class Hixw5ytAbility:
     name="hixw5yt"; cooldown=25.0
@@ -684,7 +684,7 @@ class Lifestealer(Unit):
 
         # Update bullets (damage dealt inside bullet.update on arrival)
         for b in self._bullets: b.update(dt)
-        self._bullets=[b for b in self._bullets if b.alive]
+        self._bullets=[b for b in self._bullets if b.alive and math.hypot(b.x - self.px, b.y - self.py) <= self.range_tiles * TILE]
 
         # Check for kills / threshold — gather rewards
         earned=0
@@ -1554,20 +1554,21 @@ C_REDBALL_DARK = (120, 10,  10)
 # (damage, firerate, upgrade_cost)  — range is always 7
 REDBALL_LEVELS = [
     (12,  0.7, None),
-    (20,  0.8, 750),
+    (20,  0.8, 1000),
     (35,  0.8, 1250),
     (45,  0.6, 3000),
     (100, 0.6, 4000),
 ]
 
 class RedBall(Unit):
-    PLACE_COST=1000; COLOR=C_REDBALL; NAME="Red Ball"; hidden_detection=False
+    PLACE_COST=1250; COLOR=C_REDBALL; NAME="Red Ball"; hidden_detection=False
     RANGE_TILES=7
 
     def __init__(self, px, py):
         super().__init__(px,py)
         self._home_x=float(px); self._home_y=float(py)
         self._jump_x=float(px); self._jump_y=float(py)
+        self._draw_x=float(px); self._draw_y=float(py)  # visual only
         self._state="idle"   # idle | jumping | returning
         self._jump_speed=600.0
         self._target=None
@@ -1602,6 +1603,7 @@ class RedBall(Unit):
         if self.cd_left>0: self.cd_left-=dt
 
         if self._state=="idle":
+            self._draw_x=self._home_x; self._draw_y=self._home_y
             if self.cd_left<=0:
                 targets=self._get_rightmost(enemies,1)
                 if targets:
@@ -1612,12 +1614,12 @@ class RedBall(Unit):
             # Update target position while jumping
             if self._target and self._target.alive:
                 self._jump_x=self._target.x; self._jump_y=self._target.y
-            dx=self._jump_x-self.px; dy=self._jump_y-self.py
+            dx=self._jump_x-self._draw_x; dy=self._jump_y-self._draw_y
             d=math.hypot(dx,dy)
             step=self._jump_speed*dt
             if d<=step+2:
-                # Hit
-                self.px=self._jump_x; self.py=self._jump_y
+                # Hit — snap draw pos to target, deal damage
+                self._draw_x=self._jump_x; self._draw_y=self._jump_y
                 if self._target and self._target.alive:
                     self._target.take_damage(self.damage)
                     self.total_damage+=self.damage
@@ -1625,32 +1627,64 @@ class RedBall(Unit):
                 self._target=None
                 self.cd_left=self.firerate
             else:
-                self.px+=dx/d*step; self.py+=dy/d*step
+                self._draw_x+=dx/d*step; self._draw_y+=dy/d*step
         elif self._state=="returning":
-            dx=self._home_x-self.px; dy=self._home_y-self.py
+            dx=self._home_x-self._draw_x; dy=self._home_y-self._draw_y
             d=math.hypot(dx,dy)
             step=self._jump_speed*dt
             if d<=step+2:
-                self.px=self._home_x; self.py=self._home_y
+                self._draw_x=self._home_x; self._draw_y=self._home_y
                 self._state="idle"
             else:
-                self.px+=dx/d*step; self.py+=dy/d*step
+                self._draw_x+=dx/d*step; self._draw_y+=dy/d*step
 
     def draw(self, surf):
-        cx,cy=int(self.px),int(self.py)
-        pygame.draw.circle(surf,C_REDBALL_DARK,(cx,cy),24)
-        pygame.draw.circle(surf,C_REDBALL,(cx,cy),20)
-        # Seam lines (like a cannonball / soccer ball)
-        pygame.draw.arc(surf,(160,20,20),pygame.Rect(cx-14,cy-18,28,20),
-                        math.radians(10),math.radians(170),2)
-        pygame.draw.arc(surf,(160,20,20),pygame.Rect(cx-14,cy-2,28,20),
-                        math.radians(190),math.radians(350),2)
-        pygame.draw.line(surf,(160,20,20),(cx-20,cy),(cx+20,cy),2)
-        # Bright spot (top-left sheen)
-        pygame.draw.circle(surf,(255,100,100),(cx-7,cy-7),5)
-        pygame.draw.circle(surf,(255,160,160),(cx-8,cy-8),2)
-        # Dark rim
-        pygame.draw.circle(surf,(180,20,20),(cx,cy),24,2)
+        import sys as _sys
+        cx,cy=int(getattr(self,'_draw_x',self.px)),int(getattr(self,'_draw_y',self.py))
+        # Check equipped skin
+        _true_skin = False
+        try:
+            _gmod = _sys.modules.get('__main__') or _sys.modules.get('game')
+            if _gmod: _true_skin = (_gmod.get_equipped_skin("Red Ball") == "redball_true")
+        except: pass
+
+        if _true_skin:
+            # Red Ball 4 style
+            pygame.draw.circle(surf, (160, 10, 10), (cx, cy), 24)   # dark rim
+            pygame.draw.circle(surf, (220, 30, 30), (cx, cy), 22)   # red body
+            # Highlight
+            hl_s = pygame.Surface((44, 44), pygame.SRCALPHA)
+            pygame.draw.circle(hl_s, (255, 80, 80, 110), (15, 14), 14)
+            surf.blit(hl_s, (cx - 22, cy - 22))
+            # Shine
+            pygame.draw.circle(surf, (255, 160, 160), (cx - 7, cy - 9), 5)
+            pygame.draw.circle(surf, (255, 230, 230), (cx - 8, cy - 10), 2)
+            # Eyes white
+            pygame.draw.circle(surf, (255, 255, 255), (cx - 7, cy - 2), 6)
+            pygame.draw.circle(surf, (255, 255, 255), (cx + 6, cy - 2), 6)
+            # Pupils
+            pygame.draw.circle(surf, (30, 20, 10), (cx - 5, cy - 2), 3)
+            pygame.draw.circle(surf, (30, 20, 10), (cx + 8, cy - 2), 3)
+            # Eye shine
+            pygame.draw.circle(surf, (255, 255, 255), (cx - 4, cy - 4), 1)
+            pygame.draw.circle(surf, (255, 255, 255), (cx + 9, cy - 4), 1)
+            # Smile
+            pygame.draw.arc(surf, (160, 10, 10), pygame.Rect(cx - 9, cy + 5, 18, 10),
+                            math.radians(200), math.radians(340), 2)
+        else:
+            pygame.draw.circle(surf,C_REDBALL_DARK,(cx,cy),24)
+            pygame.draw.circle(surf,C_REDBALL,(cx,cy),20)
+            # Seam lines (like a cannonball / soccer ball)
+            pygame.draw.arc(surf,(160,20,20),pygame.Rect(cx-14,cy-18,28,20),
+                            math.radians(10),math.radians(170),2)
+            pygame.draw.arc(surf,(160,20,20),pygame.Rect(cx-14,cy-2,28,20),
+                            math.radians(190),math.radians(350),2)
+            pygame.draw.line(surf,(160,20,20),(cx-20,cy),(cx+20,cy),2)
+            # Bright spot (top-left sheen)
+            pygame.draw.circle(surf,(255,100,100),(cx-7,cy-7),5)
+            pygame.draw.circle(surf,(255,160,160),(cx-8,cy-8),2)
+            # Dark rim
+            pygame.draw.circle(surf,(180,20,20),(cx,cy),24,2)
         for i in range(self.level):
             pygame.draw.circle(surf,C_GOLD,(cx-10+i*6,cy+27),3)
 
@@ -1823,11 +1857,8 @@ class Militant(Unit):
             self._bullets.append(MilitantBullet(barrel_x, barrel_y, t, self.damage, self.hidden_detection))
             self.total_damage += self.damage
         for b in self._bullets: b.update(dt)
-        self._bullets = [b for b in self._bullets if b.alive]
-
-    def draw(self, surf):
-        # Draw bullets behind unit
-        for b in self._bullets: b.draw(surf)
+        _rng_px = self.range_tiles * TILE
+        self._bullets = [b for b in self._bullets if b.alive and math.hypot(b.x - self.px, b.y - self.py) <= _rng_px]
 
         cx, cy = int(self.px), int(self.py)
         t = self._anim_t
@@ -1974,7 +2005,7 @@ class Freezer(Unit):
             self.total_damage += self.damage
 
         for b in self._bullets: b.update(dt)
-        self._bullets = [b for b in self._bullets if b.alive]
+        self._bullets = [b for b in self._bullets if b.alive and math.hypot(b.x - self.px, b.y - self.py) <= self.range_tiles * TILE]
 
     def draw(self, surf):
         t = pygame.time.get_ticks() * 0.001
@@ -2214,7 +2245,7 @@ class FrostBlaster(Unit):
             ))
 
         for b in self._bullets: b.update(dt, enemies)
-        self._bullets = [b for b in self._bullets if b.alive]
+        self._bullets = [b for b in self._bullets if b.alive and math.hypot(b.x - self.px, b.y - self.py) <= self.range_tiles * TILE]
 
     def draw(self, surf):
         t = self._anim_t
@@ -2835,10 +2866,14 @@ class Gladiator(Unit):
 
     def get_info(self):
         block_str = "READY" if self._stun_block_cd <= 0 else f"{self._stun_block_cd:.1f}s"
+        # Annotate range with upgrade note where range increases at next level
+        _GLAD_RANGE_UPGRADES = {2: "→5.5 at lv3", 3: "→5.7 at lv4"}
+        range_note = _GLAD_RANGE_UPGRADES.get(self.level, "")
+        range_str = f"{self.range_tiles}" + (f" ({range_note})" if range_note else "")
         return {
             "Damage":    self.damage,
             "Firerate":  f"{self.firerate:.3f}",
-            "Range":     self.range_tiles,
+            "Range":     range_str,
             "Arc Hits":  f"{self._max_hits} (180°)",
             "StunBlock": block_str,
             "HidDet":    "YES" if self.hidden_detection else "no",
@@ -3063,7 +3098,7 @@ class ToxicGunner(Unit):
                     self._burst_cd   = self._cooldown
 
         for b in self._bullets: b.update(dt, enemies)
-        self._bullets = [b for b in self._bullets if b.alive]
+        self._bullets = [b for b in self._bullets if b.alive and math.hypot(b.x - self.px, b.y - self.py) <= self.range_tiles * TILE]
 
     def draw(self, surf):
         t  = self._anim_t
@@ -3790,7 +3825,7 @@ class HallowPunk(Unit):
                 self.total_damage += self.damage
 
         for r in self._rockets: r.update(dt, enemies)
-        self._rockets = [r for r in self._rockets if r.alive]
+        self._rockets = [r for r in self._rockets if r.alive and math.hypot(r.x - self.px, r.y - self.py) <= self.range_tiles * TILE]
 
     def draw(self, surf):
         t  = self._anim_t
@@ -5004,7 +5039,8 @@ class Commando(Unit):
 
         for b in self._bullets: b.update(dt)
         for g in self._grenades: g.update(dt)
-        self._bullets  = [b for b in self._bullets  if b.alive]
+        _rng_px = self.range_tiles * TILE
+        self._bullets  = [b for b in self._bullets  if b.alive and math.hypot(b.x - self.px, b.y - self.py) <= _rng_px]
         self._grenades = [g for g in self._grenades if g.alive]
 
     def draw(self, surf):
@@ -5027,14 +5063,7 @@ class Commando(Unit):
         # Sight
         pygame.draw.circle(surf, (180, 255, 140), (bx2, by2), 3)
 
-        # Ammo indicator (burst count)
-        shots_left = max(0, self._burst - (self._burst - self._burst_left)) if self._in_burst else self._burst
-        burst_frac = shots_left / max(1, self._burst)
-        bw2 = 32; bh2 = 4
-        bx3 = cx - bw2 // 2; by3 = cy - 42
-        pygame.draw.rect(surf, (20, 40, 20), (bx3, by3, bw2, bh2), border_radius=2)
-        bcol = (100, 220, 80) if burst_frac > 0.4 else (220, 200, 60)
-        pygame.draw.rect(surf, bcol, (bx3, by3, int(bw2 * burst_frac), bh2), border_radius=2)
+        # Ammo indicator removed — burst count shown in upgrade panel instead
 
 
         for b in self._bullets: b.draw(surf)
@@ -7068,7 +7097,7 @@ class RubberDuck(Unit):
         for e in self._effects:
             effects.append(e)
         self._effects = []
-        self._ducks   = [d for d in self._ducks   if d.alive]
+        self._ducks   = [d for d in self._ducks   if d.alive and math.hypot(d.x - self.px, d.y - self.py) <= self.range_tiles * TILE]
 
     def draw(self, surf):
         cx, cy = int(self.px), int(self.py + self._bob)
@@ -7342,12 +7371,403 @@ class Swarmer(Unit):
         surf.blit(s, (int(self.px) - r, int(self.py) - r))
 
     def get_info(self):
-        stacks_info = {}
+        # Annotate range with upgrade note where range increases at next level
+        _SWRM_RANGE_UPGRADES = {1: "→7.5 at lv2", 2: "→10.5 at lv3", 3: "→12.5 at lv4"}
+        range_note = _SWRM_RANGE_UPGRADES.get(self.level, "")
+        range_str = f"{self.range_tiles}" + (f" ({range_note})" if range_note else "")
         return {
             "Bee Dmg":    self.bee_damage,
             "Firerate":   f"{self.firerate:.3f}",
-            "Range":      self.range_tiles,
+            "Range":      range_str,
             "Sting Time": f"{self.sting_time:.2f}s",
             "Stack Limit": self.stack_limit,
             "Tick":       f"{self.tick_interval:.2f}s",
         }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Harvester — Early Access tower
+# ══════════════════════════════════════════════════════════════════════════════
+# Stats per level: (damage, firerate, range_tiles, upgrade_cost, hidden_det,
+#                   thorn_dmg, thorn_range, thorn_duration, thorn_slowdown, thorn_tick)
+HARVESTER_LEVELS = [
+    # lv0 base          dmg  fr      rng  cost   hid  tdmg  tr_px  tdur  tsl   ttick
+    (20, 1.425, 20, None,  False, 2,  28,  8,  0.20, 0.25),
+    # lv1 Sharper Thorns — $625
+    (20, 1.225, 20, 625,   False, 4,  28,  8,  0.20, 0.25),
+    # lv2 Early Harvest — $1500
+    (35, 1.225, 20, 1500,  False, 4,  32,  11, 0.25, 0.25),
+    # lv3 Nature's Vengence — $4000
+    (65, 1.225, 20, 4000,  True,  8,  36,  11, 0.25, 0.20),
+    # lv4 — $8750
+    (90, 0.775, 25, 8750,  True,  9,  38,  12, 0.25, 0.20),
+    # lv5 — $24300
+    (420, 1.775, 30, 24300, True, 14, 42,  15, 0.40, 0.20),
+]
+
+# Thorns ability cooldown
+_HARVESTER_THORNS_CD = 40.0
+
+C_HARVESTER      = (60, 160, 40)
+C_HARVESTER_DARK = (20, 60, 10)
+
+
+class _ThornPatch:
+    """A thorn patch placed on the track that damages and slows enemies."""
+    def __init__(self, x, y, damage, radius, duration, slowdown, tick_interval):
+        self.x = float(x); self.y = float(y)
+        self.damage = damage
+        self.radius = radius   # pixels
+        self.duration = duration
+        self.slowdown = slowdown
+        self.tick_interval = tick_interval
+        self.life = duration
+        self._tick_t = 0.0
+        self._anim_t = random.uniform(0, math.pi * 2)
+
+    @property
+    def alive(self): return self.life > 0
+
+    def update(self, dt, enemies):
+        if not self.alive: return
+        self.life -= dt
+        self._anim_t += dt
+        self._tick_t -= dt
+        if self._tick_t <= 0:
+            self._tick_t = self.tick_interval
+            for e in enemies:
+                if not e.alive: continue
+                if math.hypot(e.x - self.x, e.y - self.y) <= self.radius:
+                    e.take_damage(self.damage)
+                    # apply slow
+                    if not hasattr(e, '_thorn_slow') or e._thorn_slow < self.slowdown:
+                        e._thorn_slow = self.slowdown
+                        e._thorn_slow_t = self.tick_interval * 3
+
+    def draw(self, surf):
+        if not self.alive: return
+        fade = self.life / max(0.01, self.duration)
+        alpha = int(min(255, fade * 200 + 30))
+        r = int(self.radius)
+        # Very subtle area tint — just a faint green wash
+        s = pygame.Surface((r * 2 + 4, r * 2 + 4), pygame.SRCALPHA)
+        pygame.draw.circle(s, (30, 120, 10, max(0, int(alpha * 0.25))), (r+2, r+2), r)
+        surf.blit(s, (int(self.x) - r - 2, int(self.y) - r - 2))
+        # Thorn spikes on the ground — clustered around the patch centre
+        n_thorns = 10
+        for i in range(n_thorns):
+            a = self._anim_t * 0.15 + i * (math.pi * 2 / n_thorns)
+            spread = r * 0.65
+            sx = int(self.x) + int(math.cos(a) * spread)
+            sy = int(self.y) + int(math.sin(a) * spread)
+            pygame.draw.circle(surf, (15, 70, 8),   (sx, sy), 4)
+            pygame.draw.circle(surf, (100, 200, 40), (sx, sy), 2)
+        # Inner cluster
+        for i in range(5):
+            a2 = self._anim_t * 0.3 + i * (math.pi * 2 / 5) + 0.3
+            sx2 = int(self.x) + int(math.cos(a2) * r * 0.3)
+            sy2 = int(self.y) + int(math.sin(a2) * r * 0.3)
+            pygame.draw.circle(surf, (60, 160, 30), (sx2, sy2), 3)
+
+
+class ThornsAbility:
+    """Harvester's active ability — places a thorn patch on the track."""
+    name     = "Thorns"
+    cooldown = _HARVESTER_THORNS_CD
+
+    def __init__(self, owner):
+        self.owner   = owner
+        self.cd_left = 0.0
+
+    def update(self, dt):
+        if self.cd_left > 0:
+            self.cd_left -= dt
+
+    def ready(self): return self.cd_left <= 0
+
+    def calc_spawn_pts(self, click_x, click_y, path):
+        """Pure function — returns the list of (x,y) spawn positions without side effects.
+        
+        TDS-style: finds the closest point on the path to the click,
+        then places 7 patches: center + 3 to each side, spaced ~TILE apart.
+        For vertical path segments the patches go up/down, for horizontal left/right.
+        """
+        if not path or len(path) < 2:
+            return []
+
+        # ── 1. Find closest point on path to click ────────────────────────────
+        best_dist = float('inf')
+        best_seg  = 0
+        best_t    = 0.0
+        for si in range(len(path) - 1):
+            ax, ay = path[si]; bx, by = path[si+1]
+            dx, dy = bx - ax, by - ay
+            seg_len_sq = dx*dx + dy*dy
+            if seg_len_sq == 0:
+                t = 0.0
+            else:
+                t = max(0.0, min(1.0, ((click_x-ax)*dx + (click_y-ay)*dy) / seg_len_sq))
+            nx = ax + t*dx
+            ny = ay + t*dy
+            d  = math.hypot(nx - click_x, ny - click_y)
+            if d < best_dist:
+                best_dist = d
+                best_seg  = si
+                best_t    = t
+
+        # ── 2. Build a flat list of path sample points ─────────────────────────
+        # Walk the path and collect (x, y, cumulative_dist) triplets
+        samples = []   # (x, y, cum_dist)
+        cum = 0.0
+        samples.append((path[0][0], path[0][1], 0.0))
+        for si in range(len(path) - 1):
+            ax, ay = path[si]; bx, by = path[si+1]
+            seg_len = math.hypot(bx-ax, by-ay)
+            if seg_len > 0:
+                cum += seg_len
+                samples.append((bx, by, cum))
+
+        # ── 3. Find cumulative distance of the click-closest point ─────────────
+        ax, ay = path[best_seg]; bx, by = path[best_seg+1]
+        seg_len = math.hypot(bx-ax, by-ay)
+        # cumulative distance at start of best_seg
+        cum_at_seg_start = 0.0
+        for si in range(best_seg):
+            px1, py1 = path[si]; px2, py2 = path[si+1]
+            cum_at_seg_start += math.hypot(px2-px1, py2-py1)
+        center_cum = cum_at_seg_start + best_t * seg_len
+
+        def point_at_cum(target_cum):
+            """Interpolate a (x,y) position at cumulative distance target_cum along path."""
+            if target_cum <= 0:
+                return path[0]
+            total = 0.0
+            for si in range(len(path) - 1):
+                ax2, ay2 = path[si]; bx2, by2 = path[si+1]
+                seg = math.hypot(bx2-ax2, by2-ay2)
+                if seg == 0:
+                    continue
+                if total + seg >= target_cum:
+                    frac = (target_cum - total) / seg
+                    return (ax2 + frac*(bx2-ax2), ay2 + frac*(by2-ay2))
+                total += seg
+            return path[-1]
+
+        # ── 4. Place 7 patches: center ± 1,2,3 × TILE along the path ──────────
+        SPACING    = TILE          # ~40 px between patches
+        N_SIDE     = 3             # 3 patches each side
+        spawn_pts  = []
+
+        offsets = [i * SPACING for i in range(-N_SIDE, N_SIDE + 1)]  # -3..+3 × TILE
+        for off in offsets:
+            pt = point_at_cum(center_cum + off)
+            spawn_pts.append(pt)
+
+        # Deduplicate (shouldn't happen normally but just in case path is very short)
+        unique_pts = []
+        for sp in spawn_pts:
+            if all(math.hypot(sp[0]-up[0], sp[1]-up[1]) > 12 for up in unique_pts):
+                unique_pts.append(sp)
+        return unique_pts
+
+    def activate(self, patch_list, click_x, click_y, path, farm_list=None):
+        """Spawn thorn patches along two path segments near the clicked point."""
+        if not self.ready(): return
+        self.cd_left = self.cooldown
+        o = self.owner
+
+        unique_pts = self.calc_spawn_pts(click_x, click_y, path)
+        r_px = o.thorn_range  # already in pixels
+
+        for (px2, py2) in unique_pts:
+            patch_list.append(_ThornPatch(
+                px2, py2,
+                o.thorn_dmg, r_px,
+                o.thorn_duration, o.thorn_slowdown, o.thorn_tick
+            ))
+
+        # Nature's Bond — nearby Farms also sprinkle thorns along the same path area
+        if farm_list:
+            bond_mult = min(1.0, 0.5 + o.level * 0.10)
+            r_search  = o.range_tiles * TILE
+            for farm in farm_list:
+                if not hasattr(farm, 'px'): continue
+                if math.hypot(farm.px - o.px, farm.py - o.py) <= r_search:
+                    for (px2, py2) in unique_pts[::2]:
+                        patch_list.append(_ThornPatch(
+                            px2, py2,
+                            max(1, int(o.thorn_dmg  * bond_mult)),
+                            max(1, int(r_px         * bond_mult)),
+                            o.thorn_duration * bond_mult,
+                            o.thorn_slowdown,
+                            o.thorn_tick,
+                        ))
+
+
+class Harvester(Unit):
+    PLACE_COST       = 2000
+    COLOR            = C_HARVESTER
+    NAME             = "Harvester"
+    hidden_detection = False
+    PLACEMENT_LIMIT  = 5
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._anim_t   = 0.0
+        self._patches  = []      # active ThornPatch objects
+        self._bullets  = []      # simple projectile visuals
+        self.ability   = ThornsAbility(self)
+        self._apply_level()
+
+    def _apply_level(self):
+        row = HARVESTER_LEVELS[self.level]
+        (self.damage, self.firerate, self.range_tiles, _,
+         self.hidden_detection,
+         self.thorn_dmg, self.thorn_range, self.thorn_duration,
+         self.thorn_slowdown, self.thorn_tick) = row
+        self.cd_left = 0.0
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(HARVESTER_LEVELS): return None
+        return HARVESTER_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(HARVESTER_LEVELS):
+            self.level = nxt; self._apply_level()
+
+    def update(self, dt, enemies, effects, money, farm_list=None):
+        self._anim_t += dt
+        if self.cd_left > 0: self.cd_left -= dt
+
+        # Update thorn slow timers on enemies
+        for e in enemies:
+            if not e.alive: continue
+            if hasattr(e, '_thorn_slow_t'):
+                e._thorn_slow_t -= dt
+                if e._thorn_slow_t <= 0:
+                    e._thorn_slow = 0.0
+                    del e._thorn_slow_t
+
+        # Projectile attack
+        if self.cd_left <= 0:
+            t = self._get_targets(enemies, 1)
+            if t:
+                self.cd_left = self.firerate
+                t[0].take_damage(self.damage)
+                self.total_damage += self.damage
+                self._bullets.append({
+                    "x": float(self.px), "y": float(self.py),
+                    "tx": float(t[0].x), "ty": float(t[0].y),
+                    "t": 0.0, "dur": 0.12,
+                })
+
+        # Update bullet visuals
+        for b in self._bullets: b["t"] += dt
+        self._bullets = [b for b in self._bullets if b["t"] < b["dur"]]
+
+        # Update thorn patches
+        for p in self._patches: p.update(dt, enemies)
+        self._patches = [p for p in self._patches if p.alive]
+
+        # Ability cooldown handled by ThornsAbility.update
+        if self.ability: self.ability.update(dt)
+
+    def activate_thorns(self, click_x, click_y, path, farm_list=None):
+        """Called externally (Game) when player clicks on the map during thorn-placement mode."""
+        self.ability.activate(self._patches, click_x, click_y, path, farm_list)
+
+    def get_thorn_preview_pts(self, click_x, click_y, path):
+        """Return list of (x,y) where thorns would be placed for preview drawing."""
+        return self.ability.calc_spawn_pts(click_x, click_y, path)
+
+    def draw(self, surf):
+        cx, cy = int(self.px), int(self.py)
+        t = self._anim_t
+
+        # Draw thorn patches beneath tower
+        for p in self._patches: p.draw(surf)
+
+        # ── Base platform ──────────────────────────────────────────────────────
+        pygame.draw.circle(surf, (8, 28, 8),   (cx + 2, cy + 3), 24)   # drop shadow
+        pygame.draw.circle(surf, (18, 55, 18), (cx, cy), 24)            # dark base ring
+        pygame.draw.circle(surf, (28, 85, 28), (cx, cy), 21)            # mid ring
+        pygame.draw.circle(surf, (38, 110, 38),(cx, cy), 17)            # inner fill
+
+        # ── Rotating sickle blades (3 curved arms) ────────────────────────────
+        n_blades = 3
+        for i in range(n_blades):
+            base_a = t * 2.0 + i * (math.pi * 2 / n_blades)
+            # Each blade: thick arc-like shape built from a filled polygon
+            pts = []
+            # Outer arc (wide end)
+            for step in range(7):
+                frac = step / 6.0
+                a_outer = base_a + frac * 0.9
+                r_outer = 10 + int(frac * 10)
+                pts.append((cx + int(math.cos(a_outer) * r_outer),
+                             cy + int(math.sin(a_outer) * r_outer)))
+            # Inner arc (narrow end, reversed)
+            for step in range(7):
+                frac = (6 - step) / 6.0
+                a_inner = base_a + frac * 0.9
+                r_inner = 5 + int(frac * 4)
+                pts.append((cx + int(math.cos(a_inner) * r_inner),
+                             cy + int(math.sin(a_inner) * r_inner)))
+            if len(pts) >= 3:
+                pygame.draw.polygon(surf, (55, 175, 55), pts)
+                pygame.draw.polygon(surf, (120, 230, 80), pts, 1)
+
+        # ── Centre hub ────────────────────────────────────────────────────────
+        pygame.draw.circle(surf, (15, 60, 15),  (cx, cy), 8)
+        pygame.draw.circle(surf, (80, 200, 80), (cx, cy), 5)
+        pygame.draw.circle(surf, (200, 255, 150),(cx, cy), 2)
+
+        # ── Outer thorn tips (6 fixed spikes at rim, slowly rotating) ─────────
+        for i in range(6):
+            a2 = t * 0.4 + i * (math.pi / 3)
+            tip_x = cx + int(math.cos(a2) * 21)
+            tip_y = cy + int(math.sin(a2) * 21)
+            # Spike triangle
+            perp = a2 + math.pi / 2
+            base_x1 = cx + int(math.cos(a2) * 16 + math.cos(perp) * 3)
+            base_y1 = cy + int(math.sin(a2) * 16 + math.sin(perp) * 3)
+            base_x2 = cx + int(math.cos(a2) * 16 - math.cos(perp) * 3)
+            base_y2 = cy + int(math.sin(a2) * 16 - math.sin(perp) * 3)
+            pygame.draw.polygon(surf, (170, 240, 100),
+                                [(tip_x, tip_y), (base_x1, base_y1), (base_x2, base_y2)])
+
+        # ── Bullet visuals ────────────────────────────────────────────────────
+        for b in self._bullets:
+            prog = b["t"] / b["dur"]
+            bvx = b["x"] + (b["tx"] - b["x"]) * prog
+            bvy = b["y"] + (b["ty"] - b["y"]) * prog
+            pygame.draw.circle(surf, (180, 230, 60), (int(bvx), int(bvy)), 4)
+            pygame.draw.circle(surf, (255, 255, 150), (int(bvx), int(bvy)), 2)
+
+        # ── Hidden detection indicator ────────────────────────────────────────
+        if self.hidden_detection:
+            pygame.draw.circle(surf, (255, 255, 100), (cx + 15, cy - 15), 5)
+            pygame.draw.circle(surf, (60, 20, 0),    (cx + 15, cy - 15), 2)
+
+        # ── Level pips ────────────────────────────────────────────────────────
+        for i in range(self.level):
+            pip_x = cx - 10 + i * 7
+            pygame.draw.circle(surf, C_GOLD, (pip_x, cy + 28), 3)
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (60, 200, 40, 18), (r, r), r)
+        pygame.draw.circle(s, (60, 200, 40, 60), (r, r), r, 2)
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+
+    def get_info(self):
+        info = {}
+        if self.hidden_detection:
+            info["HidDet"] = "Hidden Detection"
+        info["Damage"]   = self.damage
+        info["Firerate"] = f"{self.firerate:.3f}"
+        info["Range"]    = self.range_tiles
+        return info
