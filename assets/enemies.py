@@ -1475,7 +1475,7 @@ class FrostWraith(Enemy):
         if hovered: self._hover_label(surf)
 
 class FrostAcolyte(Enemy):
-    DISPLAY_NAME="Frost Acolyte"; BASE_HP=3050; BASE_SPEED=22; KILL_REWARD=5000
+    DISPLAY_NAME="Frost Acolyte"; BASE_HP=3050; BASE_SPEED=19; KILL_REWARD=5000
     SLOW_RESISTANCE=1.0
     def __init__(self, wave=1):
         super().__init__(wave)
@@ -1542,7 +1542,7 @@ class FrostUndead(Enemy):
         if hovered: self._hover_label(surf)
 
 class FrostInvader(Enemy):
-    DISPLAY_NAME="Frost Invader"; BASE_HP=4000; BASE_SPEED=55; KILL_REWARD=4000
+    DISPLAY_NAME="Frost Invader"; BASE_HP=4000; BASE_SPEED=38; KILL_REWARD=4000
     def __init__(self, wave=1):
         super().__init__(wave)
         self.hp=4000; self.maxhp=4000
