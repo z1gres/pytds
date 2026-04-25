@@ -923,6 +923,8 @@ class ArcherArrow:
         elif self.arrow_type == "shock":
             # Не применяем стан к иммунным врагам (боссы)
             if getattr(e, '_shock_immune', False): return
+            # Не применяем если активен кулдаун иммунитета к стану
+            if getattr(e, '_shock_stun_cd', 0.0) > 0: return
             if self.shock_stun > 0:
                 stun_dur = self.shock_stun * _dm()
                 if not getattr(e, '_shock_stunned', False):
@@ -980,12 +982,16 @@ class ArcherArrow:
         self.x += self.vx * step; self.y += self.vy * step
         self._dist_left -= step
         if self._dist_left <= 0: self.alive = False; return
-        # Shock: tick stun
+        # Shock: tick stun and stun immunity cooldown
         for e in enemies:
+            if getattr(e, '_shock_stun_cd', 0.0) > 0:
+                e._shock_stun_cd -= dt
+                if e._shock_stun_cd < 0: e._shock_stun_cd = 0.0
             if getattr(e, '_shock_stunned', False):
                 e._shock_stun_timer = getattr(e, '_shock_stun_timer', 0) - dt
                 if e._shock_stun_timer <= 0:
                     e._shock_stunned = False
+                    e._shock_stun_cd = 2.0   # 2s immunity before can be stunned again
                     orig = getattr(e, '_shock_pre_speed', None)
                     if orig is not None: e.speed = orig
         # Collision
@@ -5874,12 +5880,21 @@ class JesterBomb:
                     resistance = getattr(e, 'SLOW_RESISTANCE', 0.0)
                     orig = getattr(e, '_jester_ice_orig_spd', None)
                     if orig is None:
-                        e._jester_ice_orig_spd = e.speed
+                        # If currently shock-stunned, save the pre-stun speed, not 0
+                        if getattr(e, '_shock_stunned', False):
+                            e._jester_ice_orig_spd = getattr(e, '_shock_pre_speed', e.speed)
+                        else:
+                            e._jester_ice_orig_spd = e.speed
                     cur = getattr(e, '_jester_ice_slow', 0.0)
                     new = min(cur + ipct * (1.0 - resistance), _JESTER_MAX_ICE_SLOW)
                     e._jester_ice_slow = new
                     e._jester_ice_timer = itm * _dm()
-                    e.speed = e._jester_ice_orig_spd * (1.0 - e._jester_ice_slow)
+                    # Only update actual speed if not currently shock-stunned
+                    if not getattr(e, '_shock_stunned', False):
+                        e.speed = e._jester_ice_orig_spd * (1.0 - e._jester_ice_slow)
+                    else:
+                        # Update pre_speed so stun release restores the iced speed
+                        e._shock_pre_speed = e._jester_ice_orig_spd * (1.0 - e._jester_ice_slow)
                     # Defense drop (lv3+)
                     if idd > 0:
                         dropped = getattr(e, '_jester_ice_defdrop', 0.0)

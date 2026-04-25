@@ -1684,7 +1684,7 @@ class TricksterElf(Enemy):
         if hovered: self._hover_label(surf)
 
 class Yeti(Enemy):
-    DISPLAY_NAME="Yeti"; BASE_HP=10000; BASE_SPEED=28; KILL_REWARD=10000
+    DISPLAY_NAME="Yeti"; BASE_HP=10000; BASE_SPEED=14; KILL_REWARD=10000
     def __init__(self, wave=1):
         super().__init__(wave)
         self.hp=10000; self.maxhp=10000
@@ -1855,7 +1855,7 @@ class FrostNecromancer(Enemy):
         if hovered: self._hover_label(surf)
 
 class FrostSpirit(Enemy):
-    DISPLAY_NAME="Frost Spirit"; BASE_HP=200000; BASE_SPEED=26; KILL_REWARD=0
+    DISPLAY_NAME="Frost Spirit"; BASE_HP=200000; BASE_SPEED=7; KILL_REWARD=0
     def __init__(self, wave=1):
         super().__init__(1)
         self.hp=200000; self.maxhp=200000
