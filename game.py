@@ -38,6 +38,7 @@ UNIT_LIMITS["Swarmer"]     = 14
 UNIT_LIMITS["Harvester"]   = 5   # placement limit per player
 UNIT_LIMITS["ToxicGunner"] = 5
 UNIT_LIMITS["Gladiator"]   = 6
+UNIT_LIMITS["Twitgunner"]  = 6
 
 # ── Patch early_access rarity into RARITY_DATA (from game_core) ───────────────
 RARITY_DATA.setdefault("early_access", {
@@ -52,6 +53,45 @@ RARITY_DATA.setdefault("early_access", {
 
 
 # fonts imported from game_core
+
+# ── New map path definitions ──────────────────────────────────────────────────
+# U-Turn: left→right (top lane), turn down, right→left (mid lane), turn down, left→right (bottom lane)
+_UTURN_PATH = [
+    (-45, 180),
+    (1760, 180),
+    (1760, 460),
+    (160,  460),
+    (160,  740),
+    (1920, 740),
+]
+
+# Labyrinth: tight 4-row zigzag with short horizontal segments
+_LABYRINTH_PATH = [
+    (-45,  150),
+    (640,  150),
+    (640,  340),
+    (160,  340),
+    (160,  530),
+    (1760, 530),
+    (1760, 720),
+    (1920, 720),
+]
+
+# Monkey-patch game_core.get_map_path to support new maps
+_orig_get_map_path = game_core.get_map_path
+def _patched_get_map_path():
+    cm = game_core.CURRENT_MAP
+    if cm == "uturn":
+        return _UTURN_PATH
+    if cm == "labyrinth":
+        return _LABYRINTH_PATH
+    return _orig_get_map_path()
+game_core.get_map_path = _patched_get_map_path
+get_map_path = _patched_get_map_path  # update local name too
+# Also patch inside game_core's own namespace so spawn_enemy_at_start picks it up
+import sys as _sys_patch
+if "game_core" in _sys_patch.modules:
+    _sys_patch.modules["game_core"].get_map_path = _patched_get_map_path
 
 
 # ── Icon loading ───────────────────────────────────────────────────────────────
@@ -188,7 +228,14 @@ from units import (
     Swarmer, SWARMER_LEVELS, C_SWARMER, C_SWARMER_DARK,
     Harvester, HARVESTER_LEVELS, C_HARVESTER, C_HARVESTER_DARK,
     ThornsAbility,
+    Twitgunner, TWITGUN_LEVELS, C_TWITGUN, C_TWITGUN_DARK,
 )
+
+# ── Archer level 3 upgrade cost → 750 ────────────────────────────────────────
+if len(ARCHER_LEVELS) > 3:
+    _ar3 = list(ARCHER_LEVELS[3])
+    _ar3[3] = 750
+    ARCHER_LEVELS[3] = type(ARCHER_LEVELS[3])(_ar3)
 
 class DevConsole:
     def __init__(self): self.visible=False; self.input_text=""; self.output_lines=[]; self.cursor_blink=0.0
@@ -329,6 +376,8 @@ class AdminPanel:
                     elif action=="map_zigzag":  game_core.CURRENT_MAP="zigzag"
                     elif action=="map_frosty":  game_core.CURRENT_MAP="frosty"
                     elif action=="map_event":   game_core.CURRENT_MAP="event"
+                    elif action=="map_uturn":       game_core.CURRENT_MAP="uturn"
+                    elif action=="map_labyrinth":   game_core.CURRENT_MAP="labyrinth"
                     return
 
         if self.tab=="mode" and game_ref:
@@ -435,7 +484,7 @@ class AdminPanel:
 
         mode_lbl=getattr(game_ref,'mode','sandbox') if game_ref else 'sandbox'
         map_lbl=game_core.CURRENT_MAP if game_ref else 'straight'
-        _MAP_NAMES={"straight":"The Bridge","zigzag":"S-Turn","frosty":"4-lane","event":"AprilFools2026"}
+        _MAP_NAMES={"straight":"The Bridge","zigzag":"S-Turn","frosty":"4-lane","event":"AprilFools2026","uturn":"U-Turn","labyrinth":"Labyrinth"}
         info_f=pygame.font.SysFont("segoeui",14)
         info_s=info_f.render(f"mode: {mode_lbl}   map: {_MAP_NAMES.get(map_lbl,map_lbl)}",True,(80,120,160))
         surf.blit(info_s,(px+20,py+36))
@@ -541,6 +590,7 @@ class AdminPanel:
                 ("RubberDuck",RubberDuck,C_DUCK),
                 ("ArcherPrime",ArcherPrime,C_ARCHERPRIME),
                 ("Harvester",Harvester,C_HARVESTER),
+                ("Twitgunner",Twitgunner,C_TWITGUN),
             ]
             cols=8; cw=(pw-28)//cols; ch=100; gap=6
             start_x=px+10; start_y=content_top+6
@@ -581,6 +631,8 @@ class AdminPanel:
                 ("S-Turn",       "map_zigzag",  (38,28,65),(100,70,200), "zigzag",  "Zigzag"),
                 ("4-lane",       "map_frosty",  (12,45,80),(50,150,220), "frosty",  "Four paths"),
                 ("AprilFools2026","map_event",  (70,22,12),(200,70,30),  "event",   "Event Map"),
+                ("U-Turn",       "map_uturn",   (50,35,10),(200,140,30), "uturn",   "U-shaped road"),
+                ("Labyrinth",    "map_labyrinth",(20,45,45),(40,180,160),"labyrinth","Tight zigzag"),
             ]
             cur=game_core.CURRENT_MAP if game_ref else "straight"
             lf=pygame.font.SysFont("segoeui",16,bold=True)
@@ -1451,6 +1503,12 @@ class UI:
             result={"Damage":d,"Firerate":f"{fr:.3f}","Range":r}
             if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
             return result
+        elif cls==Twitgunner:
+            if nxt>=len(TWITGUN_LEVELS): return None
+            d,fr,r,_,hd=TWITGUN_LEVELS[nxt]
+            result={"Damage":d,"Firerate":fr,"Range":r}
+            if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
+            return result
         elif cls==HackerLaserTest:
             if nxt>=len(CASTER_LEVELS): return None
             d,fr,r,_,hd=CASTER_LEVELS[nxt]
@@ -1830,7 +1888,7 @@ class UI:
 
             cls=type(u)
             nxt=self._get_next_stats(u)
-            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,ArcherOld:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,HackerLaserTest:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS,Farm:FARM_LEVELS,Harvester:HARVESTER_LEVELS}
+            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,ArcherOld:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,HackerLaserTest:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS,Farm:FARM_LEVELS,Harvester:HARVESTER_LEVELS,Twitgunner:TWITGUN_LEVELS}
             lvl_list=levels_map.get(cls,[])
             if cls==Jester: lvl_list=JESTER_LEVELS
             total_lvls=len(lvl_list)
@@ -2250,6 +2308,17 @@ class UI:
                 stats += [
                     ("Damage",   u.damage,              nxt.get("Damage")   if nxt else None),
                     ("Firerate", f"{u.firerate:.3f}",    f"{nxt['Firerate']}" if nxt else None),
+                    ("Range",    u.range_tiles,           nxt.get("Range")   if nxt else None),
+                ]
+                if hd_next: stats.append(("HidDet_unlock", None, "Hidden Detection"))
+            elif cls==Twitgunner:
+                hd_now  = u.hidden_detection
+                hd_next = bool(nxt and nxt.get("HidDet") and not hd_now)
+                stats = []
+                if hd_now: stats.append(("HidDet","Hidden Detection",None))
+                stats += [
+                    ("Damage",   u.damage,              nxt.get("Damage")   if nxt else None),
+                    ("Firerate", f"{u.firerate:.3f}",    f"{nxt['Firerate']:.3f}" if nxt else None),
                     ("Range",    u.range_tiles,           nxt.get("Range")   if nxt else None),
                 ]
                 if hd_next: stats.append(("HidDet_unlock", None, "Hidden Detection"))
@@ -3355,14 +3424,10 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
                 "hacker_laser_effects_test": 7500, "Caster": 7500,
                 "Warlock": 4200,
                 "Jester": 650,
-                "Harvester": 2000}
+                "Harvester": 2000,
+                "Twitgunner": 350}
     cost = cost_map.get(unit_name)
-    # Early Access units are free — show badge instead of cost
-    if unit_name == "Harvester":
-        free_f = pygame.font.SysFont("consolas", 15, bold=True)
-        fs = free_f.render("★ FREE (Early Access)", True, (60, 220, 180))
-        surf.blit(fs, fs.get_rect(center=(cx, cy + 80)))
-    elif cost:
+    if cost:
         ico_m = load_icon("money_ico", 18)
         cost_str = f" {cost}"
         cost_f = pygame.font.SysFont("consolas", 16, bold=True)
@@ -3385,13 +3450,20 @@ class MapSelectMenu:
     def __init__(self, screen):
         self.screen = screen
         self.t = 0.0
-        cw, ch = 220, 260
+        cw, ch = 210, 240
         cx = SCREEN_W // 2
-        gap = 60
-        self.card_straight = pygame.Rect(cx - cw - gap//2, 200, cw, ch)
-        self.card_zigzag   = pygame.Rect(cx + gap//2,       200, cw, ch)
+        gap_x, gap_y = 40, 28
+        # 2 rows × 2 cols (all 4 maps)
+        total_w = 2 * cw + gap_x
+        left_x  = cx - total_w // 2
+        row1_y  = 150
+        row2_y  = row1_y + ch + gap_y
+        self.card_straight  = pygame.Rect(left_x,            row1_y, cw, ch)
+        self.card_zigzag    = pygame.Rect(left_x + cw + gap_x, row1_y, cw, ch)
+        self.card_uturn     = pygame.Rect(left_x,            row2_y, cw, ch)
+        self.card_labyrinth = pygame.Rect(left_x + cw + gap_x, row2_y, cw, ch)
         btn_w, btn_h = 220, 48
-        self.btn_back = pygame.Rect(cx - btn_w//2, 200 + ch + 24, btn_w, btn_h)
+        self.btn_back = pygame.Rect(cx - btn_w//2, row2_y + ch + 20, btn_w, btn_h)
         self.action = None
         # ── Same particles as main menu ───────────────────────────────────────
         MainMenu._ensure_heavy_surfaces()
@@ -3412,8 +3484,10 @@ class MapSelectMenu:
                     pygame.quit(); sys.exit()
                 if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                     pos = ev.pos
-                    if self.card_straight.collidepoint(pos): self.action = "straight"
-                    if self.card_zigzag.collidepoint(pos):   self.action = "zigzag"
+                    if self.card_straight.collidepoint(pos):  self.action = "straight"
+                    if self.card_zigzag.collidepoint(pos):    self.action = "zigzag"
+                    if self.card_uturn.collidepoint(pos):     self.action = "uturn"
+                    if self.card_labyrinth.collidepoint(pos): self.action = "labyrinth"
                     if self.btn_back.collidepoint(pos):       self.action = "back"
             self._draw()
             pygame.display.flip()
@@ -3426,25 +3500,14 @@ class MapSelectMenu:
         pygame.draw.rect(surf, brd, rect, 2 if not selected else 3, border_radius=12)
 
         # Mini path preview
-        pr = pygame.Rect(rect.x + 16, rect.y + 16, rect.w - 32, rect.h - 70)
+        pr = pygame.Rect(rect.x + 14, rect.y + 14, rect.w - 28, rect.h - 64)
         pygame.draw.rect(surf, (18, 22, 30), pr, border_radius=6)
         pygame.draw.rect(surf, (50, 60, 80), pr, 1, border_radius=6)
 
-        ph = 6  # path half-width in preview
-        sx = pr.x; ex = pr.right
-        sy = pr.y; ey = pr.bottom
-        pw = pr.w; ph_h = pr.h
+        ph = 5  # path half-width in preview
+        ph_h = pr.h
 
-        if map_type == "straight":
-            py = pr.centery
-            pygame.draw.rect(surf, C_PATH, (pr.x, py-ph, pr.w, ph*2))
-            pygame.draw.rect(surf, (60,20,20), (pr.x, py-ph, 8, ph*2))
-            pygame.draw.rect(surf, (20,60,20), (pr.right-8, py-ph, 8, ph*2))
-        else:
-            # Scaled zigzag preview matching exact path
-            pts = [(-45,290),(400,290),(400,846),(766,846),(766,106),(1167,106),(1167,846),(1920,846)]
-            mnx, mxx = -45, 1920
-            mny, mxy = 80, 880
+        def _draw_pts(pts, mnx, mxx, mny, mxy, start_col=(60,20,20), end_col=(20,60,20)):
             def sc(px2, py2):
                 nx = pr.x + int((px2 - mnx) / (mxx - mnx) * pr.w)
                 ny = pr.y + int((py2 - mny) / (mxy - mny) * ph_h)
@@ -3452,26 +3515,51 @@ class MapSelectMenu:
             for i in range(len(pts)-1):
                 ax,ay = pts[i]; bx2,by2 = pts[i+1]
                 pax,pay = sc(ax,ay); pbx,pby = sc(bx2,by2)
-                if ax==bx2:  # vertical
+                if ax==bx2:
                     rx = min(pax,pbx)-ph; ry = min(pay,pby)
                     pygame.draw.rect(surf, C_PATH, (rx, ry, ph*2, abs(pby-pay)+1))
-                else:  # horizontal
+                else:
                     rx = min(pax,pbx); ry = min(pay,pby)-ph
                     pygame.draw.rect(surf, C_PATH, (rx, ry, abs(pbx-pax)+1, ph*2))
-            s_pos = sc(-45, 290)
-            e_pos = sc(1920, 846)
-            pygame.draw.rect(surf, (60,20,20), (s_pos[0], s_pos[1]-ph, 8, ph*2))
-            pygame.draw.rect(surf, (20,60,20), (e_pos[0]-8, e_pos[1]-ph, 8, ph*2))
+            # corner joints
+            for i in range(1, len(pts)-1):
+                cx2,cy2 = sc(*pts[i])
+                pygame.draw.rect(surf, C_PATH, (cx2-ph, cy2-ph, ph*2, ph*2))
+            s = sc(*pts[0]);  pygame.draw.rect(surf, start_col, (s[0],  s[1]-ph,  7, ph*2))
+            e = sc(*pts[-1]); pygame.draw.rect(surf, end_col,   (e[0]-7,e[1]-ph,  7, ph*2))
+
+        if map_type == "straight":
+            py = pr.centery
+            pygame.draw.rect(surf, C_PATH, (pr.x, py-ph, pr.w, ph*2))
+            pygame.draw.rect(surf, (60,20,20), (pr.x, py-ph, 7, ph*2))
+            pygame.draw.rect(surf, (20,60,20), (pr.right-7, py-ph, 7, ph*2))
+
+        elif map_type == "zigzag":
+            pts = [(-45,290),(400,290),(400,846),(766,846),(766,106),(1167,106),(1167,846),(1920,846)]
+            _draw_pts(pts, -45, 1920, 80, 880)
+
+        elif map_type == "uturn":
+            pts = [(-45,180),(1760,180),(1760,460),(160,460),(160,740),(1920,740)]
+            _draw_pts(pts, -45, 1920, 100, 820)
+
+        elif map_type == "labyrinth":
+            pts = [(-45,150),(640,150),(640,340),(160,340),(160,530),(1760,530),(1760,720),(1920,720)]
+            _draw_pts(pts, -45, 1920, 80, 800)
 
         # Label
-        label = "THE BRIDGE" if map_type == "straight" else "S-TURN"
-        lf = pygame.font.SysFont("consolas", 18, bold=True)
-        ls = lf.render(label, True, C_WHITE if hover or selected else (160, 170, 200))
-        surf.blit(ls, ls.get_rect(center=(rect.centerx, rect.bottom - 36)))
-        desc = "The Bridge" if map_type == "straight" else "S-Turn"
-        df = pygame.font.SysFont("segoeui", 14)
+        labels = {
+            "straight":  ("THE BRIDGE",  "Straight road"),
+            "zigzag":    ("S-TURN",       "Two-lane zigzag"),
+            "uturn":     ("U-TURN",       "Triple-lane sweep"),
+            "labyrinth": ("LABYRINTH",    "Tight corridors"),
+        }
+        title, desc = labels.get(map_type, (map_type.upper(), ""))
+        lf = pygame.font.SysFont("consolas", 16, bold=True)
+        ls = lf.render(title, True, C_WHITE if hover or selected else (160, 170, 200))
+        surf.blit(ls, ls.get_rect(center=(rect.centerx, rect.bottom - 34)))
+        df = pygame.font.SysFont("segoeui", 13)
         ds = df.render(desc, True, (120, 140, 170))
-        surf.blit(ds, ds.get_rect(center=(rect.centerx, rect.bottom - 18)))
+        surf.blit(ds, ds.get_rect(center=(rect.centerx, rect.bottom - 16)))
 
     def _draw(self):
         surf = self.screen
@@ -3502,15 +3590,18 @@ class MapSelectMenu:
         glow_s = pygame.Surface((ts.get_width() + 40, ts.get_height() + 20), pygame.SRCALPHA)
         glow_col = (60, 120, 255, int(abs(math.sin(t * 1.8)) * 40 + 20))
         pygame.draw.rect(glow_s, glow_col, glow_s.get_rect(), border_radius=10)
-        surf.blit(glow_s, glow_s.get_rect(center=(SCREEN_W // 2, 150)))
-        surf.blit(ts, ts.get_rect(center=(SCREEN_W // 2, 150)))
+        surf.blit(glow_s, glow_s.get_rect(center=(SCREEN_W // 2, 100)))
+        surf.blit(ts, ts.get_rect(center=(SCREEN_W // 2, 100)))
 
-        # ── Map cards ─────────────────────────────────────────────────────────
+        # ── Map cards (2×2 grid) ───────────────────────────────────────────────
         cur = game_core.CURRENT_MAP
-        self._draw_map_preview(surf, self.card_straight, "straight",
-                               self.card_straight.collidepoint(mx, my), cur == "straight")
-        self._draw_map_preview(surf, self.card_zigzag, "zigzag",
-                               self.card_zigzag.collidepoint(mx, my), cur == "zigzag")
+        for card, mtype in [
+            (self.card_straight,  "straight"),
+            (self.card_zigzag,    "zigzag"),
+            (self.card_uturn,     "uturn"),
+            (self.card_labyrinth, "labyrinth"),
+        ]:
+            self._draw_map_preview(surf, card, mtype, card.collidepoint(mx, my), cur == mtype)
 
         # ── Back button ───────────────────────────────────────────────────────
         hov_back = self.btn_back.collidepoint(mx, my)
@@ -5828,8 +5919,9 @@ class MainMenu:
 ALL_UNITS_POOL = [
     {"name": "Assassin",       "rarity": "starter"},
     {"name": "Militant",       "rarity": "starter"},
+    {"name": "Twitgunner",     "rarity": "starter"},
     {"name": "Accelerator",    "rarity": "epic"},
-    {"name": "Frostcelerator", "rarity": "exclusive"},
+    {"name": "Frostcelerator", "rarity": "epic"},
     {"name": "Lifestealer",    "rarity": "starter"},
     {"name": "Archer",         "rarity": "common"},
     {"name": "Red Ball",       "rarity": "rare"},
@@ -5837,26 +5929,26 @@ ALL_UNITS_POOL = [
     {"name": "Swarmer",        "rarity": "common"},
     {"name": "Freezer",        "rarity": "common"},
     {"name": "Frost Blaster",  "rarity": "rare"},
-    {"name": "Sledger",        "rarity": "epic"},
+    {"name": "Sledger",        "rarity": "rare"},
     {"name": "Gladiator",      "rarity": "rare"},
     {"name": "Toxic Gunner",   "rarity": "common"},
-    {"name": "Slasher",        "rarity": "epic"},
+    {"name": "Slasher",        "rarity": "rare"},
     {"name": "Cowboy",         "rarity": "starter"},
     {"name": "Hallow Punk",    "rarity": "rare"},
     {"name": "Spotlight Tech", "rarity": "common"},
     {"name": "Snowballer",     "rarity": "rare"},
-    {"name": "Commander",      "rarity": "starter"},
     {"name": "Commando",       "rarity": "starter"},
     {"name": "Warlock",      "rarity": "epic"},
     {"name": "Caster",       "rarity": "mythic"},
     {"name": "Jester",       "rarity": "mythic"},
     {"name": "Rubber Duck",  "rarity": "exclusive"},
-    {"name": "Harvester",   "rarity": "early_access"},
+    {"name": "Harvester",   "rarity": "epic"},
 ]
 
 # Coin cost to unlock units (None = not purchasable / exclusive)
 UNIT_SHOP_PRICES = {
     "Assassin":       None,
+    "Twitgunner":     None,
     "Militant":       300,
     "Archer":         1000,
     "Swarmer":        600,
@@ -5883,7 +5975,7 @@ UNIT_SHOP_PRICES = {
     "Warlock": 3000,
     "Jester": None,
     "Rubber Duck": None,
-    "Harvester":   None,   # Early Access — free
+    "Harvester":   5000,
 }
 
 class LoadoutScreen:
@@ -5964,6 +6056,9 @@ class LoadoutScreen:
         # Harvester — Early Access, бесплатно для всех
         if "Harvester" not in owned:
             owned = list(owned) + ["Harvester"]
+        # Twitgunner — стартер, всегда доступен
+        if "Twitgunner" not in owned:
+            owned = list(owned) + ["Twitgunner"]
         return owned
 
     def _show_msg(self, text, dur=2.5):
@@ -6086,9 +6181,6 @@ class LoadoutScreen:
                         for k in range(5):
                             if self.loadout[k] == uname and k != si:
                                 self.loadout[k] = None; break
-                        if uname == "Commander":
-                            self._show_msg("Sandbox only!")
-                            self.selected = None; return
                         self.loadout[si] = uname
                         self.selected = None
                 elif self.loadout[si] is not None:
@@ -6765,7 +6857,8 @@ class Game:
                         "Jester": Jester,
                         "Soul Weaver": SoulWeaver,
                         "Rubber Duck": RubberDuck,
-                        "Harvester": Harvester}
+                        "Harvester": Harvester,
+                        "Twitgunner": Twitgunner}
         _loadout = self.save_data.get("loadout", ["Assassin", "Accelerator", None, None, None])
         while len(_loadout) < 5: _loadout.append(None)
         self.ui.SLOT_TYPES = [_name_to_cls.get(n) if n else None for n in _loadout]
@@ -7026,6 +7119,47 @@ class Game:
             pygame.draw.circle(surf, (20, 80, 20),  (cx_f, cy_f), PATH_H + 6)
             pygame.draw.circle(surf, (60, 200, 60), (cx_f, cy_f), PATH_H + 6, 3)
             txt(surf, "E", (cx_f, cy_f), C_WHITE, font_sm, center=True)
+        elif game_core.CURRENT_MAP in ("uturn", "labyrinth"):
+            # Generic multi-segment path renderer for new maps
+            _path_data = {
+                "uturn":     (_UTURN_PATH,     (55, 80, 30),   (100, 180, 50),  (75, 100, 45)),
+                "labyrinth": (_LABYRINTH_PATH,  (20, 60, 70),  (40,  180, 200), (30, 90,  100)),
+            }
+            _pts, _col, _brd_col, _dash_col = _path_data[game_core.CURRENT_MAP]
+            # Fill segments
+            for pi in range(len(_pts)-1):
+                ax,ay = _pts[pi]; bx,by = _pts[pi+1]
+                if ax==bx:  # vertical
+                    pygame.draw.rect(surf, _col, (ax-PATH_H+ox, min(ay,by)+oy, PATH_H*2, abs(by-ay)))
+                else:       # horizontal
+                    pygame.draw.rect(surf, _col, (min(ax,bx)+ox, ay-PATH_H+oy, abs(bx-ax), PATH_H*2))
+            # Corner joints
+            for pi in range(1, len(_pts)-1):
+                cx2,cy2 = _pts[pi]
+                pygame.draw.rect(surf, _col, (cx2-PATH_H+ox, cy2-PATH_H+oy, PATH_H*2, PATH_H*2))
+            # Borders and dashes
+            for pi in range(len(_pts)-1):
+                ax,ay = _pts[pi]; bx,by = _pts[pi+1]
+                if ax==bx:
+                    top=min(ay,by); bot=max(ay,by)
+                    pygame.draw.line(surf,_brd_col,(ax-PATH_H+ox,top+oy),(ax-PATH_H+ox,bot+oy),2)
+                    pygame.draw.line(surf,_brd_col,(ax+PATH_H+ox,top+oy),(ax+PATH_H+ox,bot+oy),2)
+                    for y in range(top,bot,40):
+                        pygame.draw.line(surf,_dash_col,(ax+ox,y+oy),(ax+ox,y+20+oy),2)
+                else:
+                    lft=min(ax,bx); rgt=max(ax,bx)
+                    pygame.draw.line(surf,_brd_col,(lft+ox,ay-PATH_H+oy),(rgt+ox,ay-PATH_H+oy),2)
+                    pygame.draw.line(surf,_brd_col,(lft+ox,ay+PATH_H+oy),(rgt+ox,ay+PATH_H+oy),2)
+                    for x in range(lft,rgt,40):
+                        pygame.draw.line(surf,_dash_col,(x+ox,ay+oy),(x+20+ox,ay+oy),2)
+            # Start marker
+            sx0,sy0 = _pts[0]
+            pygame.draw.rect(surf,(60,20,20),(sx0+ox,sy0-PATH_H+oy,12,PATH_H*2))
+            txt(surf,"S",(sx0+6+ox,sy0-5+oy),C_RED,font_sm,center=True)
+            # End marker
+            ex0,ey0 = _pts[-1]
+            pygame.draw.rect(surf,(20,60,20),(SCREEN_W-12+ox,ey0-PATH_H+oy,12,PATH_H*2))
+            txt(surf,"E",(SCREEN_W-6+ox,ey0-5+oy),C_GREEN,font_sm,center=True)
         else:  # straight map
             pygame.draw.rect(surf,C_PATH,(ox,PATH_Y-PATH_H+oy,SCREEN_W,PATH_H*2))
             pygame.draw.line(surf,C_DARKGRAY,(ox,PATH_Y-PATH_H+oy),(SCREEN_W+ox,PATH_Y-PATH_H+oy),2)

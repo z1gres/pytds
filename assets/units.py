@@ -7786,3 +7786,198 @@ class Harvester(Unit):
         info["Firerate"] = f"{self.firerate:.3f}"
         info["Range"]    = self.range_tiles
         return info
+
+# ── Twitgunner ─────────────────────────────────────────────────────────────────
+C_TWITGUN      = (180, 80, 220)   # vivid purple
+C_TWITGUN_DARK = (60,  20, 80)
+
+# Tuple: (damage, firerate, range_tiles, upgrade_cost, hidden_detection)
+TWITGUN_LEVELS = [
+    # lv0 – place $350
+    (2, 1.525, 12, None,  False),
+    # lv1 – $50   +2 Range
+    (2, 1.525, 14,   50,  False),
+    # lv2 – $85   +2 Range +Hidden Detection
+    (2, 1.525, 16,   85,   True),
+    # lv3 – $250  +1 Range +2 Damage
+    (4, 1.525, 17,  250,   True),
+    # lv4 – $600  +1 Damage  Firerate 1.525→0.775
+    (5, 0.775, 17,  600,   True),
+    # lv5 – $1000 +1 Range +2 Damage
+    (7, 0.775, 18, 1000,   True),
+]
+
+
+class TwitgunnerBullet:
+    """Fast homing tracer bullet fired by Twitgunner."""
+    SPEED = 560.0
+    RADIUS = 5
+
+    def __init__(self, ox, oy, target, damage):
+        self.x = float(ox); self.y = float(oy)
+        self._target = target
+        dx = target.x - ox; dy = target.y - oy
+        d  = math.hypot(dx, dy) or 1
+        self.vx = dx / d; self.vy = dy / d
+        self.damage = damage
+        self.alive  = True
+        self._trail = []   # (x, y) positions for motion-blur
+
+    def update(self, dt, enemies):
+        if not self.alive: return
+        # Home toward target
+        if self._target and self._target.alive:
+            dx = self._target.x - self.x; dy = self._target.y - self.y
+            d  = math.hypot(dx, dy) or 1
+            self.vx = dx / d; self.vy = dy / d
+        step = self.SPEED * dt
+        self.x += self.vx * step; self.y += self.vy * step
+        # Trail
+        self._trail.append((self.x, self.y))
+        if len(self._trail) > 6: self._trail.pop(0)
+        # Collision
+        for e in enemies:
+            if not e.alive: continue
+            if math.hypot(e.x - self.x, e.y - self.y) < e.radius + self.RADIUS:
+                e.take_damage(self.damage)
+                self.alive = False; return
+        # Out of bounds kill
+        if self.x < -200 or self.x > 2200 or self.y < -200 or self.y > 1200:
+            self.alive = False
+
+    def draw(self, surf):
+        if not self.alive: return
+        # Trail
+        for i, (tx, ty) in enumerate(self._trail):
+            alpha = int(60 * (i + 1) / len(self._trail))
+            s = pygame.Surface((10, 10), pygame.SRCALPHA)
+            pygame.draw.circle(s, (200, 100, 255, alpha), (5, 5), 3)
+            surf.blit(s, (int(tx) - 5, int(ty) - 5))
+        # Bullet head
+        cx, cy = int(self.x), int(self.y)
+        s = pygame.Surface((14, 14), pygame.SRCALPHA)
+        pygame.draw.circle(s, (140, 40, 200, 160), (7, 7), 6)
+        pygame.draw.circle(s, (220, 130, 255, 230), (7, 7), 4)
+        pygame.draw.circle(s, (255, 220, 255, 255), (7, 7), 2)
+        surf.blit(s, (cx - 7, cy - 7))
+
+
+class Twitgunner(Unit):
+    PLACE_COST = 350
+    COLOR      = C_TWITGUN
+    NAME       = "Twitgunner"
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._bullets  = []
+        self._anim_t   = 0.0
+        self._aim_angle= 0.0
+        self._apply_level()
+
+    def _apply_level(self):
+        row = TWITGUN_LEVELS[self.level]
+        self.damage, self.firerate, self.range_tiles, _, self.hidden_detection = row
+        self.cd_left = 0.0
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(TWITGUN_LEVELS): return None
+        return TWITGUN_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(TWITGUN_LEVELS):
+            self.level = nxt; self._apply_level()
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t += dt
+        if self.cd_left > 0: self.cd_left -= dt
+
+        targets = self._get_targets(enemies, 1)
+        if targets:
+            t0 = targets[0]
+            self._aim_angle = math.atan2(t0.y - self.py, t0.x - self.px)
+
+        if self.cd_left <= 0 and targets:
+            self.cd_left = self.firerate
+            t0 = targets[0]
+            self._bullets.append(TwitgunnerBullet(self.px, self.py, t0, self.damage))
+            self.total_damage += self.damage
+
+        # Update bullets
+        for b in self._bullets: b.update(dt, enemies)
+        self._bullets = [b for b in self._bullets if b.alive]
+
+    def draw(self, surf):
+        cx, cy = int(self.px), int(self.py)
+        t = self._anim_t
+        angle = self._aim_angle
+
+        # ── Drop shadow ───────────────────────────────────────────────────────
+        pygame.draw.circle(surf, (20, 5, 30), (cx + 2, cy + 3), 26)
+
+        # ── Base ring ─────────────────────────────────────────────────────────
+        pygame.draw.circle(surf, C_TWITGUN_DARK, (cx, cy), 26)
+        pygame.draw.circle(surf, (100, 40, 140), (cx, cy), 22)
+        pygame.draw.circle(surf, C_TWITGUN,      (cx, cy), 18)
+
+        # ── Pulsing energy ring ───────────────────────────────────────────────
+        pulse = int(abs(math.sin(t * 4)) * 40) + 20
+        aura = pygame.Surface((60, 60), pygame.SRCALPHA)
+        pygame.draw.circle(aura, (180, 80, 255, pulse), (30, 30), 28, 2)
+        surf.blit(aura, (cx - 30, cy - 30))
+
+        # ── Rotating 3-spoke ornament ─────────────────────────────────────────
+        for i in range(3):
+            a = t * 1.8 + i * (math.pi * 2 / 3)
+            ix = cx + int(math.cos(a) * 14)
+            iy = cy + int(math.sin(a) * 14)
+            pygame.draw.circle(surf, (230, 160, 255), (ix, iy), 3)
+            pygame.draw.line(surf, (160, 60, 220), (cx, cy), (ix, iy), 1)
+
+        # ── Gun barrel aimed at target ────────────────────────────────────────
+        blen = 22
+        bx = cx + int(math.cos(angle) * blen)
+        by = cy + int(math.sin(angle) * blen)
+        pygame.draw.line(surf, (80, 20, 120), (cx, cy), (bx, by), 7)
+        pygame.draw.line(surf, C_TWITGUN,     (cx, cy), (bx, by), 4)
+        pygame.draw.line(surf, (230, 180, 255),(cx, cy), (bx, by), 2)
+        # muzzle tip
+        pygame.draw.circle(surf, (255, 210, 255), (bx, by), 4)
+        pygame.draw.circle(surf, (180, 80, 255),  (bx, by), 2)
+
+        # ── Centre hub ────────────────────────────────────────────────────────
+        pygame.draw.circle(surf, (40, 10, 60),    (cx, cy), 7)
+        pygame.draw.circle(surf, (200, 120, 255), (cx, cy), 4)
+        pygame.draw.circle(surf, (255, 240, 255), (cx, cy), 2)
+
+        # ── Hidden detection indicator ────────────────────────────────────────
+        if self.hidden_detection:
+            pygame.draw.circle(surf, (255, 255, 100), (cx + 16, cy - 16), 5)
+            pygame.draw.circle(surf, (60, 20, 0),     (cx + 16, cy - 16), 2)
+
+        # ── Bullets ───────────────────────────────────────────────────────────
+        for b in self._bullets: b.draw(surf)
+
+        # ── Level pips ────────────────────────────────────────────────────────
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_GOLD, (cx - 12 + i * 7, cy + 32), 3)
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (180, 80, 255, 18), (r, r), r)
+        pygame.draw.circle(s, (200, 120, 255, 55), (r, r), r, 2)
+        old_clip = surf.get_clip()
+        surf.set_clip(pygame.Rect(0, 0, SCREEN_W, SLOT_AREA_Y))
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+        surf.set_clip(old_clip)
+
+    def get_info(self):
+        info = {}
+        if self.hidden_detection:
+            info["HidDet"] = "Hidden Detection"
+        info["Damage"]   = self.damage
+        info["Firerate"] = f"{self.firerate:.3f}"
+        info["Range"]    = self.range_tiles
+        return info
