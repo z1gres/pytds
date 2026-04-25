@@ -77,6 +77,31 @@ _LABYRINTH_PATH = [
     (1920, 720),
 ]
 
+
+# ── TvZ grid geometry ──────────────────────────────────────────────────────────
+TVZ_ROWS      = 5
+TVZ_COLS      = 9
+_TVZ_PLAY_W   = SCREEN_W - 200        # play field width (200px right margin for UI)
+_TVZ_PLAY_H   = SLOT_AREA_Y           # play field height (up to bottom panel)
+_TVZ_CELL_W   = _TVZ_PLAY_W // TVZ_COLS
+_TVZ_CELL_H   = _TVZ_PLAY_H // TVZ_ROWS
+
+def get_tvz_grid():
+    """Return list of (col, row, cx, cy) cell centres for the 5×9 TvZ grid."""
+    cells = []
+    for row in range(TVZ_ROWS):
+        for col in range(TVZ_COLS):
+            cx = col * _TVZ_CELL_W + _TVZ_CELL_W // 2
+            cy = row * _TVZ_CELL_H + _TVZ_CELL_H // 2
+            cells.append((col, row, cx, cy))
+    return cells
+
+def get_tvz_path(row_index):
+    """Straight horizontal path for the given row.
+    Enemies spawn on the right edge and move left."""
+    cy = row_index * _TVZ_CELL_H + _TVZ_CELL_H // 2
+    return [(SCREEN_W + 80, cy), (-80, cy)]
+
 # Monkey-patch game_core.get_map_path to support new maps
 _orig_get_map_path = game_core.get_map_path
 def _patched_get_map_path():
@@ -153,6 +178,10 @@ from enemies import (
     TricksterElf, Yeti, FrostMage, FrostHero, DeepFreeze, FrostNecromancer, FrostSpirit,
     FROST_MYSTERY_POOL_SNOWY, FROST_MYSTERY_POOL_FROZEN,
     FROSTY_WAVE_DATA, FROSTY_MAX_WAVES,
+    # TvZ mode
+    Zombie, ConeheadZombie, BucketZombie, FootballZombie,
+    Gargantuar, Zomboss,
+    TVZ_WAVE_DATA, TVZ_MAX_WAVES,
 )
 
 # ── Infernal mode enemies ──────────────────────────────────────────────────────
@@ -387,7 +416,7 @@ class AdminPanel:
                         "restart_easy":"easy","restart_fallen":"fallen",
                         "restart_frosty":"frosty","restart_endless":"endless",
                         "restart_sandbox":"sandbox","restart_hardcore":"hardcore",
-                        "restart_event":"infernal",
+                        "restart_event":"infernal","restart_tvz":"tvz",
                     }
                     new_mode=mode_map.get(action)
                     if new_mode:
@@ -665,6 +694,8 @@ class AdminPanel:
                 ("▶  Sandbox",         "restart_sandbox", (60,50,25),(170,140,55),  "Sandbox Mode"),
                 ("▶  Hardcore",        "restart_hardcore",(75,12,8),(210,55,25),    "Hardcore Mode"),
                 ("🎭  April Fools",    "restart_event",   (75,8,28),(245,75,115),   "Event 2026"),
+                ("🧟  Towers vs Zombies","restart_tvz",   (20,70,20),(50,180,50),   "TvZ Mode"),
+
             ]
             cols3=3; bw3=(pw-40)//cols3; bh3=86; gap3=12
             start_x3=px+12; start_y3=content_top+16
@@ -906,6 +937,24 @@ class UI:
                             else:
                                 if abs(py2-ay)<=PATH_H+5 and min(ax,bx)-5<=px2<=max(ax,bx)+5: return True
                     return False
+                # TvZ: snap to nearest grid cell, block spawn-zone and occupied cells
+                if game_core.CURRENT_MAP == "tvz":
+                    _best_snap = None
+                    _best_snap_dist = 999999
+                    for _col, _row, _ccx, _ccy in get_tvz_grid():
+                        _d = math.hypot(mx - _ccx, my - _ccy)
+                        if _d < _best_snap_dist:
+                            _best_snap_dist = _d
+                            _best_snap = (_ccx, _ccy)
+                    if _best_snap and _best_snap_dist <= _TVZ_CELL_W * 0.65:
+                        mx, my = _best_snap
+                        pos = (mx, my)
+                    if mx >= _TVZ_PLAY_W:
+                        self.show_msg("Can't place there — spawn zone!")
+                        return 0
+                    if any(math.hypot(u.px - mx, u.py - my) < _TVZ_CELL_W * 0.5 for u in units):
+                        self.show_msg("Cell occupied!")
+                        return 0
                 on_path = _on_any_path(mx, my)
                 can_path = getattr(UType, 'CAN_PLACE_ON_PATH', False)
                 own_units = [u for u in units if not getattr(u, '_mp_peer', False)]
@@ -6703,6 +6752,14 @@ class Game:
             self.wave_mgr._mode="hardcore"
             self.player_hp=100; self.player_maxhp=100
             self.money=700
+        elif mode == "tvz":
+            self.wave_mgr = WaveManager(wave_data=TVZ_WAVE_DATA, max_waves=TVZ_MAX_WAVES)
+            self.wave_mgr._mode = "tvz"
+            self.player_hp = 100; self.player_maxhp = 100
+            self.money = 500
+            game_core.CURRENT_MAP = "tvz"
+            # Per-row stun timers {row_index: remaining_seconds}
+            self._tvz_row_stun = {i: 0.0 for i in range(TVZ_ROWS)}
         else:
             self.wave_mgr=WaveManager()
             self.wave_mgr._mode="easy"
@@ -6897,6 +6954,19 @@ class Game:
     def _pause_caster_sfx(self, pause):
         pass
 
+    def _tvz_zomboss_stun(self, row_index, duration):
+        """Called by Zomboss: stun every tower whose center falls in row_index
+        for `duration` seconds, and update the per-row display timer."""
+        if not hasattr(self, "_tvz_row_stun"):
+            self._tvz_row_stun = {i: 0.0 for i in range(TVZ_ROWS)}
+        self._tvz_row_stun[row_index] = max(
+            self._tvz_row_stun.get(row_index, 0.0), duration)
+        cy_top = row_index * _TVZ_CELL_H
+        cy_bot = cy_top + _TVZ_CELL_H
+        for u in self.units:
+            if cy_top <= u.py < cy_bot:
+                self._apply_stun(u, duration)
+
     def _give_wave_coins(self, wave_num):
         if self.mode not in ("easy", "fallen", "frosty", "endless", "infernal", "hardcore"): return
         if wave_num <= self._last_coin_wave: return
@@ -6939,6 +7009,52 @@ class Game:
     def draw_map(self, offset=(0,0)):
         surf=self.screen; surf.fill(C_BG)
         ox,oy=offset
+
+        # ── TvZ mode: draw 5x9 grass grid + stun overlays, then return ─────────
+        if game_core.CURRENT_MAP == "tvz":
+            # Alternating row tints
+            for _row in range(TVZ_ROWS):
+                _ry = _row * _TVZ_CELL_H + oy
+                _shade = (38, 78, 38) if _row % 2 == 0 else (30, 62, 30)
+                pygame.draw.rect(surf, _shade, (ox, _ry, _TVZ_PLAY_W, _TVZ_CELL_H))
+            # Right margin background (UI / spawn zone)
+            pygame.draw.rect(surf, (22, 22, 32),
+                             (_TVZ_PLAY_W + ox, oy, SCREEN_W - _TVZ_PLAY_W, _TVZ_PLAY_H))
+            # Grid lines (semi-transparent)
+            _gs = pygame.Surface((_TVZ_PLAY_W, _TVZ_PLAY_H), pygame.SRCALPHA)
+            for _col in range(TVZ_COLS + 1):
+                _gx = _col * _TVZ_CELL_W
+                pygame.draw.line(_gs, (60, 140, 60, 55), (_gx, 0), (_gx, _TVZ_PLAY_H), 1)
+            for _row in range(TVZ_ROWS + 1):
+                _gy = _row * _TVZ_CELL_H
+                pygame.draw.line(_gs, (60, 140, 60, 55), (0, _gy), (_TVZ_PLAY_W, _gy), 1)
+            surf.blit(_gs, (ox, oy))
+            # Stun overlays — purple wash over stunned rows
+            if hasattr(self, "_tvz_row_stun"):
+                for _r, _t in self._tvz_row_stun.items():
+                    if _t > 0:
+                        _ov = pygame.Surface((_TVZ_PLAY_W, _TVZ_CELL_H), pygame.SRCALPHA)
+                        _alpha = int(min(110, _t * 22))
+                        _ov.fill((90, 50, 200, _alpha))
+                        surf.blit(_ov, (ox, _r * _TVZ_CELL_H + oy))
+                        # "STUNNED" label
+                        _sf = pygame.font.SysFont("segoeui", 14, bold=True)
+                        _ss = _sf.render("STUNNED", True, (200, 160, 255))
+                        surf.blit(_ss, _ss.get_rect(
+                            center=(ox + _TVZ_PLAY_W // 2,
+                                    _r * _TVZ_CELL_H + _TVZ_CELL_H // 2 + oy)))
+            # Spawn-side marker (right edge of play area)
+            pygame.draw.rect(surf, (80, 20, 20),
+                             (_TVZ_PLAY_W + ox, oy, 6, _TVZ_PLAY_H))
+            _sf2 = pygame.font.SysFont("segoeui", 13, bold=True)
+            for _r in range(TVZ_ROWS):
+                _cy2 = _r * _TVZ_CELL_H + _TVZ_CELL_H // 2 + oy
+                _rs = _sf2.render(f"ROW {_r+1}", True, (180, 180, 200))
+                surf.blit(_rs, _rs.get_rect(midleft=(_TVZ_PLAY_W + ox + 10, _cy2)))
+            # Base (left edge) — green line
+            pygame.draw.rect(surf, (20, 80, 20), (ox, oy, 6, _TVZ_PLAY_H))
+            return   # skip normal path drawing
+
         # ── Show Grid ─────────────────────────────────────────────────────────
         if SETTINGS.get("show_grid", False):
             _grid_surf = pygame.Surface((SCREEN_W, SLOT_AREA_Y), pygame.SRCALPHA)
@@ -7401,6 +7517,19 @@ class Game:
                             ne.y = float(fp[0][1])
                             ne._wp_index = 1
                             self._frosty_lane += 1
+                    # TvZ mode: assign each newly spawned enemy a random row + straight path
+                    if self.mode == "tvz" and len(self.enemies) > _pre_count:
+                        for _ne in self.enemies[_pre_count:]:
+                            _tvz_row = random.randint(0, TVZ_ROWS - 1)
+                            _ne._tvz_row = _tvz_row
+                            _fp = get_tvz_path(_tvz_row)
+                            _ne._frosty_path = _fp   # Enemy.update reads this attr
+                            _ne.x = float(_fp[0][0])
+                            _ne.y = float(_fp[0][1])
+                            _ne._wp_index = 1
+                            # Wire Zomboss row-stun ability back to game
+                            if isinstance(_ne, Zomboss):
+                                _ne._stun_broadcast = self._tvz_zomboss_stun
                 if self.wave_mgr.wave!=prev_wave:
                     self._wave_leaked=False
                     # Wave just advanced — immediately pay coins for the completed wave
@@ -7427,6 +7556,19 @@ class Game:
                                 self._screamer_img = pygame.transform.scale(_raw, (SCREEN_W, SCREEN_H))
                             except Exception: self._screamer_img = False
     
+                # TvZ: any enemy crossing x < 0 is an instant defeat
+                if self.mode == "tvz":
+                    for _e in self.enemies:
+                        if _e.alive and _e.x < 0:
+                            self.player_hp = 0
+                            break
+
+                # TvZ: tick Zomboss row-stun timers
+                if self.mode == "tvz" and hasattr(self, "_tvz_row_stun"):
+                    for _r in list(self._tvz_row_stun):
+                        if self._tvz_row_stun[_r] > 0:
+                            self._tvz_row_stun[_r] = max(0.0, self._tvz_row_stun[_r] - dt)
+
                 for n in [e for e in self.enemies if isinstance(e,Necromancer) and e.alive]:
                     if n.should_summon():
                         for _ in range(5):

@@ -3191,3 +3191,194 @@ HARDCORE_WAVE_DATA = [
       (MysteryBossEnemy, 8), (GiantBossEnemy, 6), (FallenGuardianEnemy, 2),
       (VindicatorEnemy, 2), (UnknownEnemy, 6)],                             0, 0),                              # 50 FINALE
 ]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TvZ (Towers vs Zombies) — enemy classes, wave data
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class Zombie(Enemy):
+    """Basic zombie. 50 HP, normal speed."""
+    DISPLAY_NAME = "Zombie"
+    BASE_HP = 50; BASE_SPEED = 55; KILL_REWARD = 5
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp = max(1, self.BASE_HP); self.maxhp = self.hp
+        self.speed = self.BASE_SPEED; self.radius = 17
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob = math.sin(self._bob) * 2
+        cx, cy = int(self.x), int(self.y + bob)
+        pygame.draw.circle(surf, (55, 110, 55),  (cx, cy), self.radius)
+        pygame.draw.circle(surf, (90, 180, 90),  (cx - 5, cy - 5), 7)
+        pygame.draw.circle(surf, (160, 220, 160),(cx, cy), self.radius, 2)
+        self._draw_hp_bar(surf, 30, 5)
+        if hovered: self._hover_label(surf)
+
+
+class ConeheadZombie(Enemy):
+    """Zombie wearing a traffic cone. 60 HP, normal speed."""
+    DISPLAY_NAME = "Conehead"
+    BASE_HP = 60; BASE_SPEED = 55; KILL_REWARD = 8
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp = max(1, self.BASE_HP); self.maxhp = self.hp
+        self.speed = self.BASE_SPEED; self.radius = 17
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob = math.sin(self._bob) * 2
+        cx, cy = int(self.x), int(self.y + bob)
+        pygame.draw.circle(surf, (55, 110, 55),  (cx, cy), self.radius)
+        # Traffic-cone hat
+        pts = [
+            (cx - 11, cy - self.radius),
+            (cx + 11, cy - self.radius),
+            (cx,      cy - self.radius - 20),
+        ]
+        pygame.draw.polygon(surf, (220, 110, 20), pts)
+        pygame.draw.polygon(surf, (255, 155, 40), pts, 2)
+        pygame.draw.circle(surf, (160, 220, 160),(cx, cy), self.radius, 2)
+        self._draw_hp_bar(surf, 32, 5)
+        if hovered: self._hover_label(surf)
+
+
+class BucketZombie(Enemy):
+    """Zombie with a metal bucket helmet. 120 HP, normal speed."""
+    DISPLAY_NAME = "Bucket"
+    BASE_HP = 120; BASE_SPEED = 55; KILL_REWARD = 12
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp = max(1, self.BASE_HP); self.maxhp = self.hp
+        self.speed = self.BASE_SPEED; self.radius = 18
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob = math.sin(self._bob) * 2
+        cx, cy = int(self.x), int(self.y + bob)
+        pygame.draw.circle(surf, (55, 110, 55), (cx, cy), self.radius)
+        # Bucket = grey trapezoid on head
+        bot_w = 20; top_w = 14; bh = 14
+        bucket = [
+            (cx - bot_w // 2, cy - self.radius),
+            (cx + bot_w // 2, cy - self.radius),
+            (cx + top_w // 2, cy - self.radius - bh),
+            (cx - top_w // 2, cy - self.radius - bh),
+        ]
+        pygame.draw.polygon(surf, (155, 160, 170), bucket)
+        pygame.draw.polygon(surf, (200, 210, 220), bucket, 2)
+        pygame.draw.circle(surf, (160, 220, 160),(cx, cy), self.radius, 2)
+        self._draw_hp_bar(surf, 36, 5)
+        if hovered: self._hover_label(surf)
+
+
+class FootballZombie(Enemy):
+    """Armored football zombie. 200 HP, faster speed, 20% armor."""
+    DISPLAY_NAME = "Football"
+    BASE_HP = 200; BASE_SPEED = 80; KILL_REWARD = 20; ARMOR = 0.20
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp = max(1, self.BASE_HP); self.maxhp = self.hp
+        self.speed = self.BASE_SPEED; self.radius = 20
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob = math.sin(self._bob) * 2
+        cx, cy = int(self.x), int(self.y + bob)
+        pygame.draw.circle(surf, (70, 35, 15),  (cx, cy), self.radius)
+        # Helmet visor bar
+        pygame.draw.rect(surf, (200, 155, 20),
+                         (cx - 13, cy - self.radius + 2, 26, 8),
+                         border_radius=4)
+        pygame.draw.circle(surf, (215, 175, 55),(cx, cy), self.radius, 3)
+        self._draw_hp_bar(surf, 40, 6)
+        if hovered: self._hover_label(surf)
+
+
+class Gargantuar(Enemy):
+    """Giant zombie brute. 1000 HP, slow speed. Stun immune."""
+    DISPLAY_NAME = "Gargantuar"
+    BASE_HP = 1000; BASE_SPEED = 30; KILL_REWARD = 50
+    _shock_immune = True
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp = max(1, self.BASE_HP); self.maxhp = self.hp
+        self.speed = self.BASE_SPEED; self.radius = 28
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob = math.sin(self._bob)
+        cx, cy = int(self.x), int(self.y + bob)
+        pygame.draw.circle(surf, (35, 75, 35),  (cx, cy), self.radius)
+        pygame.draw.circle(surf, (70, 140, 70), (cx - 7, cy - 7), 11)
+        pygame.draw.circle(surf, (110, 200, 110),(cx, cy), self.radius, 4)
+        self._draw_hp_bar(surf, 52, 7)
+        if hovered: self._hover_label(surf)
+
+
+class Zomboss(Enemy):
+    """Wave-10 boss. 3500 HP, slow. Every 10-15s stuns all towers
+    in one random row for 5 seconds (game.py wires the callback)."""
+    DISPLAY_NAME = "DR. ZOMBOSS"
+    BASE_HP = 3500; BASE_SPEED = 25; KILL_REWARD = 200
+    _shock_immune = True
+
+    TVZ_ROWS = 5   # kept in sync with game.py TVZ_ROWS constant
+
+    def __init__(self, wave=1):
+        super().__init__(wave)
+        self.hp = max(1, self.BASE_HP); self.maxhp = self.hp
+        self.speed = self.BASE_SPEED; self.radius = 34
+        self._ability_timer  = random.uniform(10, 15)
+        self._stun_broadcast = None   # set by game.py: callable(row_index, duration)
+
+    def update(self, dt):
+        result = super().update(dt)
+        self._ability_timer -= dt
+        if self._ability_timer <= 0:
+            self._ability_timer = random.uniform(10, 15)
+            row = random.randint(0, self.TVZ_ROWS - 1)
+            if callable(self._stun_broadcast):
+                self._stun_broadcast(row, 5.0)
+        return result
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob = math.sin(self._bob)
+        cx, cy = int(self.x), int(self.y + bob)
+        # Mech chassis
+        pygame.draw.circle(surf, (18, 48, 18),  (cx, cy), self.radius)
+        pygame.draw.circle(surf, (55, 155, 55), (cx, cy), self.radius, 5)
+        # Brain pod
+        pygame.draw.circle(surf, (175, 95, 200),(cx, cy - 7), 14)
+        pygame.draw.circle(surf, (220, 155, 255),(cx, cy - 7), 14, 2)
+        # Red eyes
+        for ex, ey in [(cx - 7, cy - 11), (cx + 7, cy - 11)]:
+            pygame.draw.circle(surf, (255, 50, 50), (ex, ey), 4)
+        self._draw_hp_bar(surf, 62, 8, border_col=(200, 60, 200))
+        if hovered: self._hover_label(surf)
+
+
+# ── TvZ Wave Data ──────────────────────────────────────────────────────────────
+# Same tuple format as WAVE_DATA: (groups, lmoney, bmoney).
+# lmoney/bmoney are 0 — TvZ uses a flat $500 starting budget with no mid-wave
+# cash rewards. Index 0 is None (waves are 1-based).
+
+TVZ_MAX_WAVES = 10
+
+TVZ_WAVE_DATA = [
+    None,  # 0 — unused
+    ([(Zombie,          1)],                                                     0, 0),  # 1
+    ([(Zombie,          2)],                                                     0, 0),  # 2
+    ([(Zombie,          3)],                                                     0, 0),  # 3
+    ([(BucketZombie,    1), (Zombie,          2)],                               0, 0),  # 4
+    ([(BucketZombie,    2), (Zombie,          3), (ConeheadZombie,  2)],         0, 0),  # 5
+    ([(BucketZombie,    5), (Zombie,          8), (ConeheadZombie,  2)],         0, 0),  # 6
+    ([(BucketZombie,    2), (Zombie,          3), (ConeheadZombie,  2),
+      (FootballZombie,  1)],                                                     0, 0),  # 7
+    ([(BucketZombie,    5), (Zombie,          5), (ConeheadZombie,  5),
+      (FootballZombie,  3)],                                                     0, 0),  # 8
+    ([(Zombie,         15), (BucketZombie,    5), (ConeheadZombie,  2),
+      (FootballZombie,  1), (Gargantuar,      1)],                               0, 0),  # 9
+    ([(Zomboss,         1), (Gargantuar,      1), (Zombie,         10),
+      (ConeheadZombie, 10), (FootballZombie, 10)],                               0, 0),  # 10
+]
