@@ -7989,13 +7989,13 @@ C_KORZHIK_DARK = (120,  40,  80)
 # Korzhik stats (damage and firerate from screenshot, second value after arrow)
 KORZHIK_LEVELS = [
     # dmg  firerate  range  cost    hidden_det
-    (12,   1.4,      5.0,   None,   False),   # lv0
-    (18,   1.2,      5.0,   950,    False),   # lv1
-    (26,   1.0,      7.0,   1450,   True),    # lv2
-    (36,   0.9,      7.5,   2450,   True),    # lv3
-    (50,   0.7,      9.0,   3200,   True),    # lv4
-    (70,   0.5,      9.0,   4444,   True),    # lv5 — More spinning balls (4 orbs, dmg 30)
-    (70,   0.5,      9.0,   5555,   True),    # lv6 — Shooting balls (firerate 1.0, dmg 100)
+    (6,    1.8,      5.0,   None,   False),   # lv0
+    (9,    1.6,      5.0,   1111,   False),   # lv1
+    (13,   1.4,      7.0,   2222,   True),    # lv2
+    (18,   1.2,      7.5,   3333,   True),    # lv3
+    (28,   1.0,      9.0,   4444,   True),    # lv4
+    (45,   0.7,      9.0,   5555,   True),    # lv5 — More spinning balls (4 orbs, dmg 30)
+    (45,   0.7,      9.0,   6666,   True),    # lv6 — Shooting balls (range-limited, dmg 50, limit 4)
 ]
 
 
@@ -8228,6 +8228,8 @@ class _OrbitalBall:
         self.x        = 0.0; self.y = 0.0
         self.damage   = 10       # melee contact damage (overridden by _apply_level)
         self.shooting = False    # set True at lv6
+        self.shot_damage = 50    # lv6 bullet damage
+        self.shot_range  = None  # lv6 shooting range limit (pixels), None = unlimited
         self._hit_cd  = {}       # id(enemy) → remaining cooldown (melee)
         self._shot_cd = 0.0      # shooting cooldown
         self._bullets = []       # active shot bullets: [{'x','y','vx','vy','alive'}]
@@ -8255,12 +8257,13 @@ class _OrbitalBall:
         if self.shooting:
             self._shot_cd -= dt
             if self._shot_cd <= 0:
-                # find closest enemy
+                # find closest enemy within shot_range (if set)
                 target = None
                 best_d = float('inf')
                 for e in enemies:
                     if not e.alive: continue
                     d = math.hypot(e.x - self.x, e.y - self.y)
+                    if self.shot_range is not None and d > self.shot_range: continue
                     if d < best_d:
                         best_d = d; target = e
                 if target:
@@ -8282,7 +8285,7 @@ class _OrbitalBall:
                 for e in enemies:
                     if not e.alive: continue
                     if math.hypot(e.x - b['x'], e.y - b['y']) <= getattr(e, 'radius', 14) + 4:
-                        e.take_damage(100)
+                        e.take_damage(self.shot_damage)
                         b['alive'] = False; break
                 if b['x'] < -200 or b['x'] > 2200 or b['y'] < -200 or b['y'] > 1200:
                     b['alive'] = False
@@ -8351,6 +8354,9 @@ class Korzhik(Unit):
             _orb_count    = 2
             _orb_dmg      = 10
         _orb_shooting = (self.level >= _max_lv)
+        # lv6 shooting balls deal 50 dmg and are limited to tower range
+        _orb_shot_dmg   = 50
+        _orb_shot_range = self.range_tiles * TILE if _orb_shooting else None
         # Rebuild orbs only if count changed (preserve angles otherwise)
         if not hasattr(self, '_orbs') or len(self._orbs) != _orb_count:
             self._orbs = [
@@ -8358,8 +8364,10 @@ class Korzhik(Unit):
                 for i in range(_orb_count)
             ]
         for orb in self._orbs:
-            orb.damage   = _orb_dmg
-            orb.shooting = _orb_shooting
+            orb.damage      = _orb_dmg
+            orb.shooting    = _orb_shooting
+            orb.shot_damage = _orb_shot_dmg
+            orb.shot_range  = _orb_shot_range
 
     def upgrade_cost(self):
         nxt = self.level + 1
