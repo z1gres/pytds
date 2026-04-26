@@ -6243,7 +6243,7 @@ UNIT_DESCRIPTIONS = {
     "Warlock":        "Dark magic user. Curses enemies reducing their resistance.",
     "Caster":         "Arcane powerhouse. Unleashes devastating spell combos.",
     "Jester":         "Unpredictable trickster that confuses and damages foes.",
-    "Korzhik":        "Mythic melee brawler with unmatched staying power.",
+    "Korzhik":        "Korzhik. Catgirl",
     "Rubber Duck":    "Exclusive squeaky menace. Don't underestimate it.",
     "Harvester":      "Collects resources while dealing moderate damage.",
     "hacker_laser_effects_test": "??? ERROR 404 UNIT NOT FOUND ???",
