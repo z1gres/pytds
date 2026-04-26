@@ -4525,6 +4525,8 @@ SETTINGS = {
     "low_quality":    False,
     "show_grid":      False,
     "free_robux":     False,
+    "windowed":       False,
+    "resolution":     "1920x1080",
 }
 
 def _apply_audio_settings():
@@ -4532,6 +4534,20 @@ def _apply_audio_settings():
         vol = 0.0 if SETTINGS["music_muted"] else SETTINGS["music_volume"]
         pygame.mixer.music.set_volume(vol)
     except Exception: pass
+
+_RESOLUTIONS = ["1280x720", "1600x900", "1920x1080", "2560x1440"]
+
+def _apply_display_mode(screen_ref=None):
+    """Apply windowed/fullscreen and resolution. Returns new screen surface."""
+    res_str = SETTINGS.get("resolution", "1920x1080")
+    try:
+        rw, rh = map(int, res_str.split("x"))
+    except Exception:
+        rw, rh = 1920, 1080
+    windowed = SETTINGS.get("windowed", False)
+    flags = 0 if windowed else pygame.FULLSCREEN
+    new_screen = pygame.display.set_mode((rw, rh), flags)
+    return new_screen
 
 from game_core import SAVE_FILE as _SAVE_FILE
 _SETTINGS_FILE = os.path.join(os.path.dirname(_SAVE_FILE), "settings.json")
@@ -4554,6 +4570,15 @@ def save_settings():
 
 load_settings()
 game_core._COMPACT_NUMBERS = SETTINGS.get("compact_numbers", True)
+
+def _apply_display_mode_startup():
+    """Apply saved windowed/resolution on startup — only if non-default."""
+    if SETTINGS.get("windowed", False) or SETTINGS.get("resolution", "1920x1080") != "1920x1080":
+        try:
+            _apply_display_mode()
+        except Exception:
+            pass
+_apply_display_mode_startup()
 
 def _sync_compact():
     game_core._COMPACT_NUMBERS = SETTINGS.get("compact_numbers", True)
@@ -4840,6 +4865,17 @@ class SettingsScreen:
         self._col_gap = 40
         self._left_x  = cx - self._col_w - self._col_gap // 2
         self._right_x = cx + self._col_gap // 2
+        # Display mode section — bottom of left column
+        self._disp_y    = SCREEN_H - 220
+        _btn_w = self._col_w
+        self.btn_windowed   = pygame.Rect(self._left_x, self._disp_y,       _btn_w // 2 - 6, 38)
+        self.btn_fullscreen = pygame.Rect(self._left_x + _btn_w // 2 + 6, self._disp_y, _btn_w // 2 - 6, 38)
+        # Resolution buttons — one per option
+        res_y = self._disp_y + 52
+        self._res_btns = []
+        bw = (_btn_w - 12) // len(_RESOLUTIONS)
+        for i, r in enumerate(_RESOLUTIONS):
+            self._res_btns.append(pygame.Rect(self._left_x + i * (bw + 4), res_y, bw, 38))
 
     # ── slider helpers ──────────────────────────────────────────────────────
     def _music_bar(self):  return pygame.Rect(self._left_x, 195, self._col_w, 16)
@@ -4906,6 +4942,21 @@ class SettingsScreen:
         if getattr(self, "btn_interface", None) and self.btn_interface.collidepoint(pos):
             InterfaceSettingsScreen(self.screen, self.save_data).run()
             return
+        # windowed / fullscreen toggle
+        if self.btn_windowed.collidepoint(pos):
+            SETTINGS["windowed"] = True
+            self.screen = _apply_display_mode()
+            return
+        if self.btn_fullscreen.collidepoint(pos):
+            SETTINGS["windowed"] = False
+            self.screen = _apply_display_mode()
+            return
+        # resolution buttons
+        for i, rb in enumerate(self._res_btns):
+            if rb.collidepoint(pos):
+                SETTINGS["resolution"] = _RESOLUTIONS[i]
+                self.screen = _apply_display_mode()
+                return
         # music slider
         bar_m = self._music_bar()
         if pygame.Rect(bar_m.x, bar_m.y-10, bar_m.w, bar_m.h+20).collidepoint(pos):
@@ -4997,6 +5048,40 @@ class SettingsScreen:
         pygame.draw.rect(surf, C_BORDER, getattr(self, "btn_interface", pygame.Rect(0,0,0,0)), 2, border_radius=10)
         ib = pygame.font.SysFont("segoeui", 24, bold=True).render("INTERFACE", True, C_WHITE)
         surf.blit(ib, ib.get_rect(center=getattr(self, "btn_interface", pygame.Rect(0,0,0,0)).center))
+
+        # ── Display mode section ──────────────────────────────────────────────
+        df = pygame.font.SysFont("segoeui", 20, bold=True)
+        dh = df.render("🖥  Display Mode", True, (180, 200, 255))
+        surf.blit(dh, dh.get_rect(midleft=(self._left_x, self._disp_y - 22)))
+        pygame.draw.line(surf, (50,55,80), (self._left_x, self._disp_y - 6),
+                         (self._left_x + self._col_w, self._disp_y - 6), 1)
+        is_windowed = SETTINGS.get("windowed", False)
+        bf = pygame.font.SysFont("segoeui", 17, bold=True)
+        for btn, label, active in [
+            (self.btn_windowed,   "Windowed",   is_windowed),
+            (self.btn_fullscreen, "Fullscreen",  not is_windowed),
+        ]:
+            bg  = (45, 100, 180) if active else (35, 40, 60)
+            brd = (100, 180, 255) if active else (70, 80, 110)
+            pygame.draw.rect(surf, bg,  btn, border_radius=8)
+            pygame.draw.rect(surf, brd, btn, 2, border_radius=8)
+            col = (220, 240, 255) if active else (130, 140, 170)
+            ls  = bf.render(label, True, col)
+            surf.blit(ls, ls.get_rect(center=btn.center))
+        # Resolution buttons
+        cur_res = SETTINGS.get("resolution", "1920x1080")
+        rh_lbl  = df.render("Resolution", True, (180, 200, 255))
+        surf.blit(rh_lbl, rh_lbl.get_rect(midleft=(self._left_x, self._disp_y + 36)))
+        rf = pygame.font.SysFont("segoeui", 15, bold=True)
+        for i, (rb, res) in enumerate(zip(self._res_btns, _RESOLUTIONS)):
+            active = (res == cur_res)
+            bg  = (45, 100, 60) if active else (35, 40, 55)
+            brd = (80, 210, 100) if active else (65, 75, 100)
+            pygame.draw.rect(surf, bg,  rb, border_radius=7)
+            pygame.draw.rect(surf, brd, rb, 2, border_radius=7)
+            col = (200, 255, 210) if active else (120, 135, 160)
+            rs  = rf.render(res, True, col)
+            surf.blit(rs, rs.get_rect(center=rb.center))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
