@@ -39,7 +39,7 @@ UNIT_LIMITS["Harvester"]   = 5   # placement limit per player
 UNIT_LIMITS["ToxicGunner"] = 5
 UNIT_LIMITS["Gladiator"]   = 6
 UNIT_LIMITS["Twitgunner"]  = 6
-UNIT_LIMITS["Korzhik"]     = 6
+UNIT_LIMITS["Korzhik"]     = 4
 
 # ── Patch early_access rarity into RARITY_DATA (from game_core) ───────────────
 RARITY_DATA.setdefault("early_access", {
@@ -3577,6 +3577,19 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
             by2 = cy + int(math.sin(a2) * sc(16) - math.sin(perp) * sc(3))
             pygame.draw.polygon(surf, (170, 240, 100), [(tip_x, tip_y), (bx1, by1), (bx2, by2)])
 
+    elif unit_name == "Korzhik":
+        # Left ear
+        l_pts = [(cx - sc(18), cy - sc(4)), (cx - sc(18), cy - sc(33)), (cx - sc(8), cy - sc(17))]
+        pygame.draw.polygon(surf, (255, 240, 248), l_pts)
+        pygame.draw.polygon(surf, (255, 150, 185), l_pts, sp(2))
+        # Right ear
+        r_pts = [(cx + sc(18), cy - sc(4)), (cx + sc(18), cy - sc(33)), (cx + sc(8), cy - sc(17))]
+        pygame.draw.polygon(surf, (255, 240, 248), r_pts)
+        pygame.draw.polygon(surf, (255, 150, 185), r_pts, sp(2))
+        # Dark outline + main pink circle
+        pygame.draw.circle(surf, C_KORZHIK_DARK, (cx, cy), sc(26))
+        pygame.draw.circle(surf, C_KORZHIK,      (cx, cy), sc(22))
+
     else:
         # Fallback: colored circle with unit's color
         _col_map = {
@@ -6137,7 +6150,7 @@ ALL_UNITS_POOL = [
     {"name": "Assassin",       "rarity": "starter"},
     {"name": "Militant",       "rarity": "starter"},
     {"name": "Twitgunner",     "rarity": "starter"},
-    {"name": "Korzhik",        "rarity": "early_access"},
+    {"name": "Korzhik",        "rarity": "mythic"},
     {"name": "Accelerator",    "rarity": "epic"},
     {"name": "Frostcelerator", "rarity": "epic"},
     {"name": "Lifestealer",    "rarity": "starter"},
@@ -6167,7 +6180,7 @@ ALL_UNITS_POOL = [
 UNIT_SHOP_PRICES = {
     "Assassin":       None,
     "Twitgunner":     None,
-    "Korzhik":        None,   # Early Access — free
+    "Korzhik":        None,   # Mythic — purchased with 1500 shards
     "Militant":       300,
     "Archer":         1000,
     "Swarmer":        600,
@@ -6272,15 +6285,11 @@ class LoadoutScreen:
         owned = ["Cowboy" if u == "Golden Cowboy" else u for u in owned]
 
         # Rubber Duck — выдаётся только за прохождение ивента ПЕКЛО
-        # Harvester — Early Access, бесплатно для всех
-        if "Harvester" not in owned:
-            owned = list(owned) + ["Harvester"]
+        # Harvester — требует покупки за 5000 монет
         # Twitgunner — стартер, всегда доступен
         if "Twitgunner" not in owned:
             owned = list(owned) + ["Twitgunner"]
-        # Korzhik — Early Access, бесплатно для всех
-        if "Korzhik" not in owned:
-            owned = list(owned) + ["Korzhik"]
+        # Korzhik — Mythic, покупается за 1500 шардов
         return owned
 
     def _show_msg(self, text, dur=2.5):
@@ -6370,7 +6379,7 @@ class LoadoutScreen:
 
         for btn_r, u in self._shard_buy_hits:
             if btn_r.collidepoint(pos):
-                SHARD_PRICES = {"Caster": 1000, "Jester": 300}
+                SHARD_PRICES = {"Caster": 1000, "Jester": 300, "Korzhik": 1500}
                 price = SHARD_PRICES.get(u["name"], 0)
                 shards = self.save_data.get("shards", 0)
                 if shards >= price:
@@ -6619,7 +6628,7 @@ class LoadoutScreen:
                         es  = excl_f.render("EXCLUSIVE", True, (220,65,65))
                         surf.blit(es, es.get_rect(center=(cx2, cy2 + 8)))
                     elif rarity == "mythic":
-                        SHARD_PRICES = {"Caster": 1000, "Jester": 300}
+                        SHARD_PRICES = {"Caster": 1000, "Jester": 300, "Korzhik": 1500}
                         shard_price = SHARD_PRICES.get(u["name"])
                         if shard_price is not None:
                             shards_have = self.save_data.get("shards", 0)
