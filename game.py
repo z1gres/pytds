@@ -6219,33 +6219,33 @@ UNIT_BASE_STATS = {
 
 # ── Tower descriptions — fill in your own later ───────────────────────────────
 UNIT_DESCRIPTIONS = {
-    "Assassin":       "A swift melee killer that deals high single-target damage.",
-    "Militant":       "A reliable starter unit with balanced stats.",
-    "Twitgunner":     "Fires rapidly at low damage. Great for swarms.",
-    "Lifestealer":    "Drains enemy health to sustain itself in battle.",
-    "Archer":         "Long-range unit with solid damage. Starter favorite.",
-    "Red Ball":       "Bounces between enemies dealing splash damage.",
-    "Farm":           "Generates income each wave. No combat ability.",
-    "Cowboy":         "A golden gunslinger that earns extra coins per kill.",
-    "Swarmer":        "Deploys swarms of fast-moving minions.",
-    "Freezer":        "Slows enemies caught in its icy radius.",
-    "Frost Blaster":  "Fires icy projectiles that chill and slow targets.",
-    "Sledger":        "Heavy melee unit. Slow but devastatingly powerful.",
-    "Gladiator":      "Arena warrior. Excels in close-quarters combat.",
-    "Toxic Gunner":   "Poisons enemies over time with toxic rounds.",
-    "Slasher":        "Deals massive AoE damage with wide slashing attacks.",
-    "Hallow Punk":    "Haunted rocker with spectral projectiles.",
-    "Spotlight Tech": "High-range precision unit with rapid recharge.",
-    "Snowballer":     "Rolls snowballs that grow larger and deal more damage.",
-    "Commando":       "Military specialist. Accurate and devastating.",
-    "Accelerator":    "Precision is key. A cliff tower that deals exceptional damage at near infinite range.",
+    "Assassin":       "Silent but deadly. Clear out enemies with fatal stabs, whirlwind slashes, and throwing knives!",
+    "Militant":       "Trained with an assault rifle, this tower deals medium damage at a fast firerate.",
+    "Twitgunner":     "The starter tower of the game.",
+    "Lifestealer":    "Steal enemies life and convert it to money",
+    "Archer":         "Shoot a piercing arrow that bounces towards nearby enemies. Pick between Fire, Stun, & EXP arrows.",
+    "Red Ball":       "Bounces at enemies dealing high single target damage. Korzhik's tower",
+    "Farm":           "Earn extra cash per wave. The higher the upgrade, the higher the income.",
+    "Cowboy":         "There ain't enough room for the two of us pardner... Gain cash on reload.",
+    "Swarmer":        "OH NOES, THE BEES! Attack enemies with bees that do damage over time",
+    "Freezer":        "Brrr! Build up chill to slow and freeze enemies in their tracks!",
+    "Frost Blaster":  "Pierce multiple enemies with an ice rifle, freezing them in place!",
+    "Sledger":        "Bash zombies with powerful blows and freeze them.",
+    "Gladiator":      "Slash nearby enemies, deal area damage, and parry incoming attacks!",
+    "Toxic Gunner":   "Shoot a burst of poison bullets that slow down enemies!",
+    "Slasher":        "Stabs nearby enemies and applies bleed on higher levels",
+    "Hallow Punk":    "A mad explosives expert capable of knocking back and burning enemies.",
+    "Spotlight Tech": "A cliff tower with great range that deals damage over time with burn, applies confusion, and helps to combat hidden enemies.",
+    "Snowballer":     "A jolly snowball fighter who prefers to fight in the best way they know how!",
+    "Commando":       "Shoot enemies with dual laser guns and launches missiles.",
+    "Accelerator":    "Charge a laser and release massive damage at deadly rates!",
     "Frostcelerator": "A frozen variant of the Accelerator. Chills targets on impact.",
-    "Warlock":        "Dark magic user. Curses enemies reducing their resistance.",
-    "Caster":         "Arcane powerhouse. Unleashes devastating spell combos.",
-    "Jester":         "Unpredictable trickster that confuses and damages foes.",
+    "Warlock":        "A hybrid melee and ranged tower that fights with eldritch magic. Capable of knocking back enemies and applying bleed.",
+    "Caster":         "A boss killer with good aoe ability",
+    "Jester":         "I have a ton of tricks in my pockets! Cycle through and throw debuff bombs at enemies!",
     "Korzhik":        "Korzhik. Catgirl",
     "Rubber Duck":    "Exclusive squeaky menace. Don't underestimate it.",
-    "Harvester":      "Collects resources while dealing moderate damage.",
+    "Harvester":      "A haunted scarecrow that fires piercing bolts and can summon thorns to slow enemies.",
     "hacker_laser_effects_test": "??? ERROR 404 UNIT NOT FOUND ???",
 }
 
@@ -6720,7 +6720,7 @@ class LoadoutScreen:
             pygame.draw.rect(surf, sk_bg,  sk_btn_r, border_radius=8)
             pygame.draw.rect(surf, sk_brd, sk_btn_r, 2, border_radius=8)
             sk_f   = pygame.font.SysFont("segoeui", 16, bold=True)
-            sk_lbl = ("★ SKINS" if not eq_sk else "★ " + eq_sk) if has_skins else "NO SKINS"
+            sk_lbl = "★ SKINS" if has_skins else "NO SKINS"
             sk_col = (220, 180, 255) if has_skins else (80, 65, 100)
             sk_s   = sk_f.render(sk_lbl, True, sk_col)
             # truncate label if too wide
