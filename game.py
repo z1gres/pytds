@@ -3655,7 +3655,7 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
                 "Jester": 650,
                 "Harvester": 2000,
                 "Twitgunner": 350,
-                "Korzhik": 350}
+                "Korzhik": 1200}
     cost = cost_map.get(unit_name)
     if cost:
         ico_m = load_icon("money_ico", 18)
