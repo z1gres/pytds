@@ -4851,84 +4851,130 @@ class InterfaceSettingsScreen:
 
 
 class SettingsScreen:
+    _TABS = ["AUDIO", "GRAPHICS", "DISPLAY"]
+
     def __init__(self, screen, save_data):
-        self.screen = screen; self.t = 0.0; self.running = True
+        self.screen    = screen
+        self.t         = 0.0
+        self.running   = True
         self.save_data = save_data
-        cx = SCREEN_W // 2
-        self.btn_back = pygame.Rect(cx - 130, SCREEN_H - 72, 260, 48)
-        self.btn_interface = pygame.Rect(cx - 130, SCREEN_H - 128, 260, 48)
         self._drag_music = False
         self._drag_sfx   = False
-        # Layout constants
-        self._cx = cx
-        self._col_w = 340   # width of each column
-        self._col_gap = 40
-        self._left_x  = cx - self._col_w - self._col_gap // 2
-        self._right_x = cx + self._col_gap // 2
-        # Display mode section — bottom of left column
-        self._disp_y    = SCREEN_H - 220
-        _btn_w = self._col_w
-        self.btn_windowed   = pygame.Rect(self._left_x, self._disp_y,       _btn_w // 2 - 6, 38)
-        self.btn_fullscreen = pygame.Rect(self._left_x + _btn_w // 2 + 6, self._disp_y, _btn_w // 2 - 6, 38)
-        # Resolution buttons — one per option
-        res_y = self._disp_y + 52
-        self._res_btns = []
-        bw = (_btn_w - 12) // len(_RESOLUTIONS)
-        for i, r in enumerate(_RESOLUTIONS):
-            self._res_btns.append(pygame.Rect(self._left_x + i * (bw + 4), res_y, bw, 38))
+        self._tab        = 0   # active tab index
 
-    # ── slider helpers ──────────────────────────────────────────────────────
-    def _music_bar(self):  return pygame.Rect(self._left_x, 195, self._col_w, 16)
-    def _sfx_bar(self):    return pygame.Rect(self._right_x, 195, self._col_w, 16)
+        cx = SCREEN_W // 2
+        self._cx = cx
+
+        # ── Tab bar ───────────────────────────────────────────────────────────
+        TAB_W, TAB_H = 220, 48
+        TAB_GAP      = 12
+        total_tabs   = len(self._TABS) * TAB_W + (len(self._TABS) - 1) * TAB_GAP
+        tab_x0       = cx - total_tabs // 2
+        self._tab_rects = [
+            pygame.Rect(tab_x0 + i * (TAB_W + TAB_GAP), 88, TAB_W, TAB_H)
+            for i in range(len(self._TABS))
+        ]
+
+        # ── Content card ──────────────────────────────────────────────────────
+        CARD_W = 900; CARD_H = 560
+        self._card = pygame.Rect(cx - CARD_W // 2, 152, CARD_W, CARD_H)
+
+        # ── Sliders (AUDIO tab) ───────────────────────────────────────────────
+        SL_X  = self._card.x + 60
+        SL_W  = self._card.w - 120
+        self._bar_music = pygame.Rect(SL_X, 230, SL_W, 14)
+        self._bar_sfx   = pygame.Rect(SL_X, 318, SL_W, 14)
+
+        # ── GRAPHICS toggles ──────────────────────────────────────────────────
+        self._gfx_toggles = [
+            ("colored_range",        "Colored Range Rings"),
+            ("screen_shake",         "Screen Shake"),
+            ("particles",            "Particles & Effects"),
+            ("show_damage",          "Damage / Money Numbers"),
+            ("compact_numbers",      "Compact Numbers  (1k)"),
+            ("show_grid",            "Show Grid"),
+            ("show_fps",             "Show FPS"),
+            ("show_range_always",    "Always Show Range"),
+            ("low_quality",          "Low Quality  (better FPS)"),
+        ]
+        self._aud_toggles = [
+            ("music_muted", "Mute Music"),
+            ("sfx_muted",   "Mute SFX"),
+        ]
+        self._misc_toggles = [
+            ("auto_skip",            "Auto-skip Waves"),
+            ("sell_confirm",         "Confirm Before Sell"),
+            ("fast_forward_default", "Fast-forward by Default"),
+            ("free_robux",           "Free Robux"),
+        ]
+        self._toggle_rects_cache = {}  # tab -> list of (rect, key, lbl)
+
+        # ── DISPLAY buttons ───────────────────────────────────────────────────
+        CX = self._card.centerx
+        self.btn_windowed   = pygame.Rect(CX - 230, 270, 210, 52)
+        self.btn_fullscreen = pygame.Rect(CX + 20,  270, 210, 52)
+        _bw = (self._card.w - 120) // len(_RESOLUTIONS)
+        self._res_btns = [
+            pygame.Rect(self._card.x + 60 + i * (_bw + 6), 380, _bw - 6, 48)
+            for i in range(len(_RESOLUTIONS))
+        ]
+
+        # ── Back button ───────────────────────────────────────────────────────
+        self.btn_back = pygame.Rect(cx - 110, SCREEN_H - 68, 220, 46)
+
+    # ── slider helpers ────────────────────────────────────────────────────────
+    def _music_bar(self): return self._bar_music
+    def _sfx_bar(self):   return self._bar_sfx
 
     def _set_music_vol(self, mx):
-        bar = self._music_bar()
+        bar = self._bar_music
         SETTINGS["music_volume"] = round(max(0.0, min(1.0, (mx - bar.x) / bar.w)), 2)
         if not SETTINGS["music_muted"]: _apply_audio_settings()
 
     def _set_sfx_vol(self, mx):
-        bar = self._sfx_bar()
+        bar = self._bar_sfx
         SETTINGS["sfx_volume"] = round(max(0.0, min(1.0, (mx - bar.x) / bar.w)), 2)
 
-    # ── toggle rects (left column) ──────────────────────────────────────────
-    def _toggle_rects_left(self):
-        x = self._left_x; tw = self._col_w; th = 44; gap = 14; y0 = 270
-        keys = [
-            ("music_muted",  "Mute Music"),
-            ("colored_range","Colored Range"),
-            ("screen_shake", "Screen Shake"),
-            ("compact_numbers", "Compact numbers (1k)"),
-            ("show_grid",    "Show Grid"),
-        ]
-        return [(pygame.Rect(x, y0 + i*(th+gap), tw, th), k, lbl) for i,(k,lbl) in enumerate(keys)]
+    # ── toggle rects for current tab ─────────────────────────────────────────
+    def _toggle_rects_left(self):  return []
+    def _toggle_rects_right(self): return []
 
-    # ── toggle rects (right column) ─────────────────────────────────────────
-    def _toggle_rects_right(self):
-        x = self._right_x; tw = self._col_w; th = 38; gap = 8; y0 = 270
-        keys = [
-            ("sfx_muted",    "Mute SFX"),
-            ("particles",    "Particles/Effects"),
-            ("show_damage",  "Damage/Money numbers"),
-            ("show_fps",     "Show FPS"),
-            ("auto_skip",    "Auto-skip waves"),
-            ("show_range_always", "Always show range"),
-            ("sell_confirm", "Confirm before sell"),
-            ("fast_forward_default", "Fast-forward by default"),
-            ("low_quality",  "Low quality (better FPS)"),
-            ("free_robux",   "Free Robux"),
-        ]
-        return [(pygame.Rect(x, y0 + i*(th+gap), tw, th), k, lbl) for i,(k,lbl) in enumerate(keys)]
+    def _get_tab_toggles(self, tab_i):
+        if tab_i in self._toggle_rects_cache:
+            return self._toggle_rects_cache[tab_i]
+        if tab_i == 0:   keys = self._aud_toggles + self._misc_toggles
+        elif tab_i == 1: keys = self._gfx_toggles
+        else:            return []
+        # Two-column layout that fits inside the card (card width = 900, padding 60 each side)
+        usable_w = self._card.w - 120        # 780px
+        TW = (usable_w - 20) // 2           # ~380px per column
+        TH = 44; GAP = 10
+        CX = self._card.x + 60              # left edge of usable area
+        # For AUDIO tab (0): start below SFX slider + OTHER label (~bar_sfx.bottom + 60)
+        # For GRAPHICS tab (1): start near top of card
+        start_y = (self._bar_sfx.bottom + 60) if tab_i == 0 else (self._card.y + 62)
+        rects = []
+        for i, (k, lbl) in enumerate(keys):
+            col = i % 2
+            row = i // 2
+            x   = CX + col * (TW + 20)
+            y   = start_y + row * (TH + GAP)
+            rects.append((pygame.Rect(x, y, TW, TH), k, lbl))
+        self._toggle_rects_cache[tab_i] = rects
+        return rects
 
-    # ── event handling ───────────────────────────────────────────────────────
+    # ── event handling ────────────────────────────────────────────────────────
     def run(self):
         clock = pygame.time.Clock()
         while self.running:
             dt = clock.tick(60) / 1000.0; self.t += dt
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT: pygame.quit(); sys.exit()
-                if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE: self.running = False
-                if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1: self._handle_click(ev.pos)
-                if ev.type == pygame.MOUSEBUTTONUP   and ev.button == 1:
+                if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+                    self.running = False
+                if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                    self._handle_click(ev.pos)
+                if ev.type == pygame.MOUSEBUTTONUP and ev.button == 1:
                     self._drag_music = False; self._drag_sfx = False
                 if ev.type == pygame.MOUSEMOTION:
                     if self._drag_music: self._set_music_vol(ev.pos[0])
@@ -4938,150 +4984,254 @@ class SettingsScreen:
         _sync_compact()
 
     def _handle_click(self, pos):
-        if self.btn_back.collidepoint(pos): self.running = False; return
-        if getattr(self, "btn_interface", None) and self.btn_interface.collidepoint(pos):
-            InterfaceSettingsScreen(self.screen, self.save_data).run()
-            return
-        # windowed / fullscreen toggle
-        if self.btn_windowed.collidepoint(pos):
-            SETTINGS["windowed"] = True
-            self.screen = _apply_display_mode()
-            return
-        if self.btn_fullscreen.collidepoint(pos):
-            SETTINGS["windowed"] = False
-            self.screen = _apply_display_mode()
-            return
-        # resolution buttons
-        for i, rb in enumerate(self._res_btns):
-            if rb.collidepoint(pos):
-                SETTINGS["resolution"] = _RESOLUTIONS[i]
-                self.screen = _apply_display_mode()
-                return
-        # music slider
-        bar_m = self._music_bar()
-        if pygame.Rect(bar_m.x, bar_m.y-10, bar_m.w, bar_m.h+20).collidepoint(pos):
-            self._drag_music = True; self._set_music_vol(pos[0]); return
-        # sfx slider
-        bar_s = self._sfx_bar()
-        if pygame.Rect(bar_s.x, bar_s.y-10, bar_s.w, bar_s.h+20).collidepoint(pos):
-            self._drag_sfx = True; self._set_sfx_vol(pos[0]); return
+        if self.btn_back.collidepoint(pos):
+            self.running = False; return
+        # tabs
+        for i, tr in enumerate(self._tab_rects):
+            if tr.collidepoint(pos):
+                self._tab = i; return
+        # AUDIO tab sliders
+        if self._tab == 0:
+            bm = self._bar_music
+            if pygame.Rect(bm.x, bm.y - 12, bm.w, bm.h + 24).collidepoint(pos):
+                self._drag_music = True; self._set_music_vol(pos[0]); return
+            bs = self._bar_sfx
+            if pygame.Rect(bs.x, bs.y - 12, bs.w, bs.h + 24).collidepoint(pos):
+                self._drag_sfx = True; self._set_sfx_vol(pos[0]); return
+        # DISPLAY tab
+        if self._tab == 2:
+            if self.btn_windowed.collidepoint(pos):
+                SETTINGS["windowed"] = True
+                self.screen = _apply_display_mode(); return
+            if self.btn_fullscreen.collidepoint(pos):
+                SETTINGS["windowed"] = False
+                self.screen = _apply_display_mode(); return
+            for i, rb in enumerate(self._res_btns):
+                if rb.collidepoint(pos):
+                    SETTINGS["resolution"] = _RESOLUTIONS[i]
+                    self.screen = _apply_display_mode(); return
         # toggles
-        for rect, key, _ in self._toggle_rects_left() + self._toggle_rects_right():
+        for rect, key, _ in self._get_tab_toggles(self._tab):
             if rect.collidepoint(pos):
                 SETTINGS[key] = not SETTINGS[key]
                 if key == "music_muted": _apply_audio_settings()
+                self._toggle_rects_cache.pop(self._tab, None)
                 return
 
-    # ── drawing helpers ──────────────────────────────────────────────────────
+    # ── drawing helpers ───────────────────────────────────────────────────────
     def _draw_slider(self, surf, bar, vol, muted, label, accent):
-        lf = pygame.font.SysFont("segoeui", 20, bold=True)
-        ls = lf.render(label, True, (200, 210, 240))
-        surf.blit(ls, ls.get_rect(midleft=(bar.x, bar.y - 18)))
-        pygame.draw.rect(surf, (35, 40, 58), bar, border_radius=8)
-        fw = int(bar.w * vol)
-        col = accent if not muted else (70, 70, 90)
+        lf  = pygame.font.SysFont("segoeui", 18, bold=True)
+        ls  = lf.render(label, True, (190, 205, 240))
+        surf.blit(ls, ls.get_rect(midleft=(bar.x, bar.y - 20)))
+        # track
+        pygame.draw.rect(surf, (25, 28, 45), bar, border_radius=7)
+        fw  = int(bar.w * vol)
+        col = accent if not muted else (55, 55, 75)
         if fw > 0:
-            pygame.draw.rect(surf, col, pygame.Rect(bar.x, bar.y, fw, bar.h), border_radius=8)
-        pygame.draw.rect(surf, C_BORDER, bar, 2, border_radius=8)
+            pygame.draw.rect(surf, col, pygame.Rect(bar.x, bar.y, fw, bar.h), border_radius=7)
+        pygame.draw.rect(surf, (60, 65, 90), bar, 1, border_radius=7)
+        # knob
         kx = bar.x + fw
-        pygame.draw.circle(surf, (210, 225, 255), (kx, bar.centery), 11)
-        pygame.draw.circle(surf, C_BORDER,        (kx, bar.centery), 11, 2)
-        pf = pygame.font.SysFont("consolas", 15, bold=True)
-        ps = pf.render(f"{int(vol*100)}%", True, C_GOLD)
-        surf.blit(ps, ps.get_rect(midright=(bar.right, bar.bottom + 16)))
+        pygame.draw.circle(surf, (230, 235, 255), (kx, bar.centery), 13)
+        pygame.draw.circle(surf, accent if not muted else (80, 80, 100), (kx, bar.centery), 13, 2)
+        pygame.draw.circle(surf, (255, 255, 255), (kx, bar.centery), 5)
+        # pct
+        pf  = pygame.font.SysFont("consolas", 14, bold=True)
+        ps  = pf.render(f"{int(vol * 100)}%", True, (180, 190, 220))
+        surf.blit(ps, ps.get_rect(midright=(bar.right, bar.bottom + 18)))
 
     def _draw_toggle(self, surf, rect, label, active):
-        bg  = (45, 140, 70) if active else (55, 55, 75)
-        brd = (75, 210, 95) if active else (85, 85, 110)
+        # pill background
+        bg  = (22, 85, 48) if active else (28, 30, 46)
+        brd = (55, 200, 100) if active else (55, 58, 80)
         pygame.draw.rect(surf, bg,  rect, border_radius=10)
-        pygame.draw.rect(surf, brd, rect, 2, border_radius=10)
-        # indicator dot
-        dot_x = rect.right - 24
-        dot_col = (120, 255, 140) if active else (80, 80, 100)
-        pygame.draw.circle(surf, dot_col, (dot_x, rect.centery), 8)
-        f = pygame.font.SysFont("segoeui", 19, bold=True)
-        txt_col = (235, 255, 235) if active else (160, 160, 180)
-        s = f.render(f"{label}:  {'ON' if active else 'OFF'}", True, txt_col)
+        pygame.draw.rect(surf, brd, rect, 1, border_radius=10)
+        # label
+        f      = pygame.font.SysFont("segoeui", 17, bold=True)
+        tc     = (220, 255, 225) if active else (130, 135, 160)
+        s      = f.render(label, True, tc)
         surf.blit(s, s.get_rect(midleft=(rect.x + 14, rect.centery)))
+        # toggle pill on right
+        pill_w, pill_h = 38, 20
+        pill_x = rect.right - pill_w - 10
+        pill_y = rect.centery - pill_h // 2
+        pill_bg = (40, 180, 80) if active else (40, 42, 62)
+        pygame.draw.rect(surf, pill_bg, (pill_x, pill_y, pill_w, pill_h), border_radius=10)
+        dot_x = pill_x + pill_w - 12 if active else pill_x + 12
+        pygame.draw.circle(surf, (255, 255, 255), (dot_x, pill_y + pill_h // 2), 8)
 
     def _draw(self):
-        surf = self.screen; cx = self._cx
-        # background
-        _draw_menu_bg(surf, overlay_alpha=100)
-        # header
-        pygame.draw.rect(surf, C_PANEL, (0, 0, SCREEN_W, 70))
-        pygame.draw.line(surf, C_BORDER, (0, 70), (SCREEN_W, 70), 2)
-        hs = pygame.font.SysFont("segoeui", 36, bold=True).render("SETTINGS", True, (180, 200, 255))
-        surf.blit(hs, hs.get_rect(center=(cx, 35)))
-
-        # column headers
-        hf = pygame.font.SysFont("segoeui", 22, bold=True)
-        lh = hf.render("♪ Music", True, (120, 160, 255))
-        rh = hf.render("⚙ Graphics / Audio", True, (120, 200, 160))
-        surf.blit(lh, lh.get_rect(midleft=(self._left_x, 108)))
-        surf.blit(rh, rh.get_rect(midleft=(self._right_x, 108)))
-        pygame.draw.line(surf, (50,55,80), (self._left_x,  128), (self._left_x  + self._col_w, 128), 1)
-        pygame.draw.line(surf, (50,65,70), (self._right_x, 128), (self._right_x + self._col_w, 128), 1)
-
-        # sliders
-        self._draw_slider(surf, self._music_bar(), SETTINGS["music_volume"],
-                          SETTINGS["music_muted"], "Music Volume", (60, 160, 255))
-        self._draw_slider(surf, self._sfx_bar(),   SETTINGS["sfx_volume"],
-                          SETTINGS["sfx_muted"],   "SFX Volume",    (80, 200, 140))
-
-        # toggles
-        for rect, key, lbl in self._toggle_rects_left():
-            self._draw_toggle(surf, rect, lbl, SETTINGS[key])
-        for rect, key, lbl in self._toggle_rects_right():
-            self._draw_toggle(surf, rect, lbl, SETTINGS[key])
-
-        # back button & interface button
+        surf = self.screen
         mx, my = pygame.mouse.get_pos()
-        hov = self.btn_back.collidepoint(mx, my)
-        pygame.draw.rect(surf, (80,50,50) if hov else (50,35,35), self.btn_back, border_radius=10)
-        pygame.draw.rect(surf, C_BORDER, self.btn_back, 2, border_radius=10)
-        bs = pygame.font.SysFont("segoeui", 24, bold=True).render("← BACK", True, C_WHITE)
-        surf.blit(bs, bs.get_rect(center=self.btn_back.center))
-        
-        iov = getattr(self, "btn_interface", pygame.Rect(0,0,0,0)).collidepoint(mx, my)
-        pygame.draw.rect(surf, (50,80,130) if iov else (35,45,70), getattr(self, "btn_interface", pygame.Rect(0,0,0,0)), border_radius=10)
-        pygame.draw.rect(surf, C_BORDER, getattr(self, "btn_interface", pygame.Rect(0,0,0,0)), 2, border_radius=10)
-        ib = pygame.font.SysFont("segoeui", 24, bold=True).render("INTERFACE", True, C_WHITE)
-        surf.blit(ib, ib.get_rect(center=getattr(self, "btn_interface", pygame.Rect(0,0,0,0)).center))
+        _draw_menu_bg(surf, overlay_alpha=120)
 
-        # ── Display mode section ──────────────────────────────────────────────
-        df = pygame.font.SysFont("segoeui", 20, bold=True)
-        dh = df.render("🖥  Display Mode", True, (180, 200, 255))
-        surf.blit(dh, dh.get_rect(midleft=(self._left_x, self._disp_y - 22)))
-        pygame.draw.line(surf, (50,55,80), (self._left_x, self._disp_y - 6),
-                         (self._left_x + self._col_w, self._disp_y - 6), 1)
-        is_windowed = SETTINGS.get("windowed", False)
-        bf = pygame.font.SysFont("segoeui", 17, bold=True)
-        for btn, label, active in [
-            (self.btn_windowed,   "Windowed",   is_windowed),
-            (self.btn_fullscreen, "Fullscreen",  not is_windowed),
-        ]:
-            bg  = (45, 100, 180) if active else (35, 40, 60)
-            brd = (100, 180, 255) if active else (70, 80, 110)
-            pygame.draw.rect(surf, bg,  btn, border_radius=8)
-            pygame.draw.rect(surf, brd, btn, 2, border_radius=8)
-            col = (220, 240, 255) if active else (130, 140, 170)
-            ls  = bf.render(label, True, col)
-            surf.blit(ls, ls.get_rect(center=btn.center))
-        # Resolution buttons
-        cur_res = SETTINGS.get("resolution", "1920x1080")
-        rh_lbl  = df.render("Resolution", True, (180, 200, 255))
-        surf.blit(rh_lbl, rh_lbl.get_rect(midleft=(self._left_x, self._disp_y + 36)))
-        rf = pygame.font.SysFont("segoeui", 15, bold=True)
-        for i, (rb, res) in enumerate(zip(self._res_btns, _RESOLUTIONS)):
-            active = (res == cur_res)
-            bg  = (45, 100, 60) if active else (35, 40, 55)
-            brd = (80, 210, 100) if active else (65, 75, 100)
-            pygame.draw.rect(surf, bg,  rb, border_radius=7)
-            pygame.draw.rect(surf, brd, rb, 2, border_radius=7)
-            col = (200, 255, 210) if active else (120, 135, 160)
-            rs  = rf.render(res, True, col)
-            surf.blit(rs, rs.get_rect(center=rb.center))
+        # ── Header ────────────────────────────────────────────────────────────
+        hdr_surf = pygame.Surface((SCREEN_W, 78), pygame.SRCALPHA)
+        hdr_surf.fill((8, 10, 20, 220))
+        surf.blit(hdr_surf, (0, 0))
+        pygame.draw.line(surf, (45, 50, 75), (0, 78), (SCREEN_W, 78), 1)
+        hf  = pygame.font.SysFont("segoeui", 38, bold=True)
+        hs  = hf.render("SETTINGS", True, (200, 215, 255))
+        surf.blit(hs, hs.get_rect(center=(self._cx, 39)))
+
+        # ── Tab bar ───────────────────────────────────────────────────────────
+        # Tab accent colors per index
+        _TAB_ACCENTS = [(70, 140, 255), (80, 200, 160), (180, 160, 255)]
+        for i, (tr, lbl) in enumerate(zip(self._tab_rects, self._TABS)):
+            active = (i == self._tab)
+            hov    = tr.collidepoint(mx, my)
+            accent = _TAB_ACCENTS[i]
+            if active:
+                tab_bg = pygame.Surface((tr.w, tr.h), pygame.SRCALPHA)
+                pygame.draw.rect(tab_bg, (*accent, 40), (0, 0, tr.w, tr.h), border_radius=12)
+                surf.blit(tab_bg, tr.topleft)
+                pygame.draw.rect(surf, accent, tr, 2, border_radius=12)
+                # accent line below
+                pygame.draw.rect(surf, accent,
+                                 (tr.x + 20, tr.bottom - 3, tr.w - 40, 3), border_radius=2)
+            else:
+                tab_bg = pygame.Surface((tr.w, tr.h), pygame.SRCALPHA)
+                pygame.draw.rect(tab_bg, (20, 22, 38, 180) if not hov else (28, 32, 55, 200),
+                                 (0, 0, tr.w, tr.h), border_radius=12)
+                surf.blit(tab_bg, tr.topleft)
+                pygame.draw.rect(surf, (50, 55, 80) if not hov else (70, 80, 120),
+                                 tr, 1, border_radius=12)
+            tf  = pygame.font.SysFont("segoeui", 18, bold=True)
+            tc  = accent if active else ((170, 185, 215) if hov else (110, 120, 155))
+            ts  = tf.render(lbl, True, tc)
+            surf.blit(ts, ts.get_rect(center=tr.center))
+
+        # ── Content card ──────────────────────────────────────────────────────
+        card = self._card
+        card_surf = pygame.Surface((card.w, card.h), pygame.SRCALPHA)
+        pygame.draw.rect(card_surf, (12, 14, 28, 235), (0, 0, card.w, card.h), border_radius=18)
+        surf.blit(card_surf, card.topleft)
+        pygame.draw.rect(surf, (40, 48, 80), card, 1, border_radius=18)
+
+        rel_y = card.y  # for offset calculations below
+
+        # ══ AUDIO tab ═════════════════════════════════════════════════════════
+        if self._tab == 0:
+            sec_f = pygame.font.SysFont("segoeui", 16, bold=True)
+
+            # Music section
+            sec_s = sec_f.render("MUSIC", True, (80, 130, 220))
+            surf.blit(sec_s, (card.x + 60, card.y + 28))
+            pygame.draw.line(surf, (40, 55, 100),
+                             (card.x + 60, card.y + 46),
+                             (card.x + card.w - 60, card.y + 46), 1)
+            self._draw_slider(surf, self._bar_music,
+                              SETTINGS["music_volume"], SETTINGS["music_muted"],
+                              "Music Volume", (70, 140, 255))
+
+            # SFX section
+            sec_s2 = sec_f.render("SOUND EFFECTS", True, (70, 200, 140))
+            surf.blit(sec_s2, (card.x + 60, card.y + 120))
+            pygame.draw.line(surf, (35, 90, 70),
+                             (card.x + 60, card.y + 138),
+                             (card.x + card.w - 60, card.y + 138), 1)
+            self._draw_slider(surf, self._bar_sfx,
+                              SETTINGS["sfx_volume"], SETTINGS["sfx_muted"],
+                              "SFX Volume", (70, 200, 140))
+
+            # Audio toggles + misc toggles — starts after SFX slider (bar_sfx.y + ~60px)
+            other_label_y = self._bar_sfx.bottom + 32
+            sec_s3 = sec_f.render("OTHER", True, (160, 130, 220))
+            surf.blit(sec_s3, (card.x + 60, other_label_y))
+            pygame.draw.line(surf, (70, 55, 100),
+                             (card.x + 60, other_label_y + 18),
+                             (card.x + card.w - 60, other_label_y + 18), 1)
+            for rect, key, lbl in self._get_tab_toggles(0):
+                self._draw_toggle(surf, rect, lbl, SETTINGS[key])
+
+        # ══ GRAPHICS tab ══════════════════════════════════════════════════════
+        elif self._tab == 1:
+            sec_f = pygame.font.SysFont("segoeui", 16, bold=True)
+            sec_s = sec_f.render("VISUAL OPTIONS", True, (80, 200, 160))
+            surf.blit(sec_s, (card.x + 60, card.y + 28))
+            pygame.draw.line(surf, (35, 90, 70),
+                             (card.x + 60, card.y + 46),
+                             (card.x + card.w - 60, card.y + 46), 1)
+            for rect, key, lbl in self._get_tab_toggles(1):
+                self._draw_toggle(surf, rect, lbl, SETTINGS[key])
+
+        # ══ DISPLAY tab ═══════════════════════════════════════════════════════
+        elif self._tab == 2:
+            sec_f      = pygame.font.SysFont("segoeui", 16, bold=True)
+            mode_f     = pygame.font.SysFont("segoeui", 19, bold=True)
+            is_windowed = SETTINGS.get("windowed", False)
+
+            sec_s = sec_f.render("WINDOW MODE", True, (180, 160, 255))
+            surf.blit(sec_s, (card.x + 60, card.y + 28))
+            pygame.draw.line(surf, (70, 55, 110),
+                             (card.x + 60, card.y + 46),
+                             (card.x + card.w - 60, card.y + 46), 1)
+
+            for btn, label, active in [
+                (self.btn_windowed,   "⊡  Windowed",   is_windowed),
+                (self.btn_fullscreen, "⛶  Fullscreen",  not is_windowed),
+            ]:
+                hov = btn.collidepoint(mx, my)
+                if active:
+                    bg  = pygame.Surface((btn.w, btn.h), pygame.SRCALPHA)
+                    pygame.draw.rect(bg, (50, 60, 160, 220), (0, 0, btn.w, btn.h), border_radius=12)
+                    surf.blit(bg, btn.topleft)
+                    pygame.draw.rect(surf, (100, 140, 255), btn, 2, border_radius=12)
+                else:
+                    bg  = pygame.Surface((btn.w, btn.h), pygame.SRCALPHA)
+                    pygame.draw.rect(bg, (22, 24, 42, 200) if not hov else (30, 34, 60, 200),
+                                     (0, 0, btn.w, btn.h), border_radius=12)
+                    surf.blit(bg, btn.topleft)
+                    pygame.draw.rect(surf, (55, 60, 90) if not hov else (80, 90, 130),
+                                     btn, 1, border_radius=12)
+                col = (220, 235, 255) if active else (120, 130, 165)
+                ms  = mode_f.render(label, True, col)
+                surf.blit(ms, ms.get_rect(center=btn.center))
+
+            # Resolution
+            sec_s2 = sec_f.render("RESOLUTION", True, (180, 160, 255))
+            surf.blit(sec_s2, (card.x + 60, card.y + 192))
+            pygame.draw.line(surf, (70, 55, 110),
+                             (card.x + 60, card.y + 210),
+                             (card.x + card.w - 60, card.y + 210), 1)
+
+            cur_res = SETTINGS.get("resolution", "1920x1080")
+            res_f   = pygame.font.SysFont("consolas", 16, bold=True)
+            for rb, res in zip(self._res_btns, _RESOLUTIONS):
+                active = (res == cur_res)
+                hov    = rb.collidepoint(mx, my)
+                if active:
+                    rb_bg = pygame.Surface((rb.w, rb.h), pygame.SRCALPHA)
+                    pygame.draw.rect(rb_bg, (30, 90, 55, 220), (0, 0, rb.w, rb.h), border_radius=10)
+                    surf.blit(rb_bg, rb.topleft)
+                    pygame.draw.rect(surf, (70, 210, 110), rb, 2, border_radius=10)
+                else:
+                    rb_bg = pygame.Surface((rb.w, rb.h), pygame.SRCALPHA)
+                    pygame.draw.rect(rb_bg, (20, 22, 40, 200) if not hov else (28, 32, 55, 200),
+                                     (0, 0, rb.w, rb.h), border_radius=10)
+                    surf.blit(rb_bg, rb.topleft)
+                    pygame.draw.rect(surf, (50, 55, 80) if not hov else (75, 85, 120),
+                                     rb, 1, border_radius=10)
+                col = (180, 255, 200) if active else (110, 120, 150)
+                rs  = res_f.render(res, True, col)
+                surf.blit(rs, rs.get_rect(center=rb.center))
+
+            # hint
+            hint_f = pygame.font.SysFont("segoeui", 14)
+            hint_s = hint_f.render("Changes apply immediately. Game restart may be needed for resolution.", True, (70, 78, 110))
+            surf.blit(hint_s, hint_s.get_rect(center=(card.centerx, card.y + 470)))
+
+        # ── Back button ───────────────────────────────────────────────────────
+        hov  = self.btn_back.collidepoint(mx, my)
+        bb   = pygame.Surface((self.btn_back.w, self.btn_back.h), pygame.SRCALPHA)
+        pygame.draw.rect(bb, (70, 30, 30, 220) if hov else (40, 22, 22, 200),
+                         (0, 0, self.btn_back.w, self.btn_back.h), border_radius=10)
+        surf.blit(bb, self.btn_back.topleft)
+        pygame.draw.rect(surf, (180, 70, 70) if hov else (100, 45, 45),
+                         self.btn_back, 1, border_radius=10)
+        bk_f = pygame.font.SysFont("segoeui", 22, bold=True)
+        bk_s = bk_f.render("← BACK", True, (240, 200, 200) if hov else (180, 150, 150))
+        surf.blit(bk_s, bk_s.get_rect(center=self.btn_back.center))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
