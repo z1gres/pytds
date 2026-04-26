@@ -7989,13 +7989,13 @@ C_KORZHIK_DARK = (120,  40,  80)
 # Korzhik stats (damage and firerate from screenshot, second value after arrow)
 KORZHIK_LEVELS = [
     # dmg  firerate  range  cost    hidden_det
-    (6,    1.8,      5.0,   None,   False),   # lv0
-    (9,    1.6,      5.0,   1111,   False),   # lv1
-    (13,   1.4,      7.0,   2222,   True),    # lv2
-    (18,   1.2,      7.5,   3333,   True),    # lv3
-    (28,   1.0,      9.0,   4444,   True),    # lv4
-    (45,   0.7,      9.0,   5555,   True),    # lv5 — More spinning balls (4 orbs, dmg 30)
-    (45,   0.7,      9.0,   6666,   True),    # lv6 — Shooting balls (range-limited, dmg 50, limit 4)
+    (6,    1.4,      5.0,   None,   False),   # lv0
+    (9,    1.2,      5.0,   1111,   False),   # lv1
+    (13,   1.0,      7.0,   2222,   True),    # lv2
+    (18,   0.9,      7.5,   3333,   True),    # lv3
+    (28,   0.7,      9.0,   4444,   True),    # lv4
+    (45,   0.5,      9.0,   5555,   True),    # lv5 — More spinning balls (4 orbs, dmg 30)
+    (45,   0.5,      9.0,   6666,   True),    # lv6 — Shooting balls (range-limited, dmg 50, limit 4)
 ]
 
 
@@ -8217,9 +8217,9 @@ class KittyCurseAbility:
 # ── Orbital ball that orbits Korzhik ─────────────────────────────────────────
 class _OrbitalBall:
     """One of the orbital balls around Korzhik — melee touch damage + optional shooting at lv6."""
-    ORBIT_R      = 55    # pixels from tower centre
+    ORBIT_R      = 75    # pixels from tower centre
     SPEED_RAD    = 2.2   # radians per second
-    BALL_R       = 7     # collision + visual radius
+    BALL_R       = 14    # collision + visual radius
     SHOT_SPEED   = 480.0 # shooting bullet speed
     SHOT_FIRERATE = 1.0  # seconds between shots
 
@@ -8303,23 +8303,23 @@ class _OrbitalBall:
         cx, cy = int(self.x), int(self.y)
         # Outer glow — gold tint at lv6
         glow_col = (255, 220, 80, 100) if self.shooting else (255, 100, 200, 90)
-        g = pygame.Surface((22, 22), pygame.SRCALPHA)
-        pygame.draw.circle(g, glow_col, (11, 11), 10)
-        surf.blit(g, (cx - 11, cy - 11))
+        g = pygame.Surface((42, 42), pygame.SRCALPHA)
+        pygame.draw.circle(g, glow_col, (21, 21), 20)
+        surf.blit(g, (cx - 21, cy - 21))
         # Core layers
         core_col = (255, 180, 30) if self.shooting else (255, 60, 160)
         mid_col  = (255, 240, 160) if self.shooting else (255, 200, 230)
-        pygame.draw.circle(surf, core_col, (cx, cy), 6)
-        pygame.draw.circle(surf, mid_col,  (cx, cy), 3)
-        pygame.draw.circle(surf, (255, 255, 255), (cx, cy), 1)
+        pygame.draw.circle(surf, core_col, (cx, cy), 12)
+        pygame.draw.circle(surf, mid_col,  (cx, cy), 6)
+        pygame.draw.circle(surf, (255, 255, 255), (cx, cy), 2)
         # Small flame spike on shooting balls
         if self.shooting:
             sa = self.angle + math.pi   # spike away from centre
-            sx = int(cx + math.cos(sa) * 9)
-            sy = int(cy + math.sin(sa) * 9)
-            ss = pygame.Surface((8, 8), pygame.SRCALPHA)
-            pygame.draw.circle(ss, (255, 160, 20, 200), (4, 4), 3)
-            surf.blit(ss, (sx - 4, sy - 4))
+            sx = int(cx + math.cos(sa) * 16)
+            sy = int(cy + math.sin(sa) * 16)
+            ss = pygame.Surface((16, 16), pygame.SRCALPHA)
+            pygame.draw.circle(ss, (255, 160, 20, 200), (8, 8), 6)
+            surf.blit(ss, (sx - 8, sy - 8))
 
 
 class Korzhik(Unit):
