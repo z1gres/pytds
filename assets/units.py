@@ -1866,6 +1866,7 @@ class Militant(Unit):
         _rng_px = self.range_tiles * TILE
         self._bullets = [b for b in self._bullets if b.alive and math.hypot(b.x - self.px, b.y - self.py) <= _rng_px]
 
+    def draw(self, surf):
         cx, cy = int(self.px), int(self.py)
         t = self._anim_t
 
@@ -1890,6 +1891,12 @@ class Militant(Unit):
         pygame.draw.line(surf, (180, 150, 80), (bx, by), (ex, ey), 3)
 
         # Hidden detection eye dot
+        if self.hidden_detection:
+            pygame.draw.circle(surf, (255, 255, 100), (cx + 16, cy - 16), 5)
+            pygame.draw.circle(surf, (60, 20, 0),     (cx + 16, cy - 16), 2)
+
+        # Bullets
+        for b in self._bullets: b.draw(surf)
 
         # Level pips
         for i in range(self.level):
@@ -7981,6 +7988,226 @@ class Twitgunner(Unit):
         info["Firerate"] = f"{self.firerate:.3f}"
         info["Range"]    = self.range_tiles
         return info
+
+
+# -- Conduit -------------------------------------------------------------------
+C_CONDUIT      = (80, 200, 255)
+C_CONDUIT_DARK = (10, 50, 100)
+
+# Tuple: (base_dmg, base_firerate, range_tiles, upgrade_cost, charge_cd, jumps)
+CONDUIT_LEVELS = [
+    #  dmg  fr     rng  cost   charge_cd  jumps
+    (  15,  1.2,   5.0, None,  8.0,       3  ),  # lv0  $1800
+    (  18,  1.1,   5.5,  750,  7.5,       3  ),  # lv1
+    (  22,  1.0,   6.0, 1500,  7.0,       4  ),  # lv2
+    (  28,  0.9,   6.5, 3000,  6.5,       4  ),  # lv3
+    (  35,  0.8,   7.0, 6000,  6.0,       5  ),  # lv4
+    (  45,  0.7,   7.5,10000,  5.0,       5  ),  # lv5
+    (  60,  0.55,  8.0,18000,  4.0,       6  ),  # lv6
+]
+
+_CONDUIT_CHAIN_R    = 160
+_CONDUIT_MEGA_MULT  = 1.5
+_CONDUIT_CHARGE_DMG = 25
+
+
+class ConduitLightningEffect:
+    LIFETIME = 0.22
+    def __init__(self, points, color=(160, 230, 255), thick=2):
+        self._pts = points[:]; self._t = 0.0
+        self._color = color; self._thick = thick; self.alive = True
+    def update(self, dt):
+        self._t += dt
+        if self._t >= self.LIFETIME: self.alive = False
+        return self.alive
+    def draw(self, surf):
+        if not self.alive or len(self._pts) < 2: return
+        frac = 1.0 - self._t / self.LIFETIME
+        alpha = int(frac * 220); jitter = max(1, int(frac * 7))
+        s = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+        for i in range(len(self._pts) - 1):
+            ax, ay = self._pts[i]; bx, by = self._pts[i + 1]
+            segs = 4; prev = (ax, ay)
+            for j in range(1, segs + 1):
+                t2 = j / segs
+                mx2 = ax + (bx - ax) * t2; my2 = ay + (by - ay) * t2
+                if j < segs:
+                    mx2 += random.randint(-jitter, jitter)
+                    my2 += random.randint(-jitter, jitter)
+                pygame.draw.line(s, (*self._color, alpha), prev, (int(mx2), int(my2)), self._thick)
+                prev = (int(mx2), int(my2))
+        surf.blit(s, (0, 0))
+
+
+class ConduitChargeEffect:
+    LIFETIME = 0.45
+    def __init__(self, cx, cy, radius):
+        self._cx = cx; self._cy = cy; self._max_r = radius; self._t = 0.0; self.alive = True
+    def update(self, dt):
+        self._t += dt; self.alive = self._t < self.LIFETIME; return self.alive
+    def draw(self, surf):
+        if not self.alive: return
+        frac = self._t / self.LIFETIME; r = int(self._max_r * frac)
+        alpha = int((1.0 - frac) * 160)
+        if r < 1: return
+        s = pygame.Surface((r * 2 + 4, r * 2 + 4), pygame.SRCALPHA)
+        pygame.draw.circle(s, (80, 200, 255, alpha), (r + 2, r + 2), r, 2)
+        surf.blit(s, (self._cx - r - 2, self._cy - r - 2))
+
+
+class Conduit(Unit):
+    PLACE_COST = 1800
+    COLOR      = C_CONDUIT
+    NAME       = "Conduit"
+    hidden_detection = False
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._anim_t = 0.0; self._arc_angle = 0.0
+        self._charge_cd = 0.0; self._charge_val = 0; self._mega_flash = 0.0
+        self._neighbor_cd = {}; self._all_units = None
+        self._apply_level()
+
+    def _apply_level(self):
+        row = CONDUIT_LEVELS[self.level]
+        self.damage, self.firerate, self.range_tiles, _, self._charge_max_cd, self._base_jumps = row
+        self._charge_cd = min(self._charge_cd, self._charge_max_cd)
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(CONDUIT_LEVELS): return None
+        return CONDUIT_LEVELS[nxt][3]
+
+    def upgrade(self):
+        if self.level + 1 < len(CONDUIT_LEVELS):
+            self.level += 1; self._apply_level()
+
+    def _fire_chain(self, enemies, effects, start_enemy, damage, max_jumps, chain_r, color=(160, 230, 255), thick=2):
+        hit = {id(start_enemy)}; current = start_enemy
+        points = [(int(self.px), int(self.py)), (int(current.x), int(current.y))]
+        current.take_damage(damage); total = damage
+        for _ in range(max_jumps - 1):
+            best = None; best_d = float('inf')
+            for e in enemies:
+                if not e.alive: continue
+                if id(e) in hit: continue
+                if e.IS_HIDDEN and not self.hidden_detection: continue
+                d = math.hypot(e.x - current.x, e.y - current.y)
+                if d <= chain_r and d < best_d: best_d = d; best = e
+            if best is None: break
+            hit.add(id(best)); points.append((int(best.x), int(best.y)))
+            best.take_damage(damage); total += damage; current = best
+        effects.append(ConduitLightningEffect(points, color, thick))
+        return total
+
+    def _collect_charge(self, all_units, effects):
+        collect_r = self.range_tiles * TILE * 1.6; gentle = (self.level >= 4); collected = 0
+        for u in all_units:
+            if u is self: continue
+            if not hasattr(u, 'px'): continue
+            d = math.hypot(u.px - self.px, u.py - self.py)
+            if d > collect_r: continue
+            uid = id(u)
+            if self._neighbor_cd.get(uid, 0) > 0: continue
+            collected += 1; self._neighbor_cd[uid] = 3.0
+            if not gentle: u.cd_left = u.cd_left + 0.2
+            effects.append(ConduitChargeEffect(int(u.px), int(u.py), 30))
+        return collected
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t += dt; self._arc_angle += dt * 1.8
+        for uid in list(self._neighbor_cd):
+            self._neighbor_cd[uid] -= dt
+            if self._neighbor_cd[uid] <= 0: del self._neighbor_cd[uid]
+        if self._mega_flash > 0: self._mega_flash = max(0.0, self._mega_flash - dt * 3)
+        if self.cd_left > 0: self.cd_left -= dt
+        targets = self._get_targets(enemies, 1)
+        if self.cd_left <= 0 and targets:
+            self.cd_left = self.firerate
+            done = self._fire_chain(enemies, effects, targets[0],
+                                    self.damage, self._base_jumps, _CONDUIT_CHAIN_R,
+                                    color=(120, 210, 255), thick=2)
+            self.total_damage += done
+        self._charge_cd -= dt
+        if self._charge_cd <= 0:
+            self._charge_cd = self._charge_max_cd
+            all_units = self._all_units
+            if all_units is not None:
+                gained = self._collect_charge(all_units, effects)
+                self._charge_val += gained
+            else:
+                self._charge_val += 1
+            effects.append(ConduitChargeEffect(int(self.px), int(self.py), 60))
+            if self._charge_val >= 3 and targets:
+                mega_dmg = self._charge_val * _CONDUIT_CHARGE_DMG
+                mega_jumps = min(3 + self._charge_val // 2, 7)
+                mega_r = _CONDUIT_CHAIN_R * _CONDUIT_MEGA_MULT
+                done2 = self._fire_chain(enemies, effects, targets[0],
+                                         mega_dmg, mega_jumps, mega_r,
+                                         color=(255, 240, 80), thick=4)
+                self.total_damage += done2; self._mega_flash = 1.0; self._charge_val = 0
+
+    def draw(self, surf):
+        cx, cy = int(self.px), int(self.py); t = self._anim_t; angle = self._arc_angle
+        if self._mega_flash > 0:
+            r_flash = int(60 + self._mega_flash * 40)
+            fs = pygame.Surface((r_flash * 2, r_flash * 2), pygame.SRCALPHA)
+            pygame.draw.circle(fs, (255, 240, 80, int(self._mega_flash * 120)), (r_flash, r_flash), r_flash)
+            surf.blit(fs, (cx - r_flash, cy - r_flash))
+        pygame.draw.circle(surf, (5, 20, 40),    (cx + 3, cy + 3), 27)
+        pygame.draw.circle(surf, C_CONDUIT_DARK, (cx, cy), 27)
+        pygame.draw.circle(surf, (20, 80, 140),  (cx, cy), 22)
+        pygame.draw.circle(surf, C_CONDUIT,      (cx, cy), 17)
+        pulse = int(abs(math.sin(t * 3.5)) * 35) + 15
+        aura = pygame.Surface((70, 70), pygame.SRCALPHA)
+        pygame.draw.circle(aura, (80, 200, 255, pulse), (35, 35), 33, 2)
+        surf.blit(aura, (cx - 35, cy - 35))
+        arc_r = 20
+        for i in range(3):
+            a_base = angle + i * (math.pi * 2 / 3)
+            for da in range(0, 50, 10):
+                a = a_base + math.radians(da)
+                ix = cx + int(math.cos(a) * arc_r); iy = cy + int(math.sin(a) * arc_r)
+                alpha_arc = 180 - da * 3
+                if alpha_arc <= 0: continue
+                dot = pygame.Surface((6, 6), pygame.SRCALPHA)
+                pygame.draw.circle(dot, (160, 230, 255, alpha_arc), (3, 3), 2)
+                surf.blit(dot, (ix - 3, iy - 3))
+        charge_shown = min(self._charge_val, 8)
+        for i in range(charge_shown):
+            a2 = t * 2.0 + i * (math.pi * 2 / max(charge_shown, 1))
+            sx2 = cx + int(math.cos(a2) * 30); sy2 = cy + int(math.sin(a2) * 30)
+            sp = pygame.Surface((8, 8), pygame.SRCALPHA)
+            col_spark = (255, 240, 80) if charge_shown >= 3 else (120, 200, 255)
+            pygame.draw.circle(sp, col_spark, (4, 4), 3)
+            surf.blit(sp, (sx2 - 4, sy2 - 4))
+        pygame.draw.circle(surf, (10, 40, 80),    (cx, cy), 8)
+        pygame.draw.circle(surf, (80, 200, 255),  (cx, cy), 5)
+        pygame.draw.circle(surf, (220, 240, 255), (cx, cy), 2)
+        if self.hidden_detection:
+            pygame.draw.circle(surf, (255, 255, 100), (cx + 16, cy - 16), 5)
+            pygame.draw.circle(surf, (60, 20, 0),     (cx + 16, cy - 16), 2)
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_GOLD, (cx - 10 + i * 7, cy + 33), 3)
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (80, 200, 255, 16), (r, r), r)
+        pygame.draw.circle(s, (80, 200, 255, 55), (r, r), r, 2)
+        old_clip = surf.get_clip()
+        surf.set_clip(pygame.Rect(0, 0, SCREEN_W, SLOT_AREA_Y))
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+        surf.set_clip(old_clip)
+
+    def get_info(self):
+        info = {"Damage": self.damage, "Firerate": f"{self.firerate:.3f}",
+                "Range": self.range_tiles, "Jumps": self._base_jumps,
+                "Charge": f"{self._charge_val}/3+",
+                "ChargeCD": f"{self._charge_max_cd:.1f}s"}
+        if self.hidden_detection: info["HidDet"] = "YES"
+        return info
+
 
 # ── Korzhik ────────────────────────────────────────────────────────────────────
 C_KORZHIK      = (255, 160, 200)   # pastel pink — cat-eared cutie

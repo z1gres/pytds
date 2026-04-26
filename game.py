@@ -40,6 +40,7 @@ UNIT_LIMITS["ToxicGunner"] = 5
 UNIT_LIMITS["Gladiator"]   = 6
 UNIT_LIMITS["Twitgunner"]  = 6
 UNIT_LIMITS["Korzhik"]     = 4
+UNIT_LIMITS["Conduit"]    = 3
 
 # ── Patch early_access rarity into RARITY_DATA (from game_core) ───────────────
 RARITY_DATA.setdefault("early_access", {
@@ -260,6 +261,7 @@ from units import (
     ThornsAbility,
     Twitgunner, TWITGUN_LEVELS, C_TWITGUN, C_TWITGUN_DARK,
     Korzhik, KORZHIK_LEVELS, C_KORZHIK, C_KORZHIK_DARK,
+    Conduit, CONDUIT_LEVELS, C_CONDUIT, C_CONDUIT_DARK,
 )
 
 # ── Archer level 3 upgrade cost → 750 ────────────────────────────────────────
@@ -623,6 +625,7 @@ class AdminPanel:
                 ("Harvester",Harvester,C_HARVESTER),
                 ("Twitgunner",Twitgunner,C_TWITGUN),
                 ("Korzhik",Korzhik,C_KORZHIK),
+                ("Conduit",Conduit,C_CONDUIT),
             ]
             cols=8; cw=(pw-28)//cols; ch=100; gap=6
             start_x=px+10; start_y=content_top+6
@@ -1407,6 +1410,7 @@ class UI:
         elif cls==RubberDuck: levels=DUCK_LEVELS; cost_idx=3
         elif cls==Swarmer: levels=SWARMER_LEVELS; cost_idx=3
         elif cls==Harvester: levels=HARVESTER_LEVELS; cost_idx=3
+        elif cls==Conduit: levels=CONDUIT_LEVELS; cost_idx=3
         else: levels=[]; cost_idx=3
         for i in range(1,unit.level+1):
             if i<len(levels) and levels[i][cost_idx]: total+=levels[i][cost_idx]
@@ -1606,6 +1610,11 @@ class UI:
             result={"Damage":d,"Firerate":fr,"Range":r}
             if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
             return result
+        elif cls==Conduit:
+            if nxt>=len(CONDUIT_LEVELS): return None
+            d,fr,r,_,ccd,jmp=CONDUIT_LEVELS[nxt]
+            return {"Damage":d,"Firerate":f"{fr:.3f}","Range":r,
+                    "Jumps":jmp,"ChargeCD":f"{ccd:.1f}s"}
         elif cls==HackerLaserTest:
             if nxt>=len(CASTER_LEVELS): return None
             d,fr,r,_,hd=CASTER_LEVELS[nxt]
@@ -2430,6 +2439,14 @@ class UI:
                     ("Range",    u.range_tiles,           nxt.get("Range")   if nxt else None),
                 ]
                 if hd_next: stats.append(("HidDet_unlock", None, "Hidden Detection"))
+            elif cls==Conduit:
+                stats = [
+                    ("Damage",   u.damage,              nxt.get("Damage")   if nxt else None),
+                    ("Firerate", f"{u.firerate:.3f}",    nxt.get("Firerate") if nxt else None),
+                    ("Range",    u.range_tiles,           nxt.get("Range")   if nxt else None),
+                    ("Jumps",    u._base_jumps,           nxt.get("Jumps")   if nxt else None),
+                    ("ChargeCD", f"{u._charge_max_cd:.1f}s", nxt.get("ChargeCD") if nxt else None),
+                ]
             elif cls==SoulWeaver:
                 nxt_sw = _SW_LEVELS[u.level+1] if u.level+1 < len(_SW_LEVELS) else None
                 p_sw = _SW_SURGE_PARAMS[u.level+1] if u.level+1 < len(_SW_SURGE_PARAMS) else None
@@ -6359,6 +6376,7 @@ ALL_UNITS_POOL = [
     {"name": "Militant",       "rarity": "starter"},
     {"name": "Twitgunner",     "rarity": "starter"},
     {"name": "Korzhik",        "rarity": "mythic"},
+    {"name": "Conduit",        "rarity": "early_access"},
     {"name": "Accelerator",    "rarity": "epic"},
     {"name": "Frostcelerator", "rarity": "epic"},
     {"name": "Lifestealer",    "rarity": "starter"},
@@ -6389,6 +6407,7 @@ UNIT_SHOP_PRICES = {
     "Assassin":       None,
     "Twitgunner":     None,
     "Korzhik":        None,   # Mythic — purchased with 1500 shards
+    "Conduit":        None,   # Early Access — free
     "Militant":       300,
     "Archer":         1000,
     "Swarmer":        600,
@@ -6447,6 +6466,7 @@ UNIT_BASE_STATS = {
     "Caster":         {"cost": 7500, "limit": 2,  "damage": 400,  "firerate": 0.5,  "range": 9,  "income": None},
     "Jester":         {"cost": 650,  "limit": 4,  "damage": 100,  "firerate": 1.5,  "range": 7,  "income": None},
     "Korzhik":        {"cost": 1200, "limit": 4,  "damage": 350,  "firerate": 0.8,  "range": 7,  "income": None},
+    "Conduit":        {"cost": 1800, "limit": 3,  "damage": 60,   "firerate": 1.2,  "range": 5,  "income": None},
     "Rubber Duck":    {"cost": 500,  "limit": 3,  "damage": 120,  "firerate": 1.0,  "range": 7,  "income": None},
     "Harvester":      {"cost": 2000, "limit": 5,  "damage": 80,   "firerate": 1.0,  "range": 6,  "income": 80},
     "hacker_laser_effects_test": {"cost": 7500, "limit": 1, "damage": 9999, "firerate": 9.9, "range": 20, "income": None},
@@ -6479,6 +6499,7 @@ UNIT_DESCRIPTIONS = {
     "Caster":         "A boss killer with good aoe ability",
     "Jester":         "I have a ton of tricks in my pockets! Cycle through and throw debuff bombs at enemies!",
     "Korzhik":        "Korzhik. Catgirl",
+    "Conduit":        "Draws charge from nearby towers and unleashes chain lightning. The more allies, the stronger the mega-discharge!",
     "Rubber Duck":    "Exclusive squeaky menace. Don't underestimate it.",
     "Harvester":      "A haunted scarecrow that fires piercing bolts and can summon thorns to slow enemies.",
     "hacker_laser_effects_test": "??? ERROR 404 UNIT NOT FOUND ???",
@@ -6568,6 +6589,8 @@ class LoadoutScreen:
         # Twitgunner — стартер, всегда доступен
         if "Twitgunner" not in owned:
             owned = list(owned) + ["Twitgunner"]
+        if "Conduit" not in owned:
+            owned = list(owned) + ["Conduit"]
         # Korzhik — Mythic, покупается за 1500 шардов
         return owned
 
@@ -7575,7 +7598,8 @@ class Game:
                         "Rubber Duck": RubberDuck,
                         "Harvester": Harvester,
                         "Twitgunner": Twitgunner,
-                        "Korzhik": Korzhik}
+                        "Korzhik": Korzhik,
+                        "Conduit": Conduit}
         _loadout = self.save_data.get("loadout", ["Assassin", "Accelerator", None, None, None])
         while len(_loadout) < 5: _loadout.append(None)
         self.ui.SLOT_TYPES = [_name_to_cls.get(n) if n else None for n in _loadout]
@@ -8823,6 +8847,9 @@ class Game:
                         continue
                     if self._hixw5yt_frozen:
                         continue
+                    # Conduit: pass unit list for charge collection
+                    if isinstance(u, Conduit):
+                        u._all_units = self.units
                     # Give xw5yt chiter ability access to unit list
                     if isinstance(u, Xw5ytUnit) and u.ability3:
                         u.ability3.owner._game_units_ref = self.units
