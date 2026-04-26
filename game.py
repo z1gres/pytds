@@ -3643,34 +3643,7 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
     ns = name_f.render(unit_name, True, C_WHITE)
     surf.blit(ns, ns.get_rect(center=(cx, cy + 56)))
 
-    cost_map = {"Assassin": 300, "Accelerator": 5000, "Frostcelerator": 3500, "Freezer": 400,
-                "Militant": 600, "Swarmer": 900,
-                "Lifestealer": 400, "Archer": 600, "Red Ball": 1000, "Farm": 250,
-                "Frost Blaster": 800, "Sledger": 950, "Gladiator": 525,
-                "Toxic Gunner": 525, "Slasher": 1700, "Cowboy": 550,
-                "Hallow Punk": 300, "Spotlight Tech": 3250,
-                "Snowballer": 400, "Commander": 650, "Commando": 900,
-                "hacker_laser_effects_test": 7500, "Caster": 7500,
-                "Warlock": 4200,
-                "Jester": 650,
-                "Harvester": 2000,
-                "Twitgunner": 350,
-                "Korzhik": 1200}
-    cost = cost_map.get(unit_name)
-    if cost:
-        ico_m = load_icon("money_ico", 18)
-        cost_str = f" {cost}"
-        cost_f = pygame.font.SysFont("consolas", 16, bold=True)
-        cs = cost_f.render(cost_str, True, C_GOLD)
-        if ico_m:
-            total_w = ico_m.get_width() + cs.get_width()
-            bx2 = cx - total_w // 2
-            by2 = cy + 80 - cs.get_height() // 2
-            surf.blit(ico_m, (bx2, by2 + (cs.get_height() - ico_m.get_height()) // 2))
-            surf.blit(cs, (bx2 + ico_m.get_width(), by2))
-        else:
-            cs2 = cost_f.render(f"${cost}", True, C_GOLD)
-            surf.blit(cs2, cs2.get_rect(center=(cx, cy + 80)))
+
 
 
 # ── Difficulty Menu ─────────────────────────────────────────────────────────────
@@ -6210,6 +6183,72 @@ UNIT_SHOP_PRICES = {
     "Harvester":   5000,
 }
 
+# ── Base stats for detail panel ───────────────────────────────────────────────
+# Format: cost, limit, damage, firerate, range, income (None if not applicable)
+UNIT_BASE_STATS = {
+    # cost = PLACE_COST from units.py (in-game placement price)
+    "Assassin":       {"cost": 300,  "limit": 5,  "damage": 50,   "firerate": 1.2,  "range": 7,  "income": None},
+    "Militant":       {"cost": 600,  "limit": 6,  "damage": 30,   "firerate": 1.5,  "range": 6,  "income": None},
+    "Twitgunner":     {"cost": 350,  "limit": 6,  "damage": 20,   "firerate": 3.0,  "range": 6,  "income": None},
+    "Lifestealer":    {"cost": 400,  "limit": 5,  "damage": 40,   "firerate": 1.0,  "range": 6,  "income": None},
+    "Archer":         {"cost": 600,  "limit": 8,  "damage": 45,   "firerate": 1.1,  "range": 9,  "income": None},
+    "Red Ball":       {"cost": 1250, "limit": 4,  "damage": 80,   "firerate": 0.8,  "range": 7,  "income": None},
+    "Farm":           {"cost": 250,  "limit": 5,  "damage": 0,    "firerate": 0.0,  "range": 0,  "income": 150},
+    "Cowboy":         {"cost": 550,  "limit": 4,  "damage": 60,   "firerate": 1.0,  "range": 8,  "income": 50},
+    "Swarmer":        {"cost": 900,  "limit": 14, "damage": 25,   "firerate": 2.0,  "range": 7,  "income": None},
+    "Freezer":        {"cost": 400,  "limit": 5,  "damage": 20,   "firerate": 1.0,  "range": 7,  "income": None},
+    "Frost Blaster":  {"cost": 800,  "limit": 4,  "damage": 55,   "firerate": 1.2,  "range": 8,  "income": None},
+    "Sledger":        {"cost": 950,  "limit": 3,  "damage": 200,  "firerate": 0.5,  "range": 6,  "income": None},
+    "Gladiator":      {"cost": 525,  "limit": 6,  "damage": 150,  "firerate": 0.9,  "range": 5,  "income": None},
+    "Toxic Gunner":   {"cost": 525,  "limit": 5,  "damage": 40,   "firerate": 1.5,  "range": 7,  "income": None},
+    "Slasher":        {"cost": 1700, "limit": 3,  "damage": 300,  "firerate": 0.7,  "range": 6,  "income": None},
+    "Hallow Punk":    {"cost": 300,  "limit": 4,  "damage": 65,   "firerate": 1.1,  "range": 7,  "income": None},
+    "Spotlight Tech": {"cost": 3250, "limit": 3,  "damage": 120,  "firerate": 1.0,  "range": 10, "income": None},
+    "Snowballer":     {"cost": 400,  "limit": 4,  "damage": 50,   "firerate": 1.3,  "range": 7,  "income": None},
+    "Commando":       {"cost": 900,  "limit": 5,  "damage": 55,   "firerate": 1.2,  "range": 8,  "income": None},
+    "Accelerator":    {"cost": 5000, "limit": 2,  "damage": 500,  "firerate": 0.3,  "range": 15, "income": None},
+    "Frostcelerator": {"cost": 3500, "limit": 2,  "damage": 550,  "firerate": 0.3,  "range": 14, "income": None},
+    "Warlock":        {"cost": 4200, "limit": 3,  "damage": 250,  "firerate": 0.6,  "range": 8,  "income": None},
+    "Caster":         {"cost": 7500, "limit": 2,  "damage": 400,  "firerate": 0.5,  "range": 9,  "income": None},
+    "Jester":         {"cost": 650,  "limit": 4,  "damage": 100,  "firerate": 1.5,  "range": 7,  "income": None},
+    "Korzhik":        {"cost": 1200, "limit": 4,  "damage": 350,  "firerate": 0.8,  "range": 7,  "income": None},
+    "Rubber Duck":    {"cost": 500,  "limit": 3,  "damage": 120,  "firerate": 1.0,  "range": 7,  "income": None},
+    "Harvester":      {"cost": 2000, "limit": 5,  "damage": 80,   "firerate": 1.0,  "range": 6,  "income": 80},
+    "hacker_laser_effects_test": {"cost": 7500, "limit": 1, "damage": 9999, "firerate": 9.9, "range": 20, "income": None},
+}
+
+# ── Tower descriptions — fill in your own later ───────────────────────────────
+UNIT_DESCRIPTIONS = {
+    "Assassin":       "A swift melee killer that deals high single-target damage.",
+    "Militant":       "A reliable starter unit with balanced stats.",
+    "Twitgunner":     "Fires rapidly at low damage. Great for swarms.",
+    "Lifestealer":    "Drains enemy health to sustain itself in battle.",
+    "Archer":         "Long-range unit with solid damage. Starter favorite.",
+    "Red Ball":       "Bounces between enemies dealing splash damage.",
+    "Farm":           "Generates income each wave. No combat ability.",
+    "Cowboy":         "A golden gunslinger that earns extra coins per kill.",
+    "Swarmer":        "Deploys swarms of fast-moving minions.",
+    "Freezer":        "Slows enemies caught in its icy radius.",
+    "Frost Blaster":  "Fires icy projectiles that chill and slow targets.",
+    "Sledger":        "Heavy melee unit. Slow but devastatingly powerful.",
+    "Gladiator":      "Arena warrior. Excels in close-quarters combat.",
+    "Toxic Gunner":   "Poisons enemies over time with toxic rounds.",
+    "Slasher":        "Deals massive AoE damage with wide slashing attacks.",
+    "Hallow Punk":    "Haunted rocker with spectral projectiles.",
+    "Spotlight Tech": "High-range precision unit with rapid recharge.",
+    "Snowballer":     "Rolls snowballs that grow larger and deal more damage.",
+    "Commando":       "Military specialist. Accurate and devastating.",
+    "Accelerator":    "Precision is key. A cliff tower that deals exceptional damage at near infinite range.",
+    "Frostcelerator": "A frozen variant of the Accelerator. Chills targets on impact.",
+    "Warlock":        "Dark magic user. Curses enemies reducing their resistance.",
+    "Caster":         "Arcane powerhouse. Unleashes devastating spell combos.",
+    "Jester":         "Unpredictable trickster that confuses and damages foes.",
+    "Korzhik":        "Mythic melee brawler with unmatched staying power.",
+    "Rubber Duck":    "Exclusive squeaky menace. Don't underestimate it.",
+    "Harvester":      "Collects resources while dealing moderate damage.",
+    "hacker_laser_effects_test": "??? ERROR 404 UNIT NOT FOUND ???",
+}
+
 class LoadoutScreen:
     """
     Layout (1920x1080):
@@ -6269,6 +6308,11 @@ class LoadoutScreen:
         self._card_hits = []
         self._buy_hits  = []
         self._shard_buy_hits = []
+        # Detail panel state
+        self.detail_unit   = None   # unit name shown in left detail panel
+        self._slot_select  = False  # True = waiting for slot click after EQUIP
+        self._btn_equip    = None
+        self._btn_unequip  = None
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def _owned_units(self):
@@ -6396,12 +6440,48 @@ class LoadoutScreen:
         for card_r, rarity, idx in self._card_hits:
             if card_r.collidepoint(pos):
                 key = (rarity, idx)
-                self.selected = None if self.selected == key else key
+                units_r = self._units_for_rarity(rarity)
+                if idx < len(units_r):
+                    uname = units_r[idx]["name"]
+                    if self.detail_unit == uname:
+                        self.detail_unit = None
+                        self._slot_select = False
+                    else:
+                        self.detail_unit = uname
+                        self._slot_select = False
+                    self.selected = None
                 return
+
+        # EQUIP button in detail panel
+        if self._btn_equip and self._btn_equip.collidepoint(pos):
+            self._slot_select = True
+            self._show_msg("Choose a slot")
+            return
+
+        # UNEQUIP button in detail panel
+        if self._btn_unequip and self._btn_unequip.collidepoint(pos):
+            uname = self.detail_unit
+            for k in range(5):
+                if self.loadout[k] == uname:
+                    self.loadout[k] = None
+            self._show_msg(f"{uname} unequipped")
+            return
 
         for si, sr in enumerate(self._slot_rects(left_w)):
             if sr.collidepoint(pos):
-                if self.selected is not None:
+                if self._slot_select and self.detail_unit:
+                    uname = self.detail_unit
+                    if uname not in owned:
+                        self._show_msg("Not unlocked!")
+                        self._slot_select = False; return
+                    # Remove from other slot if already placed
+                    for k in range(5):
+                        if self.loadout[k] == uname and k != si:
+                            self.loadout[k] = None; break
+                    self.loadout[si] = uname
+                    self._slot_select = False
+                    self._show_msg(f"{uname} equipped!")
+                elif self.selected is not None:
                     sel_r, sel_i = self.selected
                     units_r = self._units_for_rarity(sel_r)
                     if sel_i < len(units_r):
@@ -6471,15 +6551,14 @@ class LoadoutScreen:
         # ── Vertical divider ─────────────────────────────────────────────────
         pygame.draw.line(surf, C_BORDER, (panel_x, TOP), (panel_x, SCREEN_H), 2)
 
-        # ── LEFT zone — background + loadout ────────────────────────────────
+        # ── LEFT zone — background + detail panel + loadout slots ─────────────
         # Subtle background tint
         left_bg = pygame.Surface((left_w, SCREEN_H - TOP), pygame.SRCALPHA)
         left_bg.fill((12, 15, 24, 180))
         surf.blit(left_bg, (0, TOP))
 
-        # "Your loadout" label above slots
+        # ── LOADOUT SLOTS — bottom of left zone ──────────────────────────────
         slot_rects = self._slot_rects(left_w)
-        lbl_y = slot_rects[0].top - 28
 
         _col_map_slot = {
             "Assassin": C_ASSASSIN,        "Lifestealer": C_LIFESTEALER,
@@ -6494,29 +6573,39 @@ class LoadoutScreen:
             "Harvester": C_HARVESTER,
         }
 
+        # "Your Loadout" label above slots
+        lbl_y = slot_rects[0].top - 26
+        txt(surf, "YOUR LOADOUT", (left_w // 2, lbl_y), (120, 140, 180), font_sm, center=True)
+
+        # Slot-select hint arrow
+        if self._slot_select:
+            hint_s = font_md.render("▼  Choose a slot  ▼", True, (80, 220, 140))
+            surf.blit(hint_s, hint_s.get_rect(center=(left_w // 2, slot_rects[0].top - 48)))
+
         for si, sr in enumerate(slot_rects):
             uname = self.loadout[si]
             hov3  = sr.collidepoint(mx, my)
-            sel_slot = (self.selected is not None)   # highlight when selecting
-            if sel_slot and not uname:
-                bg_col = (35, 55, 80)
+            # Highlight empty slots when in slot-select mode
+            if self._slot_select and not uname:
+                bg_col = (20, 60, 40)
+            elif self._slot_select and uname:
+                bg_col = (50, 35, 10)
             elif hov3:
                 bg_col = (50, 60, 90)
             else:
                 bg_col = C_SLOT_BG
             pygame.draw.rect(surf, bg_col, sr, border_radius=8)
-            bd_col = (80, 130, 200) if (sel_slot and not uname) else C_BORDER
+            bd_col = (60, 200, 100) if (self._slot_select and not uname and hov3) else \
+                     (80, 200, 100) if self._slot_select else C_BORDER
             pygame.draw.rect(surf, bd_col, sr, 2, border_radius=8)
 
             if uname:
                 rarity = next((u["rarity"] for u in ALL_UNITS_POOL if u["name"] == uname), "starter")
                 rd     = RARITY_DATA[rarity]
                 icx, icy = sr.centerx, sr.centery - 10
-                # Show skin visual if equipped
                 eq_skin_id = get_equipped_skin(uname)
                 skin_def = next((s for s in ALL_SKIN_DEFS if s["id"] == eq_skin_id), None) if eq_skin_id else None
                 if skin_def and skin_def["id"] == "archer_star":
-                    # Star Archer visual on slot card
                     pygame.draw.circle(surf, (30, 20, 50), (icx, icy), 22)
                     pygame.draw.circle(surf, (200, 160, 40), (icx, icy), 18)
                     pygame.draw.circle(surf, (255, 220, 80), (icx, icy), 12)
@@ -6532,6 +6621,174 @@ class LoadoutScreen:
                 surf.blit(rs2, rs2.get_rect(center=(sr.centerx, sr.bottom - 7)))
             else:
                 txt(surf, f"SLOT {si+1}", (sr.centerx, sr.centery), (60,70,100), font_sm, center=True)
+
+        # ── DETAIL PANEL — upper left zone ───────────────────────────────────
+        self._btn_equip   = None
+        self._btn_unequip = None
+
+        SLOT_TOP = slot_rects[0].top - 50   # top of slot area (including label)
+        DETAIL_TOP  = TOP + 8
+        DETAIL_H    = SLOT_TOP - DETAIL_TOP - 8
+        DETAIL_AREA = pygame.Rect(8, DETAIL_TOP, left_w - 16, DETAIL_H)
+
+        if self.detail_unit:
+            uname = self.detail_unit
+            rarity = next((u["rarity"] for u in ALL_UNITS_POOL if u["name"] == uname), "starter")
+            rd = RARITY_DATA[rarity]
+            stats = UNIT_BASE_STATS.get(uname, {})
+            desc  = UNIT_DESCRIPTIONS.get(uname, "")
+            is_equipped = uname in self.loadout
+
+            PANEL_X = DETAIL_AREA.x
+            PANEL_Y = DETAIL_AREA.y
+            PANEL_W = DETAIL_AREA.w
+            PANEL_H = DETAIL_AREA.h
+
+            # Background card
+            bg_surf = pygame.Surface((PANEL_W, PANEL_H), pygame.SRCALPHA)
+            pygame.draw.rect(bg_surf, (10, 12, 20, 235), (0, 0, PANEL_W, PANEL_H), border_radius=14)
+            glow_col = rd["border"]
+            pygame.draw.rect(bg_surf, (*glow_col, 90), (0, 0, PANEL_W, PANEL_H), 2, border_radius=14)
+            surf.blit(bg_surf, (PANEL_X, PANEL_Y))
+
+            # Layout: LEFT = name + stats flush to left edge, tower visual centered horizontally
+            TEXT_X  = PANEL_X + 10   # text starts at left edge of panel
+
+            # ── Tower name & rarity — top-left ───────────────────────────────
+            name_f = pygame.font.SysFont("segoeui", 26, bold=True)
+            rar_f  = pygame.font.SysFont("segoeui", 17, bold=True)
+            name_s = name_f.render(uname, True, C_WHITE)
+            rar_s  = rar_f.render(rd["label"].upper(), True, rd["text_col"])
+            surf.blit(name_s, (TEXT_X, PANEL_Y + 10))
+            surf.blit(rar_s,  (TEXT_X, PANEL_Y + 10 + name_s.get_height() + 3))
+
+            # ── STATS — icon + value rows, left-aligned ───────────────────────
+            stat_f  = pygame.font.SysFont("segoeui", 18, bold=True)
+            ICO_SZ  = 22
+            ROW_H   = 32
+            STAT_Y0 = PANEL_Y + 10 + name_s.get_height() + rar_s.get_height() + 16
+
+            stat_defs = [
+                ("money_ico",    "cost",     "{}"),
+                ("limit_ico",    "limit",    "{}"),
+                ("damage_ico",   "damage",   "{}"),
+                ("firerate_ico", "firerate", "{:.2f}"),
+                ("range_ico",    "range",    "{}"),
+            ]
+            if stats.get("income") is not None:
+                stat_defs.append(("money_ico", "income", "${}"))
+
+            for ri, (ico_name, key, fmt) in enumerate(stat_defs):
+                sy = STAT_Y0 + ri * ROW_H
+                if sy + ROW_H > PANEL_Y + PANEL_H - 95:
+                    break
+                # Icon
+                ico_img = load_icon(ico_name, ICO_SZ)
+                ico_y   = sy + (ROW_H - ICO_SZ) // 2
+                if ico_img:
+                    surf.blit(ico_img, (TEXT_X, ico_y))
+                    val_x = TEXT_X + ICO_SZ + 8
+                else:
+                    # Fallback colored circle
+                    pygame.draw.circle(surf, (100, 120, 160), (TEXT_X + ICO_SZ // 2, sy + ROW_H // 2), ICO_SZ // 2)
+                    val_x = TEXT_X + ICO_SZ + 8
+                val = stats.get(key)
+                val_str = fmt.format(val) if val is not None else "—"
+                val_s = stat_f.render(val_str, True, C_WHITE)
+                surf.blit(val_s, (val_x, sy + (ROW_H - val_s.get_height()) // 2))
+
+            # ── Tower visual — centered horizontally in the panel ─────────────
+            VIS_CX = PANEL_X + PANEL_W // 2
+            VIS_CY = PANEL_Y + (PANEL_H - 90) // 2 + 10   # above description strip
+            _draw_tower_icon(surf, uname, VIS_CX, VIS_CY, self.t, size=72)
+
+            # ── SKINS button — left side, above description ───────────────────
+            has_skins = any(s["unit_name"] == uname and own_skin(s["id"]) for s in ALL_SKIN_DEFS)
+            SK_BTN_W  = int(PANEL_W * 0.30)
+            SK_BTN_H  = 34
+            SK_BTN_X  = PANEL_X + 8
+            SK_BTN_Y  = PANEL_Y + PANEL_H - 72 - 44 - SK_BTN_H - 6  # just above desc strip
+            sk_btn_r  = pygame.Rect(SK_BTN_X, SK_BTN_Y, SK_BTN_W, SK_BTN_H)
+            sk_hov    = sk_btn_r.collidepoint(mx, my)
+            eq_sk     = get_equipped_skin(uname) if has_skins else None
+            if has_skins:
+                sk_bg  = (100, 50, 160) if sk_hov else (72, 30, 120)
+                sk_brd = (200, 140, 255) if sk_hov else (150, 90, 220)
+            else:
+                sk_bg  = (35, 28, 50)
+                sk_brd = (70, 55, 90)
+            pygame.draw.rect(surf, sk_bg,  sk_btn_r, border_radius=8)
+            pygame.draw.rect(surf, sk_brd, sk_btn_r, 2, border_radius=8)
+            sk_f   = pygame.font.SysFont("segoeui", 16, bold=True)
+            sk_lbl = ("★ SKINS" if not eq_sk else "★ " + eq_sk) if has_skins else "NO SKINS"
+            sk_col = (220, 180, 255) if has_skins else (80, 65, 100)
+            sk_s   = sk_f.render(sk_lbl, True, sk_col)
+            # truncate label if too wide
+            while sk_s.get_width() > SK_BTN_W - 10 and len(sk_lbl) > 4:
+                sk_lbl = sk_lbl[:-1]
+                sk_s   = sk_f.render(sk_lbl + "…", True, sk_col)
+            surf.blit(sk_s, sk_s.get_rect(center=sk_btn_r.center))
+            if has_skins:
+                self._skin_btns.append((sk_btn_r, uname))
+
+            # ── Description strip — bottom of panel ───────────────────────────
+            DESC_H  = 72
+            DESC_Y  = PANEL_Y + PANEL_H - DESC_H - 44
+            desc_bg = pygame.Surface((PANEL_W - 4, DESC_H), pygame.SRCALPHA)
+            desc_bg.fill((5, 8, 15, 210))
+            surf.blit(desc_bg, (PANEL_X + 2, DESC_Y))
+
+            desc_f = pygame.font.SysFont("segoeui", 16)
+            words  = desc.split()
+            lines2 = []
+            cur_line = ""
+            for w2 in words:
+                test = (cur_line + " " + w2).strip()
+                if desc_f.size(test)[0] < PANEL_W - 20:
+                    cur_line = test
+                else:
+                    if cur_line: lines2.append(cur_line)
+                    cur_line = w2
+            if cur_line: lines2.append(cur_line)
+            for li, ln in enumerate(lines2[:4]):
+                ls3 = desc_f.render(ln, True, C_WHITE)
+                surf.blit(ls3, (PANEL_X + 10, DESC_Y + 6 + li * 17))
+
+            # ── EQUIP / UNEQUIP button — centered, 50% width, above bottom ─────
+            BTN_H  = 44
+            BTN_W  = int(PANEL_W * 0.50)
+            BTN_Y  = PANEL_Y + PANEL_H - BTN_H - 18
+            btn_r2 = pygame.Rect(PANEL_X + (PANEL_W - BTN_W) // 2, BTN_Y, BTN_W, BTN_H)
+            btn_f  = pygame.font.SysFont("segoeui", 22, bold=True)
+
+            if is_equipped:
+                hov_u = btn_r2.collidepoint(mx, my)
+                bg2   = (80, 82, 95) if hov_u else (55, 57, 68)
+                bd2   = (180, 185, 200) if hov_u else (120, 125, 145)
+                pygame.draw.rect(surf, bg2, btn_r2, border_radius=10)
+                pygame.draw.rect(surf, bd2, btn_r2, 2, border_radius=10)
+                ul_s  = btn_f.render("UNEQUIP", True, C_WHITE)
+                surf.blit(ul_s, ul_s.get_rect(center=btn_r2.center))
+                self._btn_unequip = btn_r2
+            else:
+                hov_e = btn_r2.collidepoint(mx, my)
+                pulse = abs(math.sin(self.t * 2.2))
+                g_val = int(150 + pulse * 35)
+                bg2   = (25, g_val, 55) if hov_e else (18, 110, 45)
+                bd2   = (70, 255, 110) if hov_e else (45, 195, 85)
+                pygame.draw.rect(surf, bg2, btn_r2, border_radius=10)
+                pygame.draw.rect(surf, bd2, btn_r2, 2, border_radius=10)
+                eq_lbl = "CANCEL" if self._slot_select else "EQUIP"
+                eq_s   = btn_f.render(eq_lbl, True, C_WHITE)
+                surf.blit(eq_s, eq_s.get_rect(center=btn_r2.center))
+                self._btn_equip = btn_r2
+
+        else:
+            # No unit selected — show hint
+            hint_f = pygame.font.SysFont("segoeui", 20)
+            hint_s = hint_f.render("Select a tower to view details", True, (55, 65, 88))
+            surf.blit(hint_s, hint_s.get_rect(center=(left_w // 2, TOP + (SLOT_TOP - TOP) // 2)))
+
 
         # ── RIGHT zone — scrollable rarity sections ──────────────────────────
         CONTENT_TOP = TOP
@@ -6600,21 +6857,6 @@ class LoadoutScreen:
 
                 if is_owned:
                     self._card_hits.append((card_r, rarity, i))
-                    # ── Skin button — top-right corner of card ────────────────
-                    unit_skins = [s for s in ALL_SKIN_DEFS if s["unit_name"] == u["name"] and own_skin(s["id"])]
-                    if unit_skins:
-                        sk_btn = pygame.Rect(card_r.right - 32, card_r.top + 4, 28, 28)
-                        sk_hov = sk_btn.collidepoint(mx, my)
-                        eq_sk  = get_equipped_skin(u["name"])
-                        sk_bg  = (180, 140, 0) if eq_sk else (40, 30, 60)
-                        sk_bg  = tuple(min(255, c + 25) for c in sk_bg) if sk_hov else sk_bg
-                        sk_brd = (255, 220, 60) if eq_sk else (140, 100, 220)
-                        pygame.draw.rect(surf, sk_bg, sk_btn, border_radius=6)
-                        pygame.draw.rect(surf, sk_brd, sk_btn, 2, border_radius=6)
-                        star_f = pygame.font.SysFont("segoeui", 15, bold=True)
-                        star_s = star_f.render("★", True, (255, 230, 60) if eq_sk else (180, 140, 255))
-                        surf.blit(star_s, star_s.get_rect(center=sk_btn.center))
-                        self._skin_btns.append((sk_btn, u["name"]))
                 else:
                     dim = pygame.Surface((self._CW, self._CH), pygame.SRCALPHA)
                     dim.fill((0, 0, 0, 160))
