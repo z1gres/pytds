@@ -42,7 +42,9 @@ class Enemy:
         tx, ty = path[self._wp_index]
         dx = tx - self.x; dy = ty - self.y
         dist_to_wp = math.hypot(dx, dy)
-        step = self.speed * dt
+        _spd = self.speed
+        if getattr(self, '_cat_cursed', False): _spd *= 0.75   # Kitty Curse: -25% speed
+        step = _spd * dt
         if dist_to_wp <= step + 1:
             self.x = float(tx); self.y = float(ty)
             self._wp_index += 1
@@ -54,6 +56,7 @@ class Enemy:
         return False
 
     def take_damage(self, dmg):
+        if getattr(self, '_cat_cursed', False): dmg *= 1.25   # Kitty Curse: +25% damage taken
         self.hp-=dmg*(1.0-self.ARMOR)
         if self.hp<=0: self.alive=False
 

@@ -7981,3 +7981,492 @@ class Twitgunner(Unit):
         info["Firerate"] = f"{self.firerate:.3f}"
         info["Range"]    = self.range_tiles
         return info
+
+# ── Korzhik ────────────────────────────────────────────────────────────────────
+C_KORZHIK      = (255, 160, 200)   # pastel pink — cat-eared cutie
+C_KORZHIK_DARK = (120,  40,  80)
+
+# Korzhik stats (damage and firerate from screenshot, second value after arrow)
+KORZHIK_LEVELS = [
+    # dmg  firerate  range  cost    hidden_det
+    (12,   1.4,      5.0,   None,   False),   # lv0
+    (18,   1.2,      5.0,   950,    False),   # lv1
+    (26,   1.0,      7.0,   1450,   True),    # lv2
+    (36,   0.9,      7.5,   2450,   True),    # lv3
+    (50,   0.7,      9.0,   3200,   True),    # lv4
+    (70,   0.5,      9.0,   4444,   True),    # lv5 — More spinning balls (4 orbs, dmg 30)
+    (70,   0.5,      9.0,   5555,   True),    # lv6 — Shooting balls (firerate 1.0, dmg 100)
+]
+
+
+class KorzhikBullet:
+    """Homing bullet fired by Korzhik — glowing star with rainbow trail."""
+    SPEED  = 560.0
+    RADIUS = 5
+
+    def __init__(self, ox, oy, target, damage):
+        self.x = float(ox); self.y = float(oy)
+        self._target = target
+        dx = target.x - ox; dy = target.y - oy
+        d  = math.hypot(dx, dy) or 1
+        self.vx = dx / d; self.vy = dy / d
+        self.damage = damage
+        self.alive  = True
+        self._trail = []   # list of (x, y, age) where age 0=newest
+        self._t = 0.0
+
+    def update(self, dt, enemies):
+        if not self.alive: return
+        self._t += dt
+        if self._target and self._target.alive:
+            dx = self._target.x - self.x; dy = self._target.y - self.y
+            d  = math.hypot(dx, dy) or 1
+            self.vx = dx / d; self.vy = dy / d
+        step = self.SPEED * dt
+        self.x += self.vx * step; self.y += self.vy * step
+        self._trail.append((self.x, self.y))
+        if len(self._trail) > 18: self._trail.pop(0)
+        for e in enemies:
+            if not e.alive: continue
+            if math.hypot(e.x - self.x, e.y - self.y) < e.radius + self.RADIUS:
+                e.take_damage(self.damage)
+                self.alive = False; return
+        if self.x < -200 or self.x > 2200 or self.y < -200 or self.y > 1200:
+            self.alive = False
+
+    def draw(self, surf):
+        if not self.alive: return
+        n = len(self._trail)
+
+        # Trail: fades from hot pink → purple → transparent
+        TRAIL_COLORS = [
+            (255, 80,  180),   # hot pink
+            (220, 60,  200),
+            (180, 50,  220),   # purple
+            (140, 40,  240),
+            (100, 60,  255),   # blue-violet
+        ]
+        for i, (tx, ty) in enumerate(self._trail):
+            frac = (i + 1) / max(n, 1)
+            alpha = int(200 * frac * frac)
+            radius = max(1, int(5 * frac))
+            ci = int(frac * (len(TRAIL_COLORS) - 1))
+            r, g, b = TRAIL_COLORS[ci]
+            sz = radius * 2 + 2
+            s = pygame.Surface((sz, sz), pygame.SRCALPHA)
+            pygame.draw.circle(s, (r, g, b, alpha), (sz // 2, sz // 2), radius)
+            surf.blit(s, (int(tx) - sz // 2, int(ty) - sz // 2))
+
+        # Sparkle dots scattered along trail
+        for i in range(0, n, 3):
+            tx, ty = self._trail[i]
+            frac = (i + 1) / max(n, 1)
+            if frac < 0.3: continue
+            alpha = int(180 * frac)
+            angle = self._t * 8 + i * 1.2
+            ox2 = math.cos(angle) * 3
+            oy2 = math.sin(angle) * 3
+            s = pygame.Surface((6, 6), pygame.SRCALPHA)
+            pygame.draw.circle(s, (255, 220, 255, alpha), (3, 3), 2)
+            surf.blit(s, (int(tx + ox2) - 3, int(ty + oy2) - 3))
+
+        # Core bullet: outer glow + bright center + white hot spot
+        cx, cy = int(self.x), int(self.y)
+
+        # Outer glow ring
+        s = pygame.Surface((26, 26), pygame.SRCALPHA)
+        pygame.draw.circle(s, (255, 60, 180, 60),  (13, 13), 12)
+        pygame.draw.circle(s, (220, 40, 220, 100), (13, 13), 8)
+        surf.blit(s, (cx - 13, cy - 13))
+
+        # Star shape (4 spikes)
+        spike_len = 6
+        for angle in [0, 90, 180, 270]:
+            rad = math.radians(angle + self._t * 180)
+            ex = cx + math.cos(rad) * spike_len
+            ey = cy + math.sin(rad) * spike_len
+            s2 = pygame.Surface((4, 4), pygame.SRCALPHA)
+            pygame.draw.circle(s2, (255, 180, 255, 200), (2, 2), 2)
+            surf.blit(s2, (int(ex) - 2, int(ey) - 2))
+
+        # Solid core
+        s3 = pygame.Surface((14, 14), pygame.SRCALPHA)
+        pygame.draw.circle(s3, (255, 80,  200, 255), (7, 7), 6)
+        pygame.draw.circle(s3, (255, 180, 240, 255), (7, 7), 4)
+        pygame.draw.circle(s3, (255, 255, 255, 255), (7, 7), 2)
+        surf.blit(s3, (cx - 7, cy - 7))
+
+
+# ── Kitty Curse ability ───────────────────────────────────────────────────────
+_KITTY_CURSE_CD = 60.0   # ability cooldown in seconds
+
+class _KittyCurseZone:
+    """A cursed zone on the path: slows enemies 25%, makes them take 25% more damage for 10s."""
+    SLOW      = 0.25    # 25% speed reduction
+    DMG_BONUS = 0.25    # 25% extra incoming damage multiplier
+    DURATION  = 10.0    # seconds the zone lasts
+    RADIUS    = 28      # pixels — one circle
+
+    def __init__(self, x, y):
+        self.x = float(x); self.y = float(y)
+        self.life = self.DURATION
+        self._anim_t = 0.0
+
+    @property
+    def alive(self): return self.life > 0
+
+    def update(self, dt, enemies):
+        if not self.alive: return
+        self.life -= dt
+        self._anim_t += dt
+        for e in enemies:
+            if not e.alive: continue
+            if math.hypot(e.x - self.x, e.y - self.y) <= self.RADIUS + getattr(e, 'radius', 14):
+                # Apply full 10s debuff on contact — only if not already cursed longer
+                if getattr(e, '_cat_curse_timer', 0) < 10.0:
+                    e._cat_cursed      = True
+                    e._cat_curse_timer = 10.0
+
+    def draw(self, surf):
+        if not self.alive: return
+        fade = self.life / self.DURATION
+        t    = self._anim_t
+        cx, cy = int(self.x), int(self.y)
+        r = self.RADIUS
+
+        # Pulsing translucent pink fill
+        alpha = int((0.55 + 0.20 * math.sin(t * 4)) * fade * 160)
+        s = pygame.Surface((r * 2 + 4, r * 2 + 4), pygame.SRCALPHA)
+        pygame.draw.circle(s, (255, 100, 180, alpha), (r + 2, r + 2), r)
+        surf.blit(s, (cx - r - 2, cy - r - 2))
+
+        # Glowing border ring
+        border_alpha = int(fade * 200)
+        b_surf = pygame.Surface((r * 2 + 6, r * 2 + 6), pygame.SRCALPHA)
+        pygame.draw.circle(b_surf, (255, 60, 160, border_alpha), (r + 3, r + 3), r, 2)
+        surf.blit(b_surf, (cx - r - 3, cy - r - 3))
+
+        # Two tiny cat-ear triangles above the circle
+        ear_w, ear_h = 7, 10
+        for side in (-1, 1):
+            ex = cx + side * 10
+            ey = cy - r - 2
+            fill_col = (255, 200, 230, int(fade * 220))
+            line_col = (255, 120, 170, int(fade * 180))
+            pygame.draw.polygon(surf, fill_col[:3],
+                                [(ex, ey - 1), (ex - ear_w, ey + ear_h - 1), (ex + ear_w, ey + ear_h - 1)])
+            pygame.draw.polygon(surf, line_col[:3],
+                                [(ex, ey - 1), (ex - ear_w, ey + ear_h - 1), (ex + ear_w, ey + ear_h - 1)], 2)
+
+        # Rotating sparkle dots
+        for i in range(5):
+            a = t * 1.8 + i * (math.pi * 2 / 5)
+            sx = int(cx + math.cos(a) * (r * 0.65))
+            sy = int(cy + math.sin(a) * (r * 0.65))
+            sp = pygame.Surface((8, 8), pygame.SRCALPHA)
+            pygame.draw.circle(sp, (255, 180, 230, int(fade * 200)), (4, 4), 3)
+            surf.blit(sp, (sx - 4, sy - 4))
+
+        # Duration bar (thin arc at bottom)
+        bar_len = int(r * 2 * fade)
+        if bar_len > 0:
+            bar_s = pygame.Surface((r * 2 + 2, 4), pygame.SRCALPHA)
+            pygame.draw.rect(bar_s, (255, 60, 160, 180), (0, 0, bar_len, 4), border_radius=2)
+            surf.blit(bar_s, (cx - r, cy + r + 4))
+
+
+class KittyCurseAbility:
+    """Korzhik's lv0 active ability — places a Kitty Curse zone on the road."""
+    name     = "Kitty Curse"
+    cooldown = _KITTY_CURSE_CD
+
+    def __init__(self, owner):
+        self.owner   = owner
+        self.cd_left = 0.0
+
+    def update(self, dt):
+        if self.cd_left > 0: self.cd_left -= dt
+
+    def ready(self): return self.cd_left <= 0
+
+    @staticmethod
+    def _closest_on_path(click_x, click_y, path):
+        """Return the (x, y) on path closest to the click."""
+        best_dist = float('inf')
+        best_pt   = (click_x, click_y)
+        for si in range(len(path) - 1):
+            ax, ay = path[si]; bx, by = path[si + 1]
+            dx, dy = bx - ax, by - ay
+            ll = dx * dx + dy * dy
+            t = max(0.0, min(1.0, ((click_x - ax) * dx + (click_y - ay) * dy) / ll)) if ll else 0.0
+            nx, ny = ax + t * dx, ay + t * dy
+            d = math.hypot(nx - click_x, ny - click_y)
+            if d < best_dist:
+                best_dist = d; best_pt = (nx, ny)
+        return best_pt
+
+    def activate(self, zone_list, click_x, click_y, path):
+        if not self.ready(): return
+        self.cd_left = self.cooldown
+        pt = self._closest_on_path(click_x, click_y, path)
+        zone_list.append(_KittyCurseZone(pt[0], pt[1]))
+
+    def preview_pt(self, click_x, click_y, path):
+        return self._closest_on_path(click_x, click_y, path)
+
+# ── Orbital ball that orbits Korzhik ─────────────────────────────────────────
+class _OrbitalBall:
+    """One of the orbital balls around Korzhik — melee touch damage + optional shooting at lv6."""
+    ORBIT_R      = 55    # pixels from tower centre
+    SPEED_RAD    = 2.2   # radians per second
+    BALL_R       = 7     # collision + visual radius
+    SHOT_SPEED   = 480.0 # shooting bullet speed
+    SHOT_FIRERATE = 1.0  # seconds between shots
+
+    def __init__(self, phase_offset):
+        self.angle    = float(phase_offset)
+        self.x        = 0.0; self.y = 0.0
+        self.damage   = 10       # melee contact damage (overridden by _apply_level)
+        self.shooting = False    # set True at lv6
+        self._hit_cd  = {}       # id(enemy) → remaining cooldown (melee)
+        self._shot_cd = 0.0      # shooting cooldown
+        self._bullets = []       # active shot bullets: [{'x','y','vx','vy','alive'}]
+
+    def update(self, dt, owner_x, owner_y, enemies):
+        self.angle += self.SPEED_RAD * dt
+        self.x = owner_x + math.cos(self.angle) * self.ORBIT_R
+        self.y = owner_y + math.sin(self.angle) * self.ORBIT_R
+
+        # ── Melee hit cooldowns ───────────────────────────────────────────────
+        for eid in list(self._hit_cd):
+            self._hit_cd[eid] -= dt
+            if self._hit_cd[eid] <= 0:
+                del self._hit_cd[eid]
+
+        # ── Melee contact damage ──────────────────────────────────────────────
+        for e in enemies:
+            if not e.alive: continue
+            if id(e) in self._hit_cd: continue
+            if math.hypot(e.x - self.x, e.y - self.y) <= self.BALL_R + getattr(e, 'radius', 14):
+                e.take_damage(self.damage)
+                self._hit_cd[id(e)] = 0.6
+
+        # ── Shooting mode (lv6) ───────────────────────────────────────────────
+        if self.shooting:
+            self._shot_cd -= dt
+            if self._shot_cd <= 0:
+                # find closest enemy
+                target = None
+                best_d = float('inf')
+                for e in enemies:
+                    if not e.alive: continue
+                    d = math.hypot(e.x - self.x, e.y - self.y)
+                    if d < best_d:
+                        best_d = d; target = e
+                if target:
+                    self._shot_cd = self.SHOT_FIRERATE
+                    dx = target.x - self.x; dy = target.y - self.y
+                    dist = math.hypot(dx, dy) or 1
+                    self._bullets.append({
+                        'x': self.x, 'y': self.y,
+                        'vx': dx / dist * self.SHOT_SPEED,
+                        'vy': dy / dist * self.SHOT_SPEED,
+                        'alive': True,
+                    })
+
+            # update bullets
+            for b in self._bullets:
+                if not b['alive']: continue
+                b['x'] += b['vx'] * dt
+                b['y'] += b['vy'] * dt
+                for e in enemies:
+                    if not e.alive: continue
+                    if math.hypot(e.x - b['x'], e.y - b['y']) <= getattr(e, 'radius', 14) + 4:
+                        e.take_damage(100)
+                        b['alive'] = False; break
+                if b['x'] < -200 or b['x'] > 2200 or b['y'] < -200 or b['y'] > 1200:
+                    b['alive'] = False
+            self._bullets = [b for b in self._bullets if b['alive']]
+
+    def draw(self, surf):
+        # Draw shot bullets
+        for b in self._bullets:
+            bx, by = int(b['x']), int(b['y'])
+            bs = pygame.Surface((12, 12), pygame.SRCALPHA)
+            pygame.draw.circle(bs, (255, 200, 80, 200), (6, 6), 5)
+            pygame.draw.circle(bs, (255, 255, 200, 255), (6, 6), 2)
+            surf.blit(bs, (bx - 6, by - 6))
+
+        cx, cy = int(self.x), int(self.y)
+        # Outer glow — gold tint at lv6
+        glow_col = (255, 220, 80, 100) if self.shooting else (255, 100, 200, 90)
+        g = pygame.Surface((22, 22), pygame.SRCALPHA)
+        pygame.draw.circle(g, glow_col, (11, 11), 10)
+        surf.blit(g, (cx - 11, cy - 11))
+        # Core layers
+        core_col = (255, 180, 30) if self.shooting else (255, 60, 160)
+        mid_col  = (255, 240, 160) if self.shooting else (255, 200, 230)
+        pygame.draw.circle(surf, core_col, (cx, cy), 6)
+        pygame.draw.circle(surf, mid_col,  (cx, cy), 3)
+        pygame.draw.circle(surf, (255, 255, 255), (cx, cy), 1)
+        # Small flame spike on shooting balls
+        if self.shooting:
+            sa = self.angle + math.pi   # spike away from centre
+            sx = int(cx + math.cos(sa) * 9)
+            sy = int(cy + math.sin(sa) * 9)
+            ss = pygame.Surface((8, 8), pygame.SRCALPHA)
+            pygame.draw.circle(ss, (255, 160, 20, 200), (4, 4), 3)
+            surf.blit(ss, (sx - 4, sy - 4))
+
+
+class Korzhik(Unit):
+    """Cat-eared early-access tower — same stats as Twitgunner, free to unlock."""
+    PLACE_COST = 1200
+    COLOR      = C_KORZHIK
+    NAME       = "Korzhik"
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._bullets     = []
+        self._anim_t      = 0.0
+        self._aim_angle   = 0.0
+        # Kitty Curse ability + active zones
+        self.ability      = KittyCurseAbility(self)
+        self._curse_zones = []
+        # orbital balls are created by _apply_level based on level
+        self._orbs = []
+        self._apply_level()
+
+    def _apply_level(self):
+        row = KORZHIK_LEVELS[self.level]
+        self.damage, self.firerate, self.range_tiles, _, self.hidden_detection = row
+        self.cd_left = 0.0
+        # lv5+: 4 orbital balls dealing 30 dmg
+        # lv6 (max): balls also shoot (firerate 1.0, shot dmg 100)
+        _max_lv = len(KORZHIK_LEVELS) - 1
+        if self.level >= 5:
+            _orb_count    = 4
+            _orb_dmg      = 30
+        else:
+            _orb_count    = 2
+            _orb_dmg      = 10
+        _orb_shooting = (self.level >= _max_lv)
+        # Rebuild orbs only if count changed (preserve angles otherwise)
+        if not hasattr(self, '_orbs') or len(self._orbs) != _orb_count:
+            self._orbs = [
+                _OrbitalBall(i * (math.pi * 2 / _orb_count))
+                for i in range(_orb_count)
+            ]
+        for orb in self._orbs:
+            orb.damage   = _orb_dmg
+            orb.shooting = _orb_shooting
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(KORZHIK_LEVELS): return None
+        return KORZHIK_LEVELS[nxt][3]   # all None — free upgrades
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(KORZHIK_LEVELS):
+            self.level = nxt; self._apply_level()
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t += dt
+        if self.cd_left > 0: self.cd_left -= dt
+
+        # ── Tick down cat-curse debuff timers on enemies ──────────────────────
+        for e in enemies:
+            if not e.alive: continue
+            if getattr(e, '_cat_cursed', False):
+                e._cat_curse_timer = getattr(e, '_cat_curse_timer', 0) - dt
+                if e._cat_curse_timer <= 0:
+                    e._cat_cursed = False
+
+        # ── Kitty Curse zones ─────────────────────────────────────────────────
+        for z in self._curse_zones: z.update(dt, enemies)
+        self._curse_zones = [z for z in self._curse_zones if z.alive]
+
+        # ── Orbital balls ─────────────────────────────────────────────────────
+        for orb in self._orbs: orb.update(dt, self.px, self.py, enemies)
+
+        # ── Ability cooldown ──────────────────────────────────────────────────
+        if self.ability: self.ability.update(dt)
+
+        # ── Main shooting attack ──────────────────────────────────────────────
+        targets = self._get_targets(enemies, 1)
+        if targets:
+            t0 = targets[0]
+            self._aim_angle = math.atan2(t0.y - self.py, t0.x - self.px)
+        if self.cd_left <= 0 and targets:
+            self.cd_left = self.firerate
+            t0 = targets[0]
+            self._bullets.append(KorzhikBullet(self.px, self.py, t0, self.damage))
+            self.total_damage += self.damage
+        for b in self._bullets: b.update(dt, enemies)
+        self._bullets = [b for b in self._bullets if b.alive]
+
+    @staticmethod
+    def _draw_ear(surf, outer, inner, tip):
+        pygame.draw.polygon(surf, (232, 200, 216), outer)
+        pygame.draw.polygon(surf, (255, 150, 185), inner)
+        hl = pygame.Surface((10, 10), pygame.SRCALPHA)
+        pygame.draw.circle(hl, (255, 248, 252, 240), (5, 5), 4)
+        surf.blit(hl, (tip[0] - 5, tip[1] - 5))
+
+    def draw(self, surf):
+        cx, cy = int(self.px), int(self.py)
+
+        # ── Kitty Curse zones (drawn on ground, below tower) ─────────────────
+        for z in self._curse_zones: z.draw(surf)
+
+        # ── Cat ears FIRST (so dark ring overlaps the base) ──────────────────
+        # Left ear |\ — white fill, pink outline
+        l_pts = [(cx - 18, cy - 4), (cx - 18, cy - 33), (cx - 8, cy - 17)]
+        pygame.draw.polygon(surf, (255, 240, 248), l_pts)
+        pygame.draw.polygon(surf, (255, 150, 185), l_pts, 2)
+        # Right ear /| — white fill, pink outline
+        r_pts = [(cx + 18, cy - 4), (cx + 18, cy - 33), (cx + 8, cy - 17)]
+        pygame.draw.polygon(surf, (255, 240, 248), r_pts)
+        pygame.draw.polygon(surf, (255, 150, 185), r_pts, 2)
+
+        # ── Dark outline circle ───────────────────────────────────────────────
+        pygame.draw.circle(surf, C_KORZHIK_DARK, (cx, cy), 26)
+
+        # ── Main pink circle ──────────────────────────────────────────────────
+        pygame.draw.circle(surf, C_KORZHIK, (cx, cy), 22)
+
+        # ── Hidden detection indicator ────────────────────────────────────────
+        if self.hidden_detection:
+            pygame.draw.circle(surf, (255, 255, 100), (cx + 16, cy - 16), 5)
+            pygame.draw.circle(surf, (60, 20, 0),     (cx + 16, cy - 16), 2)
+
+        # ── Orbital balls ─────────────────────────────────────────────────────
+        for orb in self._orbs: orb.draw(surf)
+
+        # ── Bullets ───────────────────────────────────────────────────────────
+        for b in self._bullets: b.draw(surf)
+
+        # ── Level pips ────────────────────────────────────────────────────────
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_GOLD, (cx - 12 + i * 7, cy + 32), 3)
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (255, 160, 200, 18), (r, r), r)
+        pygame.draw.circle(s, (255, 180, 210, 55), (r, r), r, 2)
+        old_clip = surf.get_clip()
+        surf.set_clip(pygame.Rect(0, 0, SCREEN_W, SLOT_AREA_Y))
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+        surf.set_clip(old_clip)
+
+    def get_info(self):
+        info = {}
+        if self.hidden_detection:
+            info["HidDet"] = "Hidden Detection"
+        info["Damage"]   = self.damage
+        info["Firerate"] = f"{self.firerate:.3f}"
+        info["Range"]    = self.range_tiles
+        info["Ability"]  = f"Kitty Curse ({self.ability.cooldown:.0f}s CD)"
+        return info

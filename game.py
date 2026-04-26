@@ -39,6 +39,7 @@ UNIT_LIMITS["Harvester"]   = 5   # placement limit per player
 UNIT_LIMITS["ToxicGunner"] = 5
 UNIT_LIMITS["Gladiator"]   = 6
 UNIT_LIMITS["Twitgunner"]  = 6
+UNIT_LIMITS["Korzhik"]     = 6
 
 # ── Patch early_access rarity into RARITY_DATA (from game_core) ───────────────
 RARITY_DATA.setdefault("early_access", {
@@ -258,6 +259,7 @@ from units import (
     Harvester, HARVESTER_LEVELS, C_HARVESTER, C_HARVESTER_DARK,
     ThornsAbility,
     Twitgunner, TWITGUN_LEVELS, C_TWITGUN, C_TWITGUN_DARK,
+    Korzhik, KORZHIK_LEVELS, C_KORZHIK, C_KORZHIK_DARK,
 )
 
 # ── Archer level 3 upgrade cost → 750 ────────────────────────────────────────
@@ -620,6 +622,7 @@ class AdminPanel:
                 ("ArcherPrime",ArcherPrime,C_ARCHERPRIME),
                 ("Harvester",Harvester,C_HARVESTER),
                 ("Twitgunner",Twitgunner,C_TWITGUN),
+                ("Korzhik",Korzhik,C_KORZHIK),
             ]
             cols=8; cw=(pw-28)//cols; ch=100; gap=6
             start_x=px+10; start_y=content_top+6
@@ -835,6 +838,9 @@ class UI:
         # Harvester thorn-placement mode
         self._thorn_place_mode = False   # True while waiting for player to click on map
         self._thorn_place_owner = None   # which Harvester triggered the mode
+        # Korzhik Kitty Curse placement mode
+        self._catnip_place_mode  = False   # True while waiting for player to click on map
+        self._catnip_place_owner = None    # which Korzhik triggered the mode
         self.t = 0.0  # elapsed time for animations
         self.admin_panel=AdminPanel()
         self.admin_mode = False  # set to True by Game when launched from sandbox
@@ -894,6 +900,34 @@ class UI:
                 owner.activate_thorns(mx2, my2, best_path, _farms)
             self._thorn_place_mode  = False
             self._thorn_place_owner = None
+            return 0
+        # ── Korzhik Kitty Curse placement ────────────────────────────────────
+        if self._catnip_place_mode and self._catnip_place_owner:
+            owner = self._catnip_place_owner
+            if owner in units and owner.ability.ready():
+                from game_core import _FROSTY_PATHS, CURRENT_MAP
+                if CURRENT_MAP == "frosty":
+                    paths = list(_FROSTY_PATHS)
+                else:
+                    paths = [get_map_path()]
+                mx2, my2 = pos
+                best_path = paths[0]; best_d = float('inf')
+                for p in paths:
+                    for si in range(len(p) - 1):
+                        ax, ay = p[si]; bx, by = p[si + 1]
+                        dx, dy = bx - ax, by - ay
+                        ll = dx * dx + dy * dy
+                        if ll > 0:
+                            t = max(0.0, min(1.0, ((mx2 - ax) * dx + (my2 - ay) * dy) / ll))
+                            nx, ny = ax + t * dx, ay + t * dy
+                        else:
+                            nx, ny = ax, ay
+                        d = math.hypot(nx - mx2, ny - my2)
+                        if d < best_d:
+                            best_d = d; best_path = p
+                owner.ability.activate(owner._curse_zones, mx2, my2, best_path)
+            self._catnip_place_mode  = False
+            self._catnip_place_owner = None
             return 0
         sy_r=getattr(self,'_skip_yes_rect',None)
         if sy_r and sy_r.collidepoint(pos) and wave_mgr is not None:
@@ -985,6 +1019,10 @@ class UI:
                         self._thorn_place_mode  = True
                         self._thorn_place_owner = u
                         self.show_msg("Click on the path to place Thorns  [RMB / Esc to cancel]", 4.0)
+                    elif isinstance(u, Korzhik):
+                        self._catnip_place_mode  = True
+                        self._catnip_place_owner = u
+                        self.show_msg("Click on the path to place Kitty Curse  [RMB / Esc to cancel]", 4.0)
                     else:
                         u.ability.activate(enemies,effects)
                 return 0
@@ -1083,6 +1121,10 @@ class UI:
                         self._thorn_place_mode  = True
                         self._thorn_place_owner = self.open_unit
                         self.show_msg("Click on the path to place Thorns  [RMB / Esc to cancel]", 4.0)
+                    elif isinstance(self.open_unit, Korzhik):
+                        self._catnip_place_mode  = True
+                        self._catnip_place_owner = self.open_unit
+                        self.show_msg("Click on the path to place Kitty Curse  [RMB / Esc to cancel]", 4.0)
                     else:
                         self.open_unit.ability.activate(enemies, effects)
                 return 0
@@ -1558,6 +1600,12 @@ class UI:
             result={"Damage":d,"Firerate":fr,"Range":r}
             if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
             return result
+        elif cls==Korzhik:
+            if nxt>=len(KORZHIK_LEVELS): return None
+            d,fr,r,_,hd=KORZHIK_LEVELS[nxt]
+            result={"Damage":d,"Firerate":fr,"Range":r}
+            if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
+            return result
         elif cls==HackerLaserTest:
             if nxt>=len(CASTER_LEVELS): return None
             d,fr,r,_,hd=CASTER_LEVELS[nxt]
@@ -1937,7 +1985,7 @@ class UI:
 
             cls=type(u)
             nxt=self._get_next_stats(u)
-            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,ArcherOld:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,HackerLaserTest:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS,Farm:FARM_LEVELS,Harvester:HARVESTER_LEVELS,Twitgunner:TWITGUN_LEVELS}
+            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,ArcherOld:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,HackerLaserTest:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS,Farm:FARM_LEVELS,Harvester:HARVESTER_LEVELS,Twitgunner:TWITGUN_LEVELS,Korzhik:KORZHIK_LEVELS}
             lvl_list=levels_map.get(cls,[])
             if cls==Jester: lvl_list=JESTER_LEVELS
             total_lvls=len(lvl_list)
@@ -2371,6 +2419,17 @@ class UI:
                     ("Range",    u.range_tiles,           nxt.get("Range")   if nxt else None),
                 ]
                 if hd_next: stats.append(("HidDet_unlock", None, "Hidden Detection"))
+            elif cls==Korzhik:
+                hd_now  = u.hidden_detection
+                hd_next = bool(nxt and nxt.get("HidDet") and not hd_now)
+                stats = []
+                if hd_now: stats.append(("HidDet","Hidden Detection",None))
+                stats += [
+                    ("Damage",   u.damage,              nxt.get("Damage")   if nxt else None),
+                    ("Firerate", f"{u.firerate:.3f}",    f"{nxt['Firerate']:.3f}" if nxt else None),
+                    ("Range",    u.range_tiles,           nxt.get("Range")   if nxt else None),
+                ]
+                if hd_next: stats.append(("HidDet_unlock", None, "Hidden Detection"))
             elif cls==SoulWeaver:
                 nxt_sw = _SW_LEVELS[u.level+1] if u.level+1 < len(_SW_LEVELS) else None
                 p_sw = _SW_SURGE_PARAMS[u.level+1] if u.level+1 < len(_SW_SURGE_PARAMS) else None
@@ -2754,8 +2813,77 @@ class UI:
                         _h_y += 15
                     surf.set_clip(old_clip2)
 
-            # === ABILITY SQUARE — outside card, top-left ===
-            _abil_min_level = 0 if isinstance(u, Harvester) else 2
+            # === KORZHIK EXTRA INFO ===
+            if cls==Korzhik:
+                _MAX_KLV = len(KORZHIK_LEVELS) - 1
+                _KORZHIK_LV_DESCS = [
+                    None,   # lv0
+                    None,   # lv1
+                    None,   # lv2
+                    None,   # lv3
+                    None,   # lv4
+                    # lv5 — предпоследний: 4 шарика, урон 30
+                    ["More spinning balls",
+                     "Spinning balls damage 10 → 30"],
+                    # lv6 — последний: шарики начинают стрелять
+                    ["Shooting balls",
+                     "Balls fire projectiles",
+                     "Shot damage: 100",
+                     "Shot firerate: 1.0"],
+                ]
+                _nxt_klv = u.level + 1
+                _kdesc = _KORZHIK_LV_DESCS[_nxt_klv] if _nxt_klv < len(_KORZHIK_LV_DESCS) else None
+                if _kdesc and cost:
+                    _kf       = pygame.font.SysFont("segoeui", 13)
+                    _kf_title = pygame.font.SysFont("segoeui", 13, bold=True)
+                    _k_y      = ch_y + 6
+                    _kclip    = pygame.Rect(mx_m+2, my_m+2, mw-4, menu.h-4)
+                    old_clip_k = surf.get_clip()
+                    surf.set_clip(_kclip)
+                    ARR_SZ_K = 14
+                    for _ki, _kl in enumerate(_kdesc):
+                        if _k_y + 15 > my_m + menu.h - 48: break
+                        if _ki == 0:
+                            # Title line — bold, lighter colour
+                            _ks = _kf_title.render(_kl, True, (200, 160, 220))
+                            surf.blit(_ks, (mx_m+10, _k_y))
+                            _k_y += 15
+                        else:
+                            # Stat line — "Label  old →icon new"
+                            # Parse "text X → Y" pattern if present
+                            import re as _re
+                            _m = _re.match(r'^(.+?)\s+(\d+)\s*→\s*(\d+)$', _kl)
+                            if _m:
+                                _label_part = _m.group(1)
+                                _old_val    = _m.group(2)
+                                _new_val    = _m.group(3)
+                                _xk = mx_m + 10
+                                # bullet dot
+                                _dot_s = _kf.render("●", True, (180, 120, 210))
+                                surf.blit(_dot_s, (_xk, _k_y)); _xk += _dot_s.get_width() + 4
+                                # label
+                                _lbl_s = _kf.render(_label_part + " ", True, (140, 130, 170))
+                                surf.blit(_lbl_s, (_xk, _k_y)); _xk += _lbl_s.get_width()
+                                # old value
+                                _ov_s = _kf.render(_old_val, True, (190, 185, 210))
+                                surf.blit(_ov_s, (_xk, _k_y)); _xk += _ov_s.get_width() + 3
+                                # arrow icon or text
+                                _arr_img = load_icon("arrow_ico", ARR_SZ_K)
+                                if _arr_img:
+                                    surf.blit(_arr_img, (_xk, _k_y + (16 - ARR_SZ_K) // 2)); _xk += ARR_SZ_K + 3
+                                else:
+                                    _a_s = _kf.render("→", True, (160, 155, 180))
+                                    surf.blit(_a_s, (_xk, _k_y)); _xk += _a_s.get_width() + 3
+                                # new value (green)
+                                _nv_s = _kf.render(_new_val, True, (100, 220, 100))
+                                surf.blit(_nv_s, (_xk, _k_y))
+                            else:
+                                # Plain text line
+                                _ks = _kf.render(_kl, True, (120, 115, 145))
+                                surf.blit(_ks, (mx_m+10, _k_y))
+                            _k_y += 15
+                    surf.set_clip(old_clip_k)
+            _abil_min_level = 0 if isinstance(u, (Harvester, Korzhik)) else 2
             if u.ability and u.level >= _abil_min_level:
                 ab=u.ability
                 ab_r=btns["ability_sq"]
@@ -2885,10 +3013,49 @@ class UI:
             pygame.draw.line(surf, (100,255,80), (mx2-12,my2), (mx2+12,my2), 2)
             pygame.draw.line(surf, (100,255,80), (mx2,my2-12), (mx2,my2+12), 2)
             pygame.draw.circle(surf, (100,255,80), (mx2,my2), 10, 2)
+
+        # ── Korzhik Kitty Curse placement preview ────────────────────────────
+        if self._catnip_place_mode and self._catnip_place_owner:
+            mx2, my2 = pygame.mouse.get_pos()
+            try:
+                from game_core import _FROSTY_PATHS, CURRENT_MAP
+                _paths = list(_FROSTY_PATHS) if CURRENT_MAP == "frosty" else [get_map_path()]
+            except Exception:
+                _paths = [get_map_path()]
+            _best_path = _paths[0]; _best_d = float('inf')
+            for _p in _paths:
+                for _si in range(len(_p) - 1):
+                    _ax, _ay = _p[_si]; _bx, _by = _p[_si + 1]
+                    _dx, _dy = _bx - _ax, _by - _ay; _ll = _dx * _dx + _dy * _dy
+                    _t2 = max(0.0, min(1.0, ((mx2 - _ax) * _dx + (my2 - _ay) * _dy) / _ll)) if _ll > 0 else 0.0
+                    _nx, _ny = _ax + _t2 * _dx, _ay + _t2 * _dy
+                    _d = math.hypot(_nx - mx2, _ny - my2)
+                    if _d < _best_d: _best_d = _d; _best_path = _p
+            _pt = self._catnip_place_owner.ability.preview_pt(mx2, my2, _best_path)
+            _r_px = 28   # matches _KittyCurseZone.RADIUS
+            _pulse = 0.5 + 0.5 * math.sin(self.t * 5)
+            _alpha = int(60 + 40 * _pulse)
+            _s = pygame.Surface((_r_px * 2 + 4, _r_px * 2 + 4), pygame.SRCALPHA)
+            pygame.draw.circle(_s, (255, 80, 180, _alpha), (_r_px + 2, _r_px + 2), _r_px)
+            pygame.draw.circle(_s, (255, 60, 160, 190),   (_r_px + 2, _r_px + 2), _r_px, 2)
+            surf.blit(_s, (int(_pt[0]) - _r_px - 2, int(_pt[1]) - _r_px - 2))
+            # preview cat-ears above the circle
+            _ex0 = int(_pt[0]); _ey0 = int(_pt[1]) - _r_px - 2
+            for _side in (-1, 1):
+                _ex = _ex0 + _side * 10
+                pygame.draw.polygon(surf, (255, 200, 230),
+                                    [(_ex, _ey0 - 1), (_ex - 7, _ey0 + 9), (_ex + 7, _ey0 + 9)])
+                pygame.draw.polygon(surf, (255, 120, 170),
+                                    [(_ex, _ey0 - 1), (_ex - 7, _ey0 + 9), (_ex + 7, _ey0 + 9)], 2)
+            pygame.draw.circle(surf, (255, 100, 180), (int(_pt[0]), int(_pt[1])), 5)
+            # crosshair
+            pygame.draw.line(surf, (255, 120, 200), (mx2 - 12, my2), (mx2 + 12, my2), 2)
+            pygame.draw.line(surf, (255, 120, 200), (mx2, my2 - 12), (mx2, my2 + 12), 2)
+            pygame.draw.circle(surf, (255, 120, 200), (mx2, my2), 10, 2)
         ab_entries=[]
         for u in units:
             if getattr(u,'ability2',None) and u.level>=1: ab_entries.append((u, u.ability2, 'ab2'))
-            _ab1_min = 0 if isinstance(u, Harvester) else 2
+            _ab1_min = 0 if isinstance(u, (Harvester, Korzhik)) else 2
             if u.ability and u.level >= _ab1_min: ab_entries.append((u, u.ability, 'ab1'))
             if getattr(u,'ability3',None) and u.level>=4: ab_entries.append((u, u.ability3, 'ab3'))
         for idx,(u,ab,slot) in enumerate(ab_entries):
@@ -3474,7 +3641,8 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
                 "Warlock": 4200,
                 "Jester": 650,
                 "Harvester": 2000,
-                "Twitgunner": 350}
+                "Twitgunner": 350,
+                "Korzhik": 350}
     cost = cost_map.get(unit_name)
     if cost:
         ico_m = load_icon("money_ico", 18)
@@ -5969,6 +6137,7 @@ ALL_UNITS_POOL = [
     {"name": "Assassin",       "rarity": "starter"},
     {"name": "Militant",       "rarity": "starter"},
     {"name": "Twitgunner",     "rarity": "starter"},
+    {"name": "Korzhik",        "rarity": "early_access"},
     {"name": "Accelerator",    "rarity": "epic"},
     {"name": "Frostcelerator", "rarity": "epic"},
     {"name": "Lifestealer",    "rarity": "starter"},
@@ -5998,6 +6167,7 @@ ALL_UNITS_POOL = [
 UNIT_SHOP_PRICES = {
     "Assassin":       None,
     "Twitgunner":     None,
+    "Korzhik":        None,   # Early Access — free
     "Militant":       300,
     "Archer":         1000,
     "Swarmer":        600,
@@ -6108,6 +6278,9 @@ class LoadoutScreen:
         # Twitgunner — стартер, всегда доступен
         if "Twitgunner" not in owned:
             owned = list(owned) + ["Twitgunner"]
+        # Korzhik — Early Access, бесплатно для всех
+        if "Korzhik" not in owned:
+            owned = list(owned) + ["Korzhik"]
         return owned
 
     def _show_msg(self, text, dur=2.5):
@@ -6915,7 +7088,8 @@ class Game:
                         "Soul Weaver": SoulWeaver,
                         "Rubber Duck": RubberDuck,
                         "Harvester": Harvester,
-                        "Twitgunner": Twitgunner}
+                        "Twitgunner": Twitgunner,
+                        "Korzhik": Korzhik}
         _loadout = self.save_data.get("loadout", ["Assassin", "Accelerator", None, None, None])
         while len(_loadout) < 5: _loadout.append(None)
         self.ui.SLOT_TYPES = [_name_to_cls.get(n) if n else None for n in _loadout]
@@ -7353,6 +7527,10 @@ class Game:
                             self.ui._thorn_place_mode  = False
                             self.ui._thorn_place_owner = None
                             self.ui.show_msg("Thorns placement cancelled.", 1.5)
+                        elif self.ui._catnip_place_mode:
+                            self.ui._catnip_place_mode  = False
+                            self.ui._catnip_place_owner = None
+                            self.ui.show_msg("Kitty Curse placement cancelled.", 1.5)
                         elif self.ui.drag_unit:
                             self.ui.drag_unit = None; self.ui.selected_slot = None
                         elif not self.paused: self.paused = True
@@ -7410,6 +7588,11 @@ class Game:
                                         self.ui._thorn_place_mode  = True
                                         self.ui._thorn_place_owner = _u
                                         self.ui.show_msg("Click on the path to place Thorns  [RMB / Esc to cancel]", 4.0)
+                                    elif isinstance(_u, Korzhik) and _best is _u.ability:
+                                        # Korzhik Kitty Curse needs player to pick a location
+                                        self.ui._catnip_place_mode  = True
+                                        self.ui._catnip_place_owner = _u
+                                        self.ui.show_msg("Click on the path to place Kitty Curse  [RMB / Esc to cancel]", 4.0)
                                     else:
                                         _best.activate(self.enemies, self.effects)
                                     # Advance cycle index past this unit for next press
@@ -7441,6 +7624,10 @@ class Game:
                             self.ui._thorn_place_mode  = False
                             self.ui._thorn_place_owner = None
                             self.ui.show_msg("Thorns placement cancelled.", 1.5)
+                        elif self.ui._catnip_place_mode:
+                            self.ui._catnip_place_mode  = False
+                            self.ui._catnip_place_owner = None
+                            self.ui.show_msg("Kitty Curse placement cancelled.", 1.5)
                         elif self.ui.drag_unit:
                             self.ui.drag_unit = None; self.ui.selected_slot = None
                     if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
