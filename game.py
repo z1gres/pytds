@@ -1994,7 +1994,7 @@ class UI:
 
             cls=type(u)
             nxt=self._get_next_stats(u)
-            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,ArcherOld:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,HackerLaserTest:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS,Farm:FARM_LEVELS,Harvester:HARVESTER_LEVELS,Twitgunner:TWITGUN_LEVELS,Korzhik:KORZHIK_LEVELS}
+            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,ArcherOld:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,HackerLaserTest:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS,Farm:FARM_LEVELS,Harvester:HARVESTER_LEVELS,Twitgunner:TWITGUN_LEVELS,Korzhik:KORZHIK_LEVELS,Conduit:CONDUIT_LEVELS}
             lvl_list=levels_map.get(cls,[])
             if cls==Jester: lvl_list=JESTER_LEVELS
             total_lvls=len(lvl_list)
@@ -3075,8 +3075,17 @@ class UI:
             _ab1_min = 0 if isinstance(u, (Harvester, Korzhik)) else 2
             if u.ability and u.level >= _ab1_min: ab_entries.append((u, u.ability, 'ab1'))
             if getattr(u,'ability3',None) and u.level>=4: ab_entries.append((u, u.ability3, 'ab3'))
+        _ab_clip_bottom = SLOT_AREA_Y - 4
+        _old_ab_clip = surf.get_clip()
+        surf.set_clip(pygame.Rect(0, 0, SCREEN_W, _ab_clip_bottom))
         for idx,(u,ab,slot) in enumerate(ab_entries):
-            bw3,bh3=160,48; bx3=SCREEN_W-bw3-8; by3=80+idx*(bh3+8)
+            bw3,bh3=160,48; bx3=8; by3=80+idx*(bh3+8)
+            if by3 + bh3 > _ab_clip_bottom:
+                ab._btn_rect=pygame.Rect(0,0,0,0)
+                if slot=='ab1': u._ability_btn_rect=pygame.Rect(0,0,0,0)
+                elif slot=='ab2': u._ability2_btn_rect=pygame.Rect(0,0,0,0)
+                elif slot=='ab3': u._ability3_btn_rect=pygame.Rect(0,0,0,0)
+                continue
             ready=ab.ready()
             pygame.draw.rect(surf,(30,70,80) if ready else (30,30,40),(bx3,by3,bw3,bh3),border_radius=8)
             pygame.draw.rect(surf,C_CYAN if ready else C_BORDER,(bx3,by3,bw3,bh3),2,border_radius=8)
@@ -3093,6 +3102,7 @@ class UI:
             if slot=='ab1': u._ability_btn_rect=pygame.Rect(bx3,by3,bw3,bh3)
             elif slot=='ab2': u._ability2_btn_rect=pygame.Rect(bx3,by3,bw3,bh3)
             elif slot=='ab3': u._ability3_btn_rect=pygame.Rect(bx3,by3,bw3,bh3)
+        surf.set_clip(_old_ab_clip)
         if self.msg_timer>0:
             alpha=min(255,int(self.msg_timer*255))
             s2=font_lg.render(self.msg,True,C_ORANGE); s2.set_alpha(alpha)
@@ -6830,10 +6840,6 @@ class LoadoutScreen:
             "Jester":   C_JESTER,
             "Harvester": C_HARVESTER,
         }
-
-        # "Your Loadout" label above slots
-        lbl_y = slot_rects[0].top - 26
-        txt(surf, "YOUR LOADOUT", (left_w // 2, lbl_y), (120, 140, 180), font_sm, center=True)
 
         # Slot-select hint arrow
         if self._slot_select:
