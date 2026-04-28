@@ -2439,6 +2439,8 @@ class UI:
                     ("Range",    u.range_tiles,           nxt.get("Range")   if nxt else None),
                 ]
                 if hd_next: stats.append(("HidDet_unlock", None, "Hidden Detection"))
+                if u.level == 4 and nxt is not None:
+                    stats.append(("Ability_unlock", None, "+Kitty Curse"))
             elif cls==Conduit:
                 stats = [
                     ("Damage",   u.damage,              nxt.get("Damage")   if nxt else None),
@@ -2830,26 +2832,21 @@ class UI:
                         _h_y += 15
                     surf.set_clip(old_clip2)
 
-            # === KORZHIK EXTRA INFO ===
+# === KORZHIK EXTRA INFO ===
             if cls==Korzhik:
                 _MAX_KLV = len(KORZHIK_LEVELS) - 1
                 _KORZHIK_LV_DESCS = [
-                    None,   # lv0
-                    None,   # lv1
-                    None,   # lv2
-                    None,   # lv3
-                    None,   # lv4
-                    # lv5 — предпоследний: 4 шарика, урон 30
-                    ["More spinning balls",
-                     "Spinning balls damage 10 → 30"],
-                    # lv6 — последний: шарики начинают стрелять
-                    ["Shooting balls",
-                     "Balls fire projectiles",
-                     "Shot damage: 100",
-                     "Shot firerate: 1.0"],
+                    None,   # lv0 (базовый)
+                    None,   # lv0 -> lv1: шарики не меняются
+                    ["Orbital Balls Upgrade:", "  - Attack speed: 1.0s to 0.2s"],   # lv1 -> lv2
+                    ["Orbital Balls Upgrade:", "  - +1 ball (Total: 2)"],           # lv2 -> lv3
+                    ["Orbital Balls Upgrade:", "  - Damage: 2 to 4", "  - Attack speed: 0.2s to 0.15s"], # lv3 -> lv4
+                    ["Orbital Balls Upgrade:", "  - +1 ball (Total: 3)"],           # lv4 -> lv5
+                    ["Orbital Balls Upgrade:", "  - +1 ball (Total: 4)", "  - Damage: 4 to 5", "  - Attack speed: 0.15s to 0.10s"], # lv5 -> lv6
                 ]
                 _nxt_klv = u.level + 1
                 _kdesc = _KORZHIK_LV_DESCS[_nxt_klv] if _nxt_klv < len(_KORZHIK_LV_DESCS) else None
+                
                 if _kdesc and cost:
                     _kf       = pygame.font.SysFont("segoeui", 13)
                     _kf_title = pygame.font.SysFont("segoeui", 13, bold=True)
@@ -2857,49 +2854,19 @@ class UI:
                     _kclip    = pygame.Rect(mx_m+2, my_m+2, mw-4, menu.h-4)
                     old_clip_k = surf.get_clip()
                     surf.set_clip(_kclip)
-                    ARR_SZ_K = 14
+                    
                     for _ki, _kl in enumerate(_kdesc):
                         if _k_y + 15 > my_m + menu.h - 48: break
                         if _ki == 0:
-                            # Title line — bold, lighter colour
                             _ks = _kf_title.render(_kl, True, (200, 160, 220))
                             surf.blit(_ks, (mx_m+10, _k_y))
-                            _k_y += 15
                         else:
-                            # Stat line — "Label  old →icon new"
-                            # Parse "text X → Y" pattern if present
-                            import re as _re
-                            _m = _re.match(r'^(.+?)\s+(\d+)\s*→\s*(\d+)$', _kl)
-                            if _m:
-                                _label_part = _m.group(1)
-                                _old_val    = _m.group(2)
-                                _new_val    = _m.group(3)
-                                _xk = mx_m + 10
-                                # bullet dot
-                                _dot_s = _kf.render("●", True, (180, 120, 210))
-                                surf.blit(_dot_s, (_xk, _k_y)); _xk += _dot_s.get_width() + 4
-                                # label
-                                _lbl_s = _kf.render(_label_part + " ", True, (140, 130, 170))
-                                surf.blit(_lbl_s, (_xk, _k_y)); _xk += _lbl_s.get_width()
-                                # old value
-                                _ov_s = _kf.render(_old_val, True, (190, 185, 210))
-                                surf.blit(_ov_s, (_xk, _k_y)); _xk += _ov_s.get_width() + 3
-                                # arrow icon or text
-                                _arr_img = load_icon("arrow_ico", ARR_SZ_K)
-                                if _arr_img:
-                                    surf.blit(_arr_img, (_xk, _k_y + (16 - ARR_SZ_K) // 2)); _xk += ARR_SZ_K + 3
-                                else:
-                                    _a_s = _kf.render("→", True, (160, 155, 180))
-                                    surf.blit(_a_s, (_xk, _k_y)); _xk += _a_s.get_width() + 3
-                                # new value (green)
-                                _nv_s = _kf.render(_new_val, True, (100, 220, 100))
-                                surf.blit(_nv_s, (_xk, _k_y))
-                            else:
-                                # Plain text line
-                                _ks = _kf.render(_kl, True, (120, 115, 145))
-                                surf.blit(_ks, (mx_m+10, _k_y))
-                            _k_y += 15
+                            _ks = _kf.render(_kl, True, (160, 155, 185))
+                            surf.blit(_ks, (mx_m+10, _k_y))
+                        _k_y += 15
+                        
                     surf.set_clip(old_clip_k)
+
             _abil_min_level = 0 if isinstance(u, (Harvester, Korzhik)) else 2
             if u.ability and u.level >= _abil_min_level:
                 ab=u.ability

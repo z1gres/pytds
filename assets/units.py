@@ -8214,15 +8214,16 @@ C_KORZHIK      = (255, 160, 200)   # pastel pink — cat-eared cutie
 C_KORZHIK_DARK = (120,  40,  80)
 
 # Korzhik stats (damage and firerate from screenshot, second value after arrow)
+# Korzhik stats (damage and firerate from screenshot, second value after arrow)
 KORZHIK_LEVELS = [
-    # dmg  firerate  range  cost    hidden_det
-    (6,    1.4,      5.0,   None,   False),   # lv0
-    (9,    1.2,      5.0,   1111,   False),   # lv1
-    (13,   1.0,      7.0,   2222,   True),    # lv2
-    (18,   0.9,      7.5,   3333,   True),    # lv3
-    (28,   0.7,      9.0,   4444,   True),    # lv4
-    (45,   0.5,      9.0,   5555,   True),    # lv5 — More spinning balls (4 orbs, dmg 30)
-    (45,   0.5,      9.0,   6666,   True),    # lv6 — Shooting balls (range-limited, dmg 50, limit 4)
+    # dmg  firerate  range_tiles cost     hidden_det
+    (4,    1.2,      5.7,       None,    False),   # lv0  — 162 px; 1 orbital ball, ball_dmg 2, ball_fr 1.0
+    (6,    1.0,      6,        350,     False),   # lv1  — 200 px; +2 dmg, firerate 1.2->1.0
+    (8,    1.0,      6,      1000,    True),    # lv2  — 225 px; +2 dmg, hidden detection, ball_fr 1.0->0.2
+    (20,   1.0,      7,      2000,    True),    # lv3  — 225 px; +12 dmg, +1 ball (total 2)
+    (25,   0.7,      7,       7500,    True),    # lv4  — 250 px; +5 dmg, firerate 1.0->0.7, ball_dmg +2, ball_fr 0.15
+    (75,   0.7,      7.5,       12500,   True),    # lv5  — 250 px; +50 dmg, +1 ball (total 3)
+    (85,   0.6,      8.5,      32500,   True),    # lv6  — 281 px; +10 dmg, firerate 0.6, +1 ball (total 4), ball_fr 0.1, ball_dmg +1
 ]
 
 
@@ -8448,15 +8449,16 @@ class _OrbitalBall:
     SPEED_RAD    = 2.2   # radians per second
     BALL_R       = 14    # collision + visual radius
     SHOT_SPEED   = 480.0 # shooting bullet speed
-    SHOT_FIRERATE = 1.0  # seconds between shots
+    SHOT_FIRERATE = 1.0  # default; overridden per-instance by Korzhik._apply_level
 
     def __init__(self, phase_offset):
         self.angle    = float(phase_offset)
         self.x        = 0.0; self.y = 0.0
-        self.damage   = 10       # melee contact damage (overridden by _apply_level)
+        self.damage   = 2        # melee contact damage (overridden by _apply_level)
         self.shooting = False    # set True at lv6
-        self.shot_damage = 50    # lv6 bullet damage
+        self.shot_damage = 2     # lv6 bullet damage
         self.shot_range  = None  # lv6 shooting range limit (pixels), None = unlimited
+        self.SHOT_FIRERATE = 1.0 # per-instance shooting firerate; set by _apply_level
         self._hit_cd  = {}       # id(enemy) → remaining cooldown (melee)
         self._shot_cd = 0.0      # shooting cooldown
         self._bullets = []       # active shot bullets: [{'x','y','vx','vy','alive'}]
@@ -8550,8 +8552,8 @@ class _OrbitalBall:
 
 
 class Korzhik(Unit):
-    """Cat-eared early-access tower — same stats as Twitgunner, free to unlock."""
-    PLACE_COST = 1200
+    """Cat-eared tower — balanced reroll. 7 levels (lv0–lv6). Fires bullets + orbital balls."""
+    PLACE_COST = 600
     COLOR      = C_KORZHIK
     NAME       = "Korzhik"
 
@@ -8561,7 +8563,7 @@ class Korzhik(Unit):
         self._anim_t      = 0.0
         self._aim_angle   = 0.0
         # Kitty Curse ability + active zones
-        self.ability      = KittyCurseAbility(self)
+        self.ability      = None
         self._curse_zones = []
         # orbital balls are created by _apply_level based on level
         self._orbs = []
@@ -8571,19 +8573,49 @@ class Korzhik(Unit):
         row = KORZHIK_LEVELS[self.level]
         self.damage, self.firerate, self.range_tiles, _, self.hidden_detection = row
         self.cd_left = 0.0
-        # lv5+: 4 orbital balls dealing 30 dmg
-        # lv6 (max): balls also shoot (firerate 1.0, shot dmg 100)
-        _max_lv = len(KORZHIK_LEVELS) - 1
-        if self.level >= 5:
-            _orb_count    = 4
-            _orb_dmg      = 30
+        # Абилка теперь создается только на 4 индексе (5-й уровень)
+        if self.level >= 5 and self.ability is None: 
+            self.ability = KittyCurseAbility(self)
+        
+
+        # Orbital ball config per level:
+        # lv0-1: 1 ball, dmg 2, ball_fr 1.0
+        # lv2:   1 ball, dmg 2, ball_fr 0.2
+        # lv3:   2 balls, dmg 2, ball_fr 0.2
+        # lv4:   2 balls, dmg 4, ball_fr 0.15
+        # lv5:   3 balls, dmg 4, ball_fr 0.15
+        # lv6:   4 balls, dmg 5, ball_fr 0.1, shooting=True
+        # All levels: orbs always shoot
+        if self.level >= 6:
+            _orb_count = 4
+            _orb_dmg   = 5
+            _orb_fr    = 0.1
+        elif self.level >= 5:
+            _orb_count = 3
+            _orb_dmg   = 4
+            _orb_fr    = 0.15
+        elif self.level >= 4:
+            _orb_count = 2
+            _orb_dmg   = 4
+            _orb_fr    = 0.15
+        elif self.level >= 3:
+            _orb_count = 2
+            _orb_dmg   = 2
+            _orb_fr    = 0.2
+        elif self.level >= 2:
+            _orb_count = 1
+            _orb_dmg   = 2
+            _orb_fr    = 0.2
         else:
-            _orb_count    = 2
-            _orb_dmg      = 10
-        _orb_shooting = (self.level >= _max_lv)
-        # lv6 shooting balls deal 50 dmg and are limited to tower range
-        _orb_shot_dmg   = 50
+            _orb_count = 1
+            _orb_dmg   = 2
+            _orb_fr    = 1.0
+        _orb_shooting = True  # orbs always shoot
+
+        # lv6 shooting balls are range-limited to tower range
+        _orb_shot_dmg   = _orb_dmg
         _orb_shot_range = self.range_tiles * TILE if _orb_shooting else None
+
         # Rebuild orbs only if count changed (preserve angles otherwise)
         if not hasattr(self, '_orbs') or len(self._orbs) != _orb_count:
             self._orbs = [
@@ -8595,6 +8627,7 @@ class Korzhik(Unit):
             orb.shooting    = _orb_shooting
             orb.shot_damage = _orb_shot_dmg
             orb.shot_range  = _orb_shot_range
+            orb.SHOT_FIRERATE = _orb_fr
 
     def upgrade_cost(self):
         nxt = self.level + 1
@@ -8697,11 +8730,12 @@ class Korzhik(Unit):
         surf.set_clip(old_clip)
 
     def get_info(self):
-        info = {}
-        if self.hidden_detection:
-            info["HidDet"] = "Hidden Detection"
-        info["Damage"]   = self.damage
-        info["Firerate"] = f"{self.firerate:.3f}"
-        info["Range"]    = self.range_tiles
-        info["Ability"]  = f"Kitty Curse ({self.ability.cooldown:.0f}s CD)"
-        return info
+            info = {}
+            if self.hidden_detection:
+                info["HidDet"] = "Hidden Detection"
+            info["Damage"]   = self.damage
+            info["Firerate"] = f"{self.firerate:.3f}"
+            info["Range"]    = self.range_tiles
+            if getattr(self, 'ability', None):
+                info["Ability"]  = f"Kitty Curse ({self.ability.cooldown:.0f}s CD)"
+            return info
