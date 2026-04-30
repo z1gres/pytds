@@ -8535,11 +8535,16 @@ class _OrbitalBall:
                 # Trigger recoil
                 self._recoil = self.BARREL_RECOIL
 
-            # Update bullets
+            # Update bullets (homing — track target every frame)
             for b in self._bullets:
                 if not b['alive']: continue
                 if not b['target'].alive:
                     b['alive'] = False; continue
+                # Recalculate direction toward target each frame
+                dx = b['target'].x - b['x']; dy = b['target'].y - b['y']
+                d  = math.hypot(dx, dy) or 1
+                b['vx'] = dx / d * self.SHOT_SPEED
+                b['vy'] = dy / d * self.SHOT_SPEED
                 b['x'] += b['vx'] * dt
                 b['y'] += b['vy'] * dt
                 for e in enemies:
