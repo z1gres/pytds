@@ -8327,13 +8327,13 @@ class Conduit(Unit):
         return info
 
 
-# ── Korzhik ────────────────────────────────────────────────────────────────────
-C_KORZHIK      = (255, 160, 200)   # pastel pink — cat-eared cutie
-C_KORZHIK_DARK = (120,  40,  80)
+# ── Felyne ────────────────────────────────────────────────────────────────────
+C_FELYNE      = (255, 160, 200)   # pastel pink — cat-eared cutie
+C_FELYNE_DARK = (120,  40,  80)
 
-# Korzhik stats (damage and firerate from screenshot, second value after arrow)
-# Korzhik stats (damage and firerate from screenshot, second value after arrow)
-KORZHIK_LEVELS = [
+# Felyne stats (damage and firerate from screenshot, second value after arrow)
+# Felyne stats (damage and firerate from screenshot, second value after arrow)
+FELYNE_LEVELS = [
     # dmg  firerate  range_tiles cost     hidden_det
     (4,    1.2,      5.7,       None,    False),   # lv0  — 162 px; 1 orbital ball, ball_dmg 2, ball_fr 1.0
     (6,    1.0,      6,        350,     False),   # lv1  — 200 px; +2 dmg, firerate 1.2->1.0
@@ -8345,8 +8345,8 @@ KORZHIK_LEVELS = [
 ]
 
 
-class KorzhikBullet:
-    """Homing bullet fired by Korzhik — glowing star with rainbow trail."""
+class FelyneBullet:
+    """Homing bullet fired by Felyne — glowing star with rainbow trail."""
     SPEED  = 560.0
     RADIUS = 5
 
@@ -8448,13 +8448,13 @@ class KorzhikBullet:
 
 
 
-# ── Orbital ball that orbits Korzhik ─────────────────────────────────────────
+# ── Orbital ball that orbits Felyne ─────────────────────────────────────────
 class _OrbitalBall:
-    """Fixed turret satellite around Korzhik — stands still, aims and shoots at enemies."""
+    """Fixed turret satellite around Felyne — stands still, aims and shoots at enemies."""
     ORBIT_R       = 75    # pixels from tower centre (fixed position)
     BALL_R        = 14    # collision radius
     SHOT_SPEED    = 480.0 # shooting bullet speed
-    SHOT_FIRERATE = 1.0   # default; overridden per-instance by Korzhik._apply_level
+    SHOT_FIRERATE = 1.0   # default; overridden per-instance by Felyne._apply_level
     TURRET_W      = 10    # turret barrel width
     TURRET_LEN    = 18    # turret barrel length
     BARREL_RECOIL = 4.0   # max recoil pixels when firing
@@ -8631,11 +8631,11 @@ class _OrbitalBall:
         pygame.draw.line(surf, strut_col, (strut_start_x, strut_start_y), (strut_end_x, strut_end_y), 2)
 
 
-class Korzhik(Unit):
+class Felyne(Unit):
     """Cat-eared tower — balanced reroll. 7 levels (lv0–lv6). Fires bullets + orbital balls."""
     PLACE_COST = 600
-    COLOR      = C_KORZHIK
-    NAME       = "Korzhik"
+    COLOR      = C_FELYNE
+    NAME       = "Felyne"
 
     def __init__(self, px, py):
         super().__init__(px, py)
@@ -8646,7 +8646,7 @@ class Korzhik(Unit):
         self._apply_level()
 
     def _apply_level(self):
-        row = KORZHIK_LEVELS[self.level]
+        row = FELYNE_LEVELS[self.level]
         self.damage, self.firerate, self.range_tiles, _, self.hidden_detection = row
         self.cd_left = 0.0
 
@@ -8704,12 +8704,12 @@ class Korzhik(Unit):
 
     def upgrade_cost(self):
         nxt = self.level + 1
-        if nxt >= len(KORZHIK_LEVELS): return None
-        return KORZHIK_LEVELS[nxt][3]   # all None — free upgrades
+        if nxt >= len(FELYNE_LEVELS): return None
+        return FELYNE_LEVELS[nxt][3]   # all None — free upgrades
 
     def upgrade(self):
         nxt = self.level + 1
-        if nxt < len(KORZHIK_LEVELS):
+        if nxt < len(FELYNE_LEVELS):
             self.level = nxt; self._apply_level()
 
     def update(self, dt, enemies, effects, money):
@@ -8727,7 +8727,7 @@ class Korzhik(Unit):
         if self.cd_left <= 0 and targets:
             self.cd_left = self.firerate
             t0 = targets[0]
-            self._bullets.append(KorzhikBullet(self.px, self.py, t0, self.damage))
+            self._bullets.append(FelyneBullet(self.px, self.py, t0, self.damage))
             self.total_damage += self.damage
         for b in self._bullets: b.update(dt, enemies)
         _rng_px_kz = self.range_tiles * TILE
@@ -8781,8 +8781,8 @@ class Korzhik(Unit):
         surf.blit(shadow, (cx - 28, cy + 22))
 
         # ── Body: dark outline + main gradient circle ─────────────────────────
-        pygame.draw.circle(surf, C_KORZHIK_DARK, (cx, cy), 27)
-        pygame.draw.circle(surf, C_KORZHIK,      (cx, cy), 23)
+        pygame.draw.circle(surf, C_FELYNE_DARK, (cx, cy), 27)
+        pygame.draw.circle(surf, C_FELYNE,      (cx, cy), 23)
         # Inner highlight (top-left) — soft shimmer
         hi = pygame.Surface((28, 28), pygame.SRCALPHA)
         hi_alpha = int(80 + abs(math.sin(t * 1.5)) * 40)
