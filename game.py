@@ -39,7 +39,7 @@ UNIT_LIMITS["Harvester"]   = 5   # placement limit per player
 UNIT_LIMITS["ToxicGunner"] = 5
 UNIT_LIMITS["Gladiator"]   = 6
 UNIT_LIMITS["Twitgunner"]  = 6
-UNIT_LIMITS["Korzhik"]     = 6
+UNIT_LIMITS["Felyne"]     = 6
 UNIT_LIMITS["Conduit"]    = 3
 
 # ── Patch early_access rarity into RARITY_DATA (from game_core) ───────────────
@@ -260,7 +260,7 @@ from units import (
     Harvester, HARVESTER_LEVELS, C_HARVESTER, C_HARVESTER_DARK,
     ThornsAbility,
     Twitgunner, TWITGUN_LEVELS, C_TWITGUN, C_TWITGUN_DARK,
-    Korzhik, KORZHIK_LEVELS, C_KORZHIK, C_KORZHIK_DARK,
+    Felyne, FELYNE_LEVELS, C_FELYNE, C_FELYNE_DARK,
     Conduit, CONDUIT_LEVELS, C_CONDUIT, C_CONDUIT_DARK,
 )
 
@@ -629,7 +629,7 @@ class AdminPanel:
                 ("ArcherPrime",ArcherPrime,C_ARCHERPRIME),
                 ("Harvester",Harvester,C_HARVESTER),
                 ("Twitgunner",Twitgunner,C_TWITGUN),
-                ("Korzhik",Korzhik,C_KORZHIK),
+                ("Felyne",Felyne,C_FELYNE),
                 ("Conduit",Conduit,C_CONDUIT),
             ]
             cols=8; cw=(pw-28)//cols; ch=100; gap=6
@@ -1401,7 +1401,7 @@ class UI:
         elif cls==Conduit: levels=CONDUIT_LEVELS; cost_idx=3
         elif cls==Militant: levels=MILITANT_LEVELS; cost_idx=3
         elif cls==Twitgunner: levels=TWITGUN_LEVELS; cost_idx=3
-        elif cls==Korzhik: levels=KORZHIK_LEVELS; cost_idx=3
+        elif cls==Felyne: levels=FELYNE_LEVELS; cost_idx=3
         elif cls==Caster: levels=CASTER_LEVELS; cost_idx=3
         elif cls==DoubleAccelerator: levels=DACCEL_LEVELS; cost_idx=3
         elif cls==Warlock: levels=WARLOCK_LEVELS; cost_idx=6
@@ -1598,9 +1598,9 @@ class UI:
             result={"Damage":d,"Firerate":fr,"Range":r}
             if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
             return result
-        elif cls==Korzhik:
-            if nxt>=len(KORZHIK_LEVELS): return None
-            d,fr,r,_,hd=KORZHIK_LEVELS[nxt]
+        elif cls==Felyne:
+            if nxt>=len(FELYNE_LEVELS): return None
+            d,fr,r,_,hd=FELYNE_LEVELS[nxt]
             result={"Damage":d,"Firerate":fr,"Range":r}
             if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
             return result
@@ -1988,7 +1988,7 @@ class UI:
 
             cls=type(u)
             nxt=self._get_next_stats(u)
-            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,ArcherOld:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,HackerLaserTest:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS,Farm:FARM_LEVELS,Harvester:HARVESTER_LEVELS,Twitgunner:TWITGUN_LEVELS,Korzhik:KORZHIK_LEVELS,Conduit:CONDUIT_LEVELS}
+            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,ArcherOld:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,HackerLaserTest:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS,Farm:FARM_LEVELS,Harvester:HARVESTER_LEVELS,Twitgunner:TWITGUN_LEVELS,Felyne:FELYNE_LEVELS,Conduit:CONDUIT_LEVELS}
             lvl_list=levels_map.get(cls,[])
             if cls==Jester: lvl_list=JESTER_LEVELS
             total_lvls=len(lvl_list)
@@ -2422,7 +2422,7 @@ class UI:
                     ("Range",    u.range_tiles,           nxt.get("Range")   if nxt else None),
                 ]
                 if hd_next: stats.append(("HidDet_unlock", None, "Hidden Detection"))
-            elif cls==Korzhik:
+            elif cls==Felyne:
                 hd_now  = u.hidden_detection
                 hd_next = bool(nxt and nxt.get("HidDet") and not hd_now)
                 stats = []
@@ -2845,10 +2845,10 @@ class UI:
                         _h_y += 15
                     surf.set_clip(old_clip2)
 
-# === KORZHIK EXTRA INFO ===
-            if cls==Korzhik:
-                _MAX_KLV = len(KORZHIK_LEVELS) - 1
-                _KORZHIK_LV_DESCS = [
+# === FELYNE EXTRA INFO ===
+            if cls==Felyne:
+                _MAX_KLV = len(FELYNE_LEVELS) - 1
+                _FELYNE_LV_DESCS = [
                     None,   # lv0 (базовый)
                     None,   # lv0 -> lv1: шарики не меняются
                     ["Orbital Balls Upgrade:", "  - Attack speed: 1.0s to 0.2s"],   # lv1 -> lv2
@@ -2858,7 +2858,7 @@ class UI:
                     ["Orbital Balls Upgrade:", "  - +1 ball (Total: 4)", "  - Damage: 4 to 5", "  - Attack speed: 0.15s to 0.10s"], # lv5 -> lv6
                 ]
                 _nxt_klv = u.level + 1
-                _kdesc = _KORZHIK_LV_DESCS[_nxt_klv] if _nxt_klv < len(_KORZHIK_LV_DESCS) else None
+                _kdesc = _FELYNE_LV_DESCS[_nxt_klv] if _nxt_klv < len(_FELYNE_LV_DESCS) else None
                 
                 if _kdesc and cost:
                     _kf       = pygame.font.SysFont("segoeui", 13)
@@ -2880,7 +2880,7 @@ class UI:
                         
                     surf.set_clip(old_clip_k)
 
-            _abil_min_level = 0 if isinstance(u, (Harvester, Korzhik)) else 2
+            _abil_min_level = 0 if isinstance(u, (Harvester, Felyne)) else 2
             if u.ability and u.level >= _abil_min_level:
                 ab=u.ability
                 ab_r=btns["ability_sq"]
@@ -3550,7 +3550,7 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
             by2 = cy + int(math.sin(a2) * sc(16) - math.sin(perp) * sc(3))
             pygame.draw.polygon(surf, (170, 240, 100), [(tip_x, tip_y), (bx1, by1), (bx2, by2)])
 
-    elif unit_name == "Korzhik":
+    elif unit_name == "Felyne":
         # ── Pulsing aura ─────────────────────────────────────────────────────
         aura_r = sc(30)
         aura_s = pygame.Surface((aura_r * 2, aura_r * 2), pygame.SRCALPHA)
@@ -3567,8 +3567,8 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
             pygame.draw.polygon(surf, (255, 140, 175), inn)
             pygame.draw.polygon(surf, (200, 120, 160), out, sp(1))
         # ── Body ─────────────────────────────────────────────────────────────
-        pygame.draw.circle(surf, C_KORZHIK_DARK, (cx, cy), sc(27))
-        pygame.draw.circle(surf, C_KORZHIK,      (cx, cy), sc(23))
+        pygame.draw.circle(surf, C_FELYNE_DARK, (cx, cy), sc(27))
+        pygame.draw.circle(surf, C_FELYNE,      (cx, cy), sc(23))
         # Highlight shimmer
         hi_a = int(70 + abs(math.sin(t * 1.5)) * 40)
         hi_s = pygame.Surface((sc(20), sc(20)), pygame.SRCALPHA)
@@ -6433,7 +6433,7 @@ ALL_UNITS_POOL = [
     {"name": "Assassin",       "rarity": "starter"},
     {"name": "Militant",       "rarity": "starter"},
     {"name": "Twitgunner",     "rarity": "starter"},
-    {"name": "Korzhik",        "rarity": "mythic"},
+    {"name": "Felyne",        "rarity": "mythic"},
     {"name": "Conduit",        "rarity": "early_access"},
     {"name": "Accelerator",    "rarity": "epic"},
     {"name": "Frostcelerator", "rarity": "epic"},
@@ -6464,7 +6464,7 @@ ALL_UNITS_POOL = [
 UNIT_SHOP_PRICES = {
     "Assassin":       None,
     "Twitgunner":     None,
-    "Korzhik":        None,   # Mythic — purchased with 1500 shards
+    "Felyne":        None,   # Mythic — purchased with 1500 shards
     "Conduit":        None,   # Early Access — free
     "Militant":       300,
     "Archer":         1000,
@@ -6523,7 +6523,7 @@ UNIT_BASE_STATS = {
     "Warlock":        {"cost": 4200, "limit": 3,  "damage": 250,  "firerate": 0.6,  "range": 8,  "income": None},
     "Caster":         {"cost": 7500, "limit": 2,  "damage": 400,  "firerate": 0.5,  "range": 9,  "income": None},
     "Jester":         {"cost": 650,  "limit": 4,  "damage": 100,  "firerate": 1.5,  "range": 7,  "income": None},
-    "Korzhik":        {"cost": 600,  "limit": 6,  "damage": 350,  "firerate": 0.8,  "range": 7,  "income": None},
+    "Felyne":        {"cost": 600,  "limit": 6,  "damage": 350,  "firerate": 0.8,  "range": 7,  "income": None},
     "Conduit":        {"cost": 1800, "limit": 3,  "damage": 60,   "firerate": 1.2,  "range": 5,  "income": None},
     "Rubber Duck":    {"cost": 500,  "limit": 3,  "damage": 120,  "firerate": 1.0,  "range": 7,  "income": None},
     "Harvester":      {"cost": 2000, "limit": 5,  "damage": 80,   "firerate": 1.0,  "range": 6,  "income": 80},
@@ -6537,7 +6537,7 @@ UNIT_DESCRIPTIONS = {
     "Twitgunner":     "The starter tower of the game.",
     "Lifestealer":    "Steal enemies life and convert it to money",
     "Archer":         "Shoot a piercing arrow that bounces towards nearby enemies. Pick between Fire, Stun, & EXP arrows.",
-    "Red Ball":       "Bounces at enemies dealing high single target damage. Korzhik's tower",
+    "Red Ball":       "Bounces at enemies dealing high single target damage. Felyne's tower",
     "Farm":           "Earn extra cash per wave. The higher the upgrade, the higher the income.",
     "Cowboy":         "There ain't enough room for the two of us pardner... Gain cash on reload.",
     "Swarmer":        "OH NOES, THE BEES! Attack enemies with bees that do damage over time",
@@ -6556,7 +6556,7 @@ UNIT_DESCRIPTIONS = {
     "Warlock":        "A hybrid melee and ranged tower that fights with eldritch magic. Capable of knocking back enemies and applying bleed.",
     "Caster":         "A boss killer with good aoe ability",
     "Jester":         "I have a ton of tricks in my pockets! Cycle through and throw debuff bombs at enemies!",
-    "Korzhik":        "Korzhik. Catgirl",
+    "Felyne":        "Felyne. Catgirl",
     "Conduit":        "Draws charge from nearby towers and unleashes chain lightning. The more allies, the stronger the mega-discharge!",
     "Rubber Duck":    "Exclusive squeaky menace. Don't underestimate it.",
     "Harvester":      "A haunted scarecrow that fires piercing bolts and can summon thorns to slow enemies.",
@@ -6649,7 +6649,7 @@ class LoadoutScreen:
             owned = list(owned) + ["Twitgunner"]
         if "Conduit" not in owned:
             owned = list(owned) + ["Conduit"]
-        # Korzhik — Mythic, покупается за 1500 шардов
+        # Felyne — Mythic, покупается за 1500 шардов
         return owned
 
     def _show_msg(self, text, dur=2.5):
@@ -6739,7 +6739,7 @@ class LoadoutScreen:
 
         for btn_r, u in self._shard_buy_hits:
             if btn_r.collidepoint(pos):
-                SHARD_PRICES = {"Caster": 1000, "Jester": 300, "Korzhik": 1500}
+                SHARD_PRICES = {"Caster": 1000, "Jester": 300, "Felyne": 1500}
                 price = SHARD_PRICES.get(u["name"], 0)
                 shards = self.save_data.get("shards", 0)
                 if shards >= price:
@@ -6969,7 +6969,7 @@ class LoadoutScreen:
                 "Warlock": Warlock, "Jester": Jester,
                 "Soul Weaver": SoulWeaver, "Rubber Duck": RubberDuck,
                 "Harvester": Harvester, "Twitgunner": Twitgunner,
-                "Korzhik": Korzhik, "Conduit": Conduit,
+                "Felyne": Felyne, "Conduit": Conduit,
             }
             _cls_ld = _name_to_cls_ld.get(uname)
             _static = UNIT_BASE_STATS.get(uname, {})
@@ -7224,7 +7224,7 @@ class LoadoutScreen:
                         es  = excl_f.render("EXCLUSIVE", True, (220,65,65))
                         surf.blit(es, es.get_rect(center=(cx2, cy2 + 8)))
                     elif rarity == "mythic":
-                        SHARD_PRICES = {"Caster": 1000, "Jester": 300, "Korzhik": 1500}
+                        SHARD_PRICES = {"Caster": 1000, "Jester": 300, "Felyne": 1500}
                         shard_price = SHARD_PRICES.get(u["name"])
                         if shard_price is not None:
                             shards_have = self.save_data.get("shards", 0)
@@ -7493,7 +7493,7 @@ class EndlessWaveManager:
 class Game:
     def __init__(self, save_data=None, mode="easy", admin_mode=False):
         self.save_data = save_data or load_save()
-        self.screen=pygame.display.set_mode((SCREEN_W,SCREEN_H))
+        self.screen = _apply_display_mode()
         pygame.display.set_caption("Tower Defense")
         self.clock=pygame.time.Clock(); self.running=True
         self._elapsed=0.0      # total play time in seconds (affected by speed)
@@ -7694,7 +7694,7 @@ class Game:
                         "Rubber Duck": RubberDuck,
                         "Harvester": Harvester,
                         "Twitgunner": Twitgunner,
-                        "Korzhik": Korzhik,
+                        "Felyne": Felyne,
                         "Conduit": Conduit}
         _loadout = self.save_data.get("loadout", ["Assassin", "Accelerator", None, None, None])
         while len(_loadout) < 5: _loadout.append(None)
