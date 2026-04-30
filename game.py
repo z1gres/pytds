@@ -39,7 +39,7 @@ UNIT_LIMITS["Harvester"]   = 5   # placement limit per player
 UNIT_LIMITS["ToxicGunner"] = 5
 UNIT_LIMITS["Gladiator"]   = 6
 UNIT_LIMITS["Twitgunner"]  = 6
-UNIT_LIMITS["Korzhik"]     = 4
+UNIT_LIMITS["Korzhik"]     = 6
 UNIT_LIMITS["Conduit"]    = 3
 
 # ── Patch early_access rarity into RARITY_DATA (from game_core) ───────────────
@@ -289,8 +289,8 @@ ADMIN_ENEMY_LIST = [
     ("Armored",     ArmoredEnemy,     (80,90,110),   25,    55),
     ("Slow Boss",   SlowBoss,         (60,80,20),    25,    28),
     ("Hidden Boss", HiddenBoss,       (80,40,120),   200,   55),
-    ("Necromancer", Necromancer,      (40,80,160),   80,    55),
-    ("GraveDigger", GraveDigger,      (20,60,20),    300,   55),
+    ("Necromancer", Necromancer,      (40,80,160),   360,   55),
+    ("GraveDigger", GraveDigger,      (20,60,20),    5000,  30),
     ("Fast Boss",   FastBoss,         (200,80,0),    500,   200),
     ("Optimus Prime",OtchimusPrime,   (80,10,10),    40000, 15),
     ("Abnormal",    AbnormalEnemy,    (180,60,60),   11,    55),
@@ -308,37 +308,37 @@ ADMIN_ENEMY_LIST = [
     ("F.Jester",    FallenJester,     (90,0,90),     10000, 28),
     ("Necrotic Sk.",NecroticSkeleton, (170,190,160), 1400,  120),
     ("F.Breaker",   FallenBreaker,    (120,40,160),  30,    55),
-    ("F.Rusher",    FallenRusher,     (160,30,100),  350,   140),
+    ("F.Rusher",    FallenRusher,     (160,30,100),  350,   61),
     ("Poss.Armor",  PossessedArmor,   (80,80,110),   300,   55),
     ("F.HGuard",    FallenHonorGuard, (160,120,20),  75000, 22),
     ("F.Shield",    FallenShield,     (60,100,160),  8000,  55),
     ("F.Hero",      FallenHero,       (120,60,160),  2500,  55),
-    ("F.King",      FallenKing,       (120,40,160),  150000,8),
-    ("TrueFallenKing",TrueFallenKing, (80,10,10),    999999,5),
+    ("F.King",      FallenKing,       (120,40,160),  175000,9),
+    ("TrueFallenKing",TrueFallenKing, (80,10,10),    175000,8),
     # Frosty
-    ("Frozen",      FrozenEnemy,      (80,200,255),  120,   55),
-    ("Snowy",       SnowyEnemy,       (160,220,255), 80,    83),
-    ("PackedIce",   PackedIceEnemy,   (60,160,220),  300,   38),
-    ("SnowMinion",  SnowMinion,       (140,210,255), 40,    120),
-    ("FrostMystery",FrostMystery,     (30,130,200),  200,   140),
-    ("Frostmite",   Frostmite,        (50,180,230),  60,    180),
-    ("ColdMist",    ColdMist,         (100,190,240), 150,   90),
-    ("Permafrost",  Permafrost,       (40,120,200),  500,   28),
-    ("FrostHunter", FrostHunter,      (30,160,220),  400,   140),
-    ("UnstableIce", UnstableIce,      (80,200,240),  250,   120),
-    ("FrostWraith", FrostWraith,      (60,180,220),  600,   100),
-    ("FrostAcolyte",FrostAcolyte,     (40,150,210),  800,   55),
-    ("Frost Undead",FrostUndead,      (60,170,230),  3250,  140),
-    ("Frost Invader",FrostInvader,    (40,120,200),  4000,  55),
-    ("Mega F.Myst.",MegaFrostMystery, (30,130,200),  600,   140),
+    ("Frozen",      FrozenEnemy,      (80,200,255),  10,    68),
+    ("Snowy",       SnowyEnemy,       (160,220,255), 16,    28),
+    ("PackedIce",   PackedIceEnemy,   (60,160,220),  75,    38),
+    ("SnowMinion",  SnowMinion,       (140,210,255), 200,   38),
+    ("FrostMystery",FrostMystery,     (30,130,200),  50,    55),
+    ("Frostmite",   Frostmite,        (50,180,230),  32,    140),
+    ("ColdMist",    ColdMist,         (100,190,240), 80,    68),
+    ("Permafrost",  Permafrost,       (40,120,200),  650,   42),
+    ("FrostHunter", FrostHunter,      (30,160,220),  1800,  28),
+    ("UnstableIce", UnstableIce,      (80,200,240),  400,   140),
+    ("FrostWraith", FrostWraith,      (60,180,220),  600,   68),
+    ("FrostAcolyte",FrostAcolyte,     (40,150,210),  3050,  16),
+    ("Frost Undead",FrostUndead,      (60,170,230),  800,   140),
+    ("Frost Invader",FrostInvader,    (40,120,200),  4000,  27),
+    ("Mega F.Myst.",MegaFrostMystery, (30,130,200),  600,   55),
     ("Frost Ravager",FrostRavager,    (20,80,170),   25000, 28),
     ("Trickster Elf",TricksterElf,    (20,70,60),    2500,  28),
-    ("Yeti",        Yeti,             (80,150,220),  12000, 140),
+    ("Yeti",        Yeti,             (80,150,220),  10000, 14),
     ("Frost Mage",  FrostMage,        (20,80,170),   12500, 55),
     ("Frost Hero",  FrostHero,        (20,90,180),   40000, 28),
     ("Deep Freeze", DeepFreeze,       (10,70,160),   12000, 55),
-    ("F.Necromancer",FrostNecromancer,(20,70,160),   30000, 28),
-    ("Frost Spirit",FrostSpirit,      (20,90,180),   500000,26),
+    ("F.Necromancer",FrostNecromancer,(20,70,160),   5000,  55),
+    ("Frost Spirit",FrostSpirit,      (20,90,180),   3000,  140),
 ]
 
 class AdminPanel:
@@ -411,6 +411,11 @@ class AdminPanel:
                     elif action=="map_event":   game_core.CURRENT_MAP="event"
                     elif action=="map_uturn":       game_core.CURRENT_MAP="uturn"
                     elif action=="map_labyrinth":   game_core.CURRENT_MAP="labyrinth"
+                    # Clear all enemies and units when map changes
+                    if hasattr(game_ref, 'enemies'):
+                        game_ref.enemies.clear()
+                    if hasattr(game_ref, 'units'):
+                        game_ref.units.clear()
                     return
 
         if self.tab=="mode" and game_ref:
@@ -512,7 +517,7 @@ class AdminPanel:
 
         # ── Title bar ─────────────────────────────────────────────────────────
         title_f=pygame.font.SysFont("segoeui",22,bold=True)
-        title_s=title_f.render("⚙  SANDBOX ADMIN PANEL",True,(140,200,255))
+        title_s=title_f.render("SANDBOX ADMIN PANEL",True,(140,200,255))
         surf.blit(title_s,(px+20,py+10))
 
         mode_lbl=getattr(game_ref,'mode','sandbox') if game_ref else 'sandbox'
@@ -528,16 +533,16 @@ class AdminPanel:
         cb_hov=self._close_btn.collidepoint(mx_c,my_c)
         pygame.draw.rect(surf,(90,25,25) if cb_hov else (50,20,20),self._close_btn,border_radius=8)
         pygame.draw.rect(surf,(220,60,60) if cb_hov else (140,40,40),self._close_btn,2,border_radius=8)
-        txt(surf,"✕",self._close_btn.center,(255,120,120),pygame.font.SysFont("segoeui",20,bold=True),center=True)
+        txt(surf,"X",self._close_btn.center,(255,120,120),pygame.font.SysFont("segoeui",20,bold=True),center=True)
 
         # ── Tab bar ───────────────────────────────────────────────────────────
         tab_y=py+58; tab_h=36
         tabs=[
-            ("enemy", "☠  ENEMIES",  (160,50,50)),
-            ("units", "🗡  UNITS",    (50,160,80)),
-            ("map",   "🗺  MAP",      (50,120,160)),
-            ("mode",  "🎮  MODE",     (120,60,180)),
-            ("misc",  "⚡  MISC",     (180,120,20)),
+            ("enemy", "ENEMIES",  (160,50,50)),
+            ("units", "UNITS",    (50,160,80)),
+            ("map",   "MAP",      (50,120,160)),
+            ("mode",  "MODE",     (120,60,180)),
+            ("misc",  "MISC",     (180,120,20)),
         ]
         tab_w=(pw-16)//len(tabs)
         self._tab_rects={}
@@ -582,7 +587,7 @@ class AdminPanel:
                 # enemy preview
                 preview=pygame.Surface((44,44),pygame.SRCALPHA)
                 try:
-                    tmp=cls(1); tmp.x=22; tmp.y=22; tmp.draw(preview)
+                    tmp=cls(1); tmp.x=22; tmp.y=22; tmp._bob=0; tmp.draw(preview)
                 except: pygame.draw.circle(preview,col,(22,22),14)
                 surf.blit(preview,(cx2+cw//2-22,cy2+4))
                 # name centered
@@ -683,7 +688,7 @@ class AdminPanel:
                 pygame.draw.rect(surf,bg,r,border_radius=12)
                 brd2=tuple(min(255,c2+80) for c2 in brd) if active else (tuple(min(255,c2+40) for c2 in brd) if hov else brd)
                 pygame.draw.rect(surf,brd2,r,3 if active else 2,border_radius=12)
-                check="✓  " if active else ""
+                check="[x]  " if active else ""
                 ns=lf.render(check+name,True,C_WHITE)
                 ds=sf2.render(desc,True,(160,180,200))
                 surf.blit(ns,ns.get_rect(centerx=r.centerx,top=r.y+12))
@@ -693,12 +698,12 @@ class AdminPanel:
             self._mode_btns=[]
             # 3-column grid of mode buttons
             _MODE_DEFS=[
-                ("▶  Easy",            "restart_easy",    (18,52,18),(55,175,55),   "Standard Mode"),
-                ("▶  Fallen",          "restart_fallen",  (45,12,70),(130,55,195),  "Fallen Mode"),
-                ("▶  Frosty",          "restart_frosty",  (12,45,85),(55,150,235),  "Frosty Mode"),
-                ("▶  Endless",         "restart_endless", (12,10,38),(90,55,195),   "Endless waves"),
-                ("▶  Sandbox",         "restart_sandbox", (60,50,25),(170,140,55),  "Sandbox Mode"),
-                ("▶  Hardcore",        "restart_hardcore",(75,12,8),(210,55,25),    "Hardcore Mode"),
+                ("Easy",            "restart_easy",    (18,52,18),(55,175,55),   "Standard Mode"),
+                ("Fallen",          "restart_fallen",  (45,12,70),(130,55,195),  "Fallen Mode"),
+                ("Frosty",          "restart_frosty",  (12,45,85),(55,150,235),  "Frosty Mode"),
+                ("Endless",         "restart_endless", (12,10,38),(90,55,195),   "Endless waves"),
+                ("Sandbox",         "restart_sandbox", (60,50,25),(170,140,55),  "Sandbox Mode"),
+                ("Hardcore",        "restart_hardcore",(75,12,8),(210,55,25),    "Hardcore Mode"),
                 ("🎭  April Fools",    "restart_event",   (75,8,28),(245,75,115),   "Event 2026"),
                 ("🧟  Towers vs Zombies","restart_tvz",   (20,70,20),(50,180,50),   "TvZ Mode"),
 
@@ -770,8 +775,8 @@ class AdminPanel:
 
             # LEFT: HP section
             sec_label("── PLAYER HP ──", left_x, y_l); y_l+=22
-            mbtn_misc("❤  Full HP",   "hp_full",(20,62,20),(55,175,55),left_x,y_l); y_l+=bh+gap2
-            mbtn_misc("☠  Set HP → 1","hp_1",   (68,18,18),(195,45,45),left_x,y_l); y_l+=bh+gap2
+            mbtn_misc("Full HP",   "hp_full",(20,62,20),(55,175,55),left_x,y_l); y_l+=bh+gap2
+            mbtn_misc("Set HP to 1","hp_1",   (68,18,18),(195,45,45),left_x,y_l); y_l+=bh+gap2
             # HP custom input
             inp_r=pygame.Rect(left_x,y_l,col_w,bh)
             self._hp_input_rect=inp_r
@@ -794,7 +799,7 @@ class AdminPanel:
 
             # LEFT: Enemies
             sec_label("── ENEMIES ──", left_x, y_l); y_l+=22
-            mbtn_misc("💀  Kill All","kill_all",(68,16,16),(195,45,45),left_x,y_l); y_l+=bh+gap2
+            mbtn_misc("Kill All","kill_all",(68,16,16),(195,45,45),left_x,y_l); y_l+=bh+gap2
 
             # RIGHT: Game speed
             sec_label("── GAME SPEED ──", right_x, y_r); y_r+=22
@@ -807,7 +812,7 @@ class AdminPanel:
                 active_spd=(spd==spd_val)
                 col2=c_on if active_spd else c_off
                 brd2=tuple(min(255,c2+60) for c2 in c_on) if active_spd else tuple(min(255,c2+40) for c2 in c_on)
-                full_lbl=("✓  " if active_spd else "    ")+lbl
+                full_lbl=("[x]  " if active_spd else "     ")+lbl
                 mbtn_misc(full_lbl,act,col2,brd2,right_x,y_r); y_r+=bh+gap2
 
         surf.set_clip(None)
@@ -841,9 +846,6 @@ class UI:
         # Harvester thorn-placement mode
         self._thorn_place_mode = False   # True while waiting for player to click on map
         self._thorn_place_owner = None   # which Harvester triggered the mode
-        # Korzhik Kitty Curse placement mode
-        self._catnip_place_mode  = False   # True while waiting for player to click on map
-        self._catnip_place_owner = None    # which Korzhik triggered the mode
         self.t = 0.0  # elapsed time for animations
         self.admin_panel=AdminPanel()
         self.admin_mode = False  # set to True by Game when launched from sandbox
@@ -903,34 +905,6 @@ class UI:
                 owner.activate_thorns(mx2, my2, best_path, _farms)
             self._thorn_place_mode  = False
             self._thorn_place_owner = None
-            return 0
-        # ── Korzhik Kitty Curse placement ────────────────────────────────────
-        if self._catnip_place_mode and self._catnip_place_owner:
-            owner = self._catnip_place_owner
-            if owner in units and owner.ability.ready():
-                from game_core import _FROSTY_PATHS, CURRENT_MAP
-                if CURRENT_MAP == "frosty":
-                    paths = list(_FROSTY_PATHS)
-                else:
-                    paths = [get_map_path()]
-                mx2, my2 = pos
-                best_path = paths[0]; best_d = float('inf')
-                for p in paths:
-                    for si in range(len(p) - 1):
-                        ax, ay = p[si]; bx, by = p[si + 1]
-                        dx, dy = bx - ax, by - ay
-                        ll = dx * dx + dy * dy
-                        if ll > 0:
-                            t = max(0.0, min(1.0, ((mx2 - ax) * dx + (my2 - ay) * dy) / ll))
-                            nx, ny = ax + t * dx, ay + t * dy
-                        else:
-                            nx, ny = ax, ay
-                        d = math.hypot(nx - mx2, ny - my2)
-                        if d < best_d:
-                            best_d = d; best_path = p
-                owner.ability.activate(owner._curse_zones, mx2, my2, best_path)
-            self._catnip_place_mode  = False
-            self._catnip_place_owner = None
             return 0
         sy_r=getattr(self,'_skip_yes_rect',None)
         if sy_r and sy_r.collidepoint(pos) and wave_mgr is not None:
@@ -1022,10 +996,6 @@ class UI:
                         self._thorn_place_mode  = True
                         self._thorn_place_owner = u
                         self.show_msg("Click on the path to place Thorns  [RMB / Esc to cancel]", 4.0)
-                    elif isinstance(u, Korzhik):
-                        self._catnip_place_mode  = True
-                        self._catnip_place_owner = u
-                        self.show_msg("Click on the path to place Kitty Curse  [RMB / Esc to cancel]", 4.0)
                     else:
                         u.ability.activate(enemies,effects)
                 return 0
@@ -1053,7 +1023,11 @@ class UI:
                     self.show_msg(f"Click SELL again to confirm (${sell_val})", 3.0)
                     return 0
                 self._sell_pending=False
-                units.remove(self.open_unit); self.open_unit=None; return sell_val
+                units.remove(self.open_unit)
+                # Cancel any active placement mode if the sold unit was the owner
+                if self._thorn_place_owner is self.open_unit:
+                    self._thorn_place_mode = False; self._thorn_place_owner = None
+                self.open_unit=None; return sell_val
             if btns.get("upgrade") and btns["upgrade"].collidepoint(pos):
                 cost=self.open_unit.upgrade_cost()
                 if cost is not None:
@@ -1124,10 +1098,6 @@ class UI:
                         self._thorn_place_mode  = True
                         self._thorn_place_owner = self.open_unit
                         self.show_msg("Click on the path to place Thorns  [RMB / Esc to cancel]", 4.0)
-                    elif isinstance(self.open_unit, Korzhik):
-                        self._catnip_place_mode  = True
-                        self._catnip_place_owner = self.open_unit
-                        self.show_msg("Click on the path to place Kitty Curse  [RMB / Esc to cancel]", 4.0)
                     else:
                         self.open_unit.ability.activate(enemies, effects)
                 return 0
@@ -1150,7 +1120,25 @@ class UI:
             if slot.collidepoint(pos):
                 UType=self.SLOT_TYPES[i]
                 if UType is None: return 0  # empty slot — silently ignore
-                self.selected_slot=i; self.drag_unit=UType(*pos); return 0
+                is_sandbox = (mode == "sandbox")
+                if not is_sandbox:
+                    _place_cost = int(UType.PLACE_COST * getattr(self, 'cost_mult', 1.0))
+                    if money < _place_cost:
+                        self.show_msg("Not enough money!")
+                        return 0
+                    lim = UNIT_LIMITS.get(UType.NAME)
+                    if lim is not None:
+                        own_u = [u for u in units if not getattr(u, '_mp_peer', False)]
+                        if sum(1 for u in own_u if type(u) == UType) >= lim:
+                            self.show_msg(f"Limit: {lim} {UType.NAME}!")
+                            return 0
+                self.selected_slot=i
+                self.drag_unit=UType(*pos)
+                _sk_rng = getattr(self, '_sk_range_bonus', 0)
+                if _sk_rng > 0:
+                    self.drag_unit._base_range_tiles = self.drag_unit.range_tiles
+                    self.drag_unit.range_tiles = round(self.drag_unit.range_tiles * (1.0 + _sk_rng), 4)
+                return 0
         return 0
     def handle_release(self,pos,units,money):
         return 0
@@ -1411,6 +1399,12 @@ class UI:
         elif cls==Swarmer: levels=SWARMER_LEVELS; cost_idx=3
         elif cls==Harvester: levels=HARVESTER_LEVELS; cost_idx=3
         elif cls==Conduit: levels=CONDUIT_LEVELS; cost_idx=3
+        elif cls==Militant: levels=MILITANT_LEVELS; cost_idx=3
+        elif cls==Twitgunner: levels=TWITGUN_LEVELS; cost_idx=3
+        elif cls==Korzhik: levels=KORZHIK_LEVELS; cost_idx=3
+        elif cls==Caster: levels=CASTER_LEVELS; cost_idx=3
+        elif cls==DoubleAccelerator: levels=DACCEL_LEVELS; cost_idx=3
+        elif cls==Warlock: levels=WARLOCK_LEVELS; cost_idx=6
         else: levels=[]; cost_idx=3
         for i in range(1,unit.level+1):
             if i<len(levels) and levels[i][cost_idx]: total+=levels[i][cost_idx]
@@ -2439,8 +2433,6 @@ class UI:
                     ("Range",    u.range_tiles,           nxt.get("Range")   if nxt else None),
                 ]
                 if hd_next: stats.append(("HidDet_unlock", None, "Hidden Detection"))
-                if u.level == 4 and nxt is not None:
-                    stats.append(("Ability_unlock", None, "+Kitty Curse"))
             elif cls==Conduit:
                 stats = [
                     ("Damage",   u.damage,              nxt.get("Damage")   if nxt else None),
@@ -2513,6 +2505,27 @@ class UI:
             portrait_size=150
             portrait_rect=pygame.Rect(mx_m+6,my_m+top_offset,portrait_size,portrait_size)
             self._draw_unit_portrait(surf,u,portrait_rect)
+
+            # === TARGET — inside portrait cube, bottom strip ===
+            cur_mode=getattr(u,'target_mode','First')
+            tp_zone_h=32
+            tp_x=portrait_rect.x; tp_y=portrait_rect.bottom-tp_zone_h
+            tp_w=portrait_size
+            # ◄ mode ► — just text and arrows, no box
+            arr_w=18; arr_h=18
+            btn_prev=pygame.Rect(tp_x+4, tp_y+(tp_zone_h-arr_h)//2, arr_w, arr_h)
+            btn_next=pygame.Rect(tp_x+tp_w-arr_w-4, tp_y+(tp_zone_h-arr_h)//2, arr_w, arr_h)
+            btns["target_prev"]=btn_prev
+            btns["target_next"]=btn_next
+            mx3,my3=pygame.mouse.get_pos()
+            for br,lbl in ((btn_prev,"◄"),(btn_next,"►")):
+                hov2=br.collidepoint(mx3,my3)
+                col2=(220,215,255) if hov2 else (130,125,170)
+                arr_s=font_md.render(lbl,True,col2)
+                surf.blit(arr_s,arr_s.get_rect(center=br.center))
+            mode_f=pygame.font.SysFont("segoeui",13,bold=True)
+            mode_s=mode_f.render(cur_mode,True,(210,205,255))
+            surf.blit(mode_s,mode_s.get_rect(centerx=tp_x+tp_w//2, centery=tp_y+tp_zone_h//2))
 
             # STATS header (right column)
             rx=mx_m+portrait_size+16
@@ -2914,41 +2927,6 @@ class UI:
                     surf.blit(val_s,(sx,sy))
                 else:
                     txt(surf,f"Sell: ${sell_val}",btns["sell"].center,(255,210,210),font_lg,center=True)
-            # === TARGET PANEL — small card to the left of main menu ===
-            tp_w=150; tp_h=72
-            tp_x=mx_m - tp_w - 8
-            tp_y=my_m + (menu.h - tp_h) // 2
-            tp_rect=pygame.Rect(tp_x, tp_y, tp_w, tp_h)
-            btns["target_panel"]=tp_rect
-
-            draw_rect_alpha(surf,(20,16,36),
-                            (tp_x,tp_y,tp_w,tp_h),248,8)
-            pygame.draw.rect(surf,(55,44,82),tp_rect,2,border_radius=8)
-
-            # Label
-            lbl_s=font_sm.render("TARGET",True,(160,155,200))
-            surf.blit(lbl_s,lbl_s.get_rect(centerx=tp_x+tp_w//2, top=tp_y+6))
-
-            # Mode name
-            cur_mode=getattr(u,'target_mode','First')
-            mode_f=pygame.font.SysFont("segoeui",15,bold=True)
-            mode_s=mode_f.render(cur_mode,True,(220,215,255))
-            surf.blit(mode_s,mode_s.get_rect(centerx=tp_x+tp_w//2,centery=tp_y+36))
-
-            # ◄ / ► arrow buttons
-            arr_w=26; arr_h=26
-            btn_prev=pygame.Rect(tp_x+6,        tp_y+tp_h-arr_h-6, arr_w, arr_h)
-            btn_next=pygame.Rect(tp_x+tp_w-arr_w-6, tp_y+tp_h-arr_h-6, arr_w, arr_h)
-            btns["target_prev"]=btn_prev
-            btns["target_next"]=btn_next
-            mx3,my3=pygame.mouse.get_pos()
-            for br,label in ((btn_prev,"◄"),(btn_next,"►")):
-                hov2=br.collidepoint(mx3,my3)
-                pygame.draw.rect(surf,(50,60,100) if hov2 else (30,28,50),br,border_radius=5)
-                pygame.draw.rect(surf,(100,140,220) if hov2 else (60,55,90),br,1,border_radius=5)
-                arr_s=font_md.render(label,True,(200,200,255) if hov2 else (130,125,170))
-                surf.blit(arr_s,arr_s.get_rect(center=br.center))
-
             # Cache final button positions for handle_click
             self._cached_btns=btns
 
@@ -2998,48 +2976,10 @@ class UI:
             pygame.draw.line(surf, (100,255,80), (mx2,my2-12), (mx2,my2+12), 2)
             pygame.draw.circle(surf, (100,255,80), (mx2,my2), 10, 2)
 
-        # ── Korzhik Kitty Curse placement preview ────────────────────────────
-        if self._catnip_place_mode and self._catnip_place_owner:
-            mx2, my2 = pygame.mouse.get_pos()
-            try:
-                from game_core import _FROSTY_PATHS, CURRENT_MAP
-                _paths = list(_FROSTY_PATHS) if CURRENT_MAP == "frosty" else [get_map_path()]
-            except Exception:
-                _paths = [get_map_path()]
-            _best_path = _paths[0]; _best_d = float('inf')
-            for _p in _paths:
-                for _si in range(len(_p) - 1):
-                    _ax, _ay = _p[_si]; _bx, _by = _p[_si + 1]
-                    _dx, _dy = _bx - _ax, _by - _ay; _ll = _dx * _dx + _dy * _dy
-                    _t2 = max(0.0, min(1.0, ((mx2 - _ax) * _dx + (my2 - _ay) * _dy) / _ll)) if _ll > 0 else 0.0
-                    _nx, _ny = _ax + _t2 * _dx, _ay + _t2 * _dy
-                    _d = math.hypot(_nx - mx2, _ny - my2)
-                    if _d < _best_d: _best_d = _d; _best_path = _p
-            _pt = self._catnip_place_owner.ability.preview_pt(mx2, my2, _best_path)
-            _r_px = 28   # matches _KittyCurseZone.RADIUS
-            _pulse = 0.5 + 0.5 * math.sin(self.t * 5)
-            _alpha = int(60 + 40 * _pulse)
-            _s = pygame.Surface((_r_px * 2 + 4, _r_px * 2 + 4), pygame.SRCALPHA)
-            pygame.draw.circle(_s, (255, 80, 180, _alpha), (_r_px + 2, _r_px + 2), _r_px)
-            pygame.draw.circle(_s, (255, 60, 160, 190),   (_r_px + 2, _r_px + 2), _r_px, 2)
-            surf.blit(_s, (int(_pt[0]) - _r_px - 2, int(_pt[1]) - _r_px - 2))
-            # preview cat-ears above the circle
-            _ex0 = int(_pt[0]); _ey0 = int(_pt[1]) - _r_px - 2
-            for _side in (-1, 1):
-                _ex = _ex0 + _side * 10
-                pygame.draw.polygon(surf, (255, 200, 230),
-                                    [(_ex, _ey0 - 1), (_ex - 7, _ey0 + 9), (_ex + 7, _ey0 + 9)])
-                pygame.draw.polygon(surf, (255, 120, 170),
-                                    [(_ex, _ey0 - 1), (_ex - 7, _ey0 + 9), (_ex + 7, _ey0 + 9)], 2)
-            pygame.draw.circle(surf, (255, 100, 180), (int(_pt[0]), int(_pt[1])), 5)
-            # crosshair
-            pygame.draw.line(surf, (255, 120, 200), (mx2 - 12, my2), (mx2 + 12, my2), 2)
-            pygame.draw.line(surf, (255, 120, 200), (mx2, my2 - 12), (mx2, my2 + 12), 2)
-            pygame.draw.circle(surf, (255, 120, 200), (mx2, my2), 10, 2)
         ab_entries=[]
         for u in units:
             if getattr(u,'ability2',None) and u.level>=1: ab_entries.append((u, u.ability2, 'ab2'))
-            _ab1_min = 0 if isinstance(u, (Harvester, Korzhik)) else 2
+            _ab1_min = 0 if isinstance(u, Harvester) else 2
             if u.ability and u.level >= _ab1_min: ab_entries.append((u, u.ability, 'ab1'))
             if getattr(u,'ability3',None) and u.level>=4: ab_entries.append((u, u.ability3, 'ab3'))
         _ab_clip_bottom = SLOT_AREA_Y - 4
@@ -3191,22 +3131,40 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
         pygame.draw.line(surf, (180, 150, 80), (bx2, by2), (ex2, ey2), sp(3))
 
     elif unit_name == "Archer":
-        pygame.draw.circle(surf, C_ARCHER_DARK, (cx, cy), sc(27))
-        pygame.draw.circle(surf, C_ARCHER, (cx, cy), sc(21))
+        _star_skin = (get_equipped_skin("Archer") == "archer_star")
+        if _star_skin:
+            pygame.draw.circle(surf, (60, 40, 0), (cx, cy), sc(27))
+            pygame.draw.circle(surf, (200, 160, 30), (cx, cy), sc(21))
+            pygame.draw.circle(surf, (255, 220, 80), (cx, cy), sc(21), sp(2))
+            for si2 in range(3):
+                sa2 = math.radians(t * 140 + si2 * 120)
+                ssx = cx + int(math.cos(sa2) * sc(24)); ssy = cy + int(math.sin(sa2) * sc(24))
+                star_pts = []
+                for pi2 in range(10):
+                    r2 = sc(5) if pi2 % 2 == 0 else sc(2)
+                    a2 = math.radians(-90 + pi2 * 36)
+                    star_pts.append((ssx + int(math.cos(a2) * r2), ssy + int(math.sin(a2) * r2)))
+                pygame.draw.polygon(surf, (255, 220, 60), star_pts)
+        else:
+            pygame.draw.circle(surf, C_ARCHER_DARK, (cx, cy), sc(27))
+            pygame.draw.circle(surf, C_ARCHER, (cx, cy), sc(21))
         # Bow pointing right
         a = 0.0; ca = math.cos(a); sa = math.sin(a); pa = -sa; pb = ca
         bow_cx = cx + sc(-8); bow_cy = cy; bow_arm = sc(16)
-        pygame.draw.line(surf, (220, 170, 90),
+        bow_col = (255, 200, 40) if _star_skin else (220, 170, 90)
+        pygame.draw.line(surf, bow_col,
                          (int(bow_cx + pa * bow_arm), int(bow_cy + pb * bow_arm)),
                          (int(bow_cx - pa * bow_arm), int(bow_cy - pb * bow_arm)), sp(3))
-        pygame.draw.line(surf, (200, 200, 180),
+        string_col = (255, 255, 180) if _star_skin else (200, 200, 180)
+        pygame.draw.line(surf, string_col,
                          (int(bow_cx + pa * bow_arm), int(bow_cy + pb * bow_arm)),
                          (cx + sc(2), cy), sp(1))
-        pygame.draw.line(surf, (200, 200, 180),
+        pygame.draw.line(surf, string_col,
                          (int(bow_cx - pa * bow_arm), int(bow_cy - pb * bow_arm)),
                          (cx + sc(2), cy), sp(1))
         # Arrow shaft
-        pygame.draw.line(surf, (210, 160, 80), (cx - sc(14), cy), (cx + sc(18), cy), sp(2))
+        shaft_col = (255, 220, 60) if _star_skin else (210, 160, 80)
+        pygame.draw.line(surf, shaft_col, (cx - sc(14), cy), (cx + sc(18), cy), sp(2))
         # Arrowhead
         pygame.draw.polygon(surf, (255, 210, 100), [
             (cx + sc(18), cy), (cx + sc(12), cy - sc(5)), (cx + sc(12), cy + sc(5))])
@@ -3232,17 +3190,38 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
             surf.blit(ts, ts.get_rect(center=(cx, cy)))
 
     elif unit_name == "Red Ball":
-        pygame.draw.circle(surf, C_REDBALL_DARK, (cx, cy), sc(24))
-        pygame.draw.circle(surf, C_REDBALL, (cx, cy), sc(20))
-        pygame.draw.arc(surf, (160, 20, 20),
-                        pygame.Rect(cx - sc(14), cy - sc(18), sc(28), sc(20)),
-                        math.radians(10), math.radians(170), sp(2))
-        pygame.draw.arc(surf, (160, 20, 20),
-                        pygame.Rect(cx - sc(14), cy - sc(2), sc(28), sc(20)),
-                        math.radians(190), math.radians(350), sp(2))
-        pygame.draw.line(surf, (160, 20, 20), (cx - sc(20), cy), (cx + sc(20), cy), sp(2))
-        pygame.draw.circle(surf, (255, 100, 100), (cx - sc(7), cy - sc(7)), sp(5))
-        pygame.draw.circle(surf, (180, 20, 20), (cx, cy), sc(24), sp(2))
+        _true_skin = (get_equipped_skin("Red Ball") == "redball_true")
+        if _true_skin:
+            pygame.draw.circle(surf, (160, 10, 10), (cx, cy), sc(24))
+            pygame.draw.circle(surf, (220, 30, 30), (cx, cy), sc(22))
+            hl_s = pygame.Surface((sc(44), sc(44)), pygame.SRCALPHA)
+            pygame.draw.circle(hl_s, (255, 80, 80, 110), (sc(15), sc(14)), sc(14))
+            surf.blit(hl_s, (cx - sc(22), cy - sc(22)))
+            pygame.draw.circle(surf, (255, 160, 160), (cx - sc(7), cy - sc(9)), sp(5))
+            pygame.draw.circle(surf, (255, 230, 230), (cx - sc(8), cy - sc(10)), sp(2))
+            # Eyes
+            pygame.draw.circle(surf, (255, 255, 255), (cx - sc(7), cy - sc(2)), sp(6))
+            pygame.draw.circle(surf, (255, 255, 255), (cx + sc(6), cy - sc(2)), sp(6))
+            pygame.draw.circle(surf, (30, 20, 10), (cx - sc(5), cy - sc(2)), sp(3))
+            pygame.draw.circle(surf, (30, 20, 10), (cx + sc(8), cy - sc(2)), sp(3))
+            pygame.draw.circle(surf, (255, 255, 255), (cx - sc(4), cy - sc(4)), sp(1))
+            pygame.draw.circle(surf, (255, 255, 255), (cx + sc(9), cy - sc(4)), sp(1))
+            # Smile
+            pygame.draw.arc(surf, (160, 10, 10),
+                            pygame.Rect(cx - sc(9), cy + sc(5), sc(18), sc(10)),
+                            math.radians(200), math.radians(340), sp(2))
+        else:
+            pygame.draw.circle(surf, C_REDBALL_DARK, (cx, cy), sc(24))
+            pygame.draw.circle(surf, C_REDBALL, (cx, cy), sc(20))
+            pygame.draw.arc(surf, (160, 20, 20),
+                            pygame.Rect(cx - sc(14), cy - sc(18), sc(28), sc(20)),
+                            math.radians(10), math.radians(170), sp(2))
+            pygame.draw.arc(surf, (160, 20, 20),
+                            pygame.Rect(cx - sc(14), cy - sc(2), sc(28), sc(20)),
+                            math.radians(190), math.radians(350), sp(2))
+            pygame.draw.line(surf, (160, 20, 20), (cx - sc(20), cy), (cx + sc(20), cy), sp(2))
+            pygame.draw.circle(surf, (255, 100, 100), (cx - sc(7), cy - sc(7)), sp(5))
+            pygame.draw.circle(surf, (180, 20, 20), (cx, cy), sc(24), sp(2))
 
     elif unit_name == "Lifestealer":
         pygame.draw.circle(surf, C_LIFESTEALER_DARK, (cx, cy), sc(27))
@@ -3572,17 +3551,119 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
             pygame.draw.polygon(surf, (170, 240, 100), [(tip_x, tip_y), (bx1, by1), (bx2, by2)])
 
     elif unit_name == "Korzhik":
-        # Left ear
-        l_pts = [(cx - sc(18), cy - sc(4)), (cx - sc(18), cy - sc(33)), (cx - sc(8), cy - sc(17))]
-        pygame.draw.polygon(surf, (255, 240, 248), l_pts)
-        pygame.draw.polygon(surf, (255, 150, 185), l_pts, sp(2))
-        # Right ear
-        r_pts = [(cx + sc(18), cy - sc(4)), (cx + sc(18), cy - sc(33)), (cx + sc(8), cy - sc(17))]
-        pygame.draw.polygon(surf, (255, 240, 248), r_pts)
-        pygame.draw.polygon(surf, (255, 150, 185), r_pts, sp(2))
-        # Dark outline + main pink circle
-        pygame.draw.circle(surf, C_KORZHIK_DARK, (cx, cy), sc(26))
-        pygame.draw.circle(surf, C_KORZHIK,      (cx, cy), sc(22))
+        # ── Pulsing aura ─────────────────────────────────────────────────────
+        aura_r = sc(30)
+        aura_s = pygame.Surface((aura_r * 2, aura_r * 2), pygame.SRCALPHA)
+        aura_a = int(abs(math.sin(t * 2.2)) * 50 + 18)
+        pygame.draw.circle(aura_s, (255, 130, 190, aura_a), (aura_r, aura_r), aura_r)
+        surf.blit(aura_s, (cx - aura_r, cy - aura_r))
+        # ── Ears ─────────────────────────────────────────────────────────────
+        l_out = [(cx - sc(20), cy - sc(2)), (cx - sc(20), cy - sc(36)), (cx - sc(7), cy - sc(16))]
+        l_inn = [(cx - sc(17), cy - sc(6)), (cx - sc(17), cy - sc(30)), (cx - sc(10), cy - sc(18))]
+        r_out = [(cx + sc(20), cy - sc(2)), (cx + sc(20), cy - sc(36)), (cx + sc(7), cy - sc(16))]
+        r_inn = [(cx + sc(17), cy - sc(6)), (cx + sc(17), cy - sc(30)), (cx + sc(10), cy - sc(18))]
+        for out, inn in [(l_out, l_inn), (r_out, r_inn)]:
+            pygame.draw.polygon(surf, (232, 200, 216), out)
+            pygame.draw.polygon(surf, (255, 140, 175), inn)
+            pygame.draw.polygon(surf, (200, 120, 160), out, sp(1))
+        # ── Body ─────────────────────────────────────────────────────────────
+        pygame.draw.circle(surf, C_KORZHIK_DARK, (cx, cy), sc(27))
+        pygame.draw.circle(surf, C_KORZHIK,      (cx, cy), sc(23))
+        # Highlight shimmer
+        hi_a = int(70 + abs(math.sin(t * 1.5)) * 40)
+        hi_s = pygame.Surface((sc(20), sc(20)), pygame.SRCALPHA)
+        pygame.draw.circle(hi_s, (255, 230, 245, hi_a), (sc(10), sc(10)), sc(8))
+        surf.blit(hi_s, (cx - sc(18), cy - sc(18)))
+        # ── Eyes ─────────────────────────────────────────────────────────────
+        pygame.draw.ellipse(surf, (255, 255, 255), (cx - sc(11), cy - sc(9), sc(9), sc(7)))
+        pygame.draw.ellipse(surf, (255, 255, 255), (cx + sc(2),  cy - sc(9), sc(9), sc(7)))
+        blink = abs(math.sin(t * 0.4))
+        ph = max(sp(1), int(sc(5) * blink))
+        pygame.draw.ellipse(surf, (30, 10, 50), (cx - sc(9), cy - sc(8), sc(5), ph))
+        pygame.draw.ellipse(surf, (30, 10, 50), (cx + sc(4), cy - sc(8), sc(5), ph))
+        pygame.draw.circle(surf, (255,255,255), (cx - sc(7), cy - sc(8)), sp(1))
+        pygame.draw.circle(surf, (255,255,255), (cx + sc(6), cy - sc(8)), sp(1))
+        # ── Nose + mouth ─────────────────────────────────────────────────────
+        nose = [(cx, cy - sc(2)), (cx - sc(2), cy + sc(1)), (cx + sc(2), cy + sc(1))]
+        pygame.draw.polygon(surf, (255, 120, 150), nose)
+        pygame.draw.line(surf, (200, 100, 130), (cx - sp(2), cy + sp(1)), (cx - sp(6), cy + sp(4)), sp(1))
+        pygame.draw.line(surf, (200, 100, 130), (cx + sp(2), cy + sp(1)), (cx + sp(6), cy + sp(4)), sp(1))
+        # ── Whiskers ─────────────────────────────────────────────────────────
+        wc = (220, 180, 210)
+        pygame.draw.line(surf, wc, (cx - sc(4), cy),     (cx - sc(18), cy - sc(2)), sp(1))
+        pygame.draw.line(surf, wc, (cx - sc(4), cy + sc(2)), (cx - sc(18), cy + sc(2)), sp(1))
+        pygame.draw.line(surf, wc, (cx + sc(4), cy),     (cx + sc(18), cy - sc(2)), sp(1))
+        pygame.draw.line(surf, wc, (cx + sc(4), cy + sc(2)), (cx + sc(18), cy + sc(2)), sp(1))
+        # ── Collar ───────────────────────────────────────────────────────────
+        collar_rect = pygame.Rect(cx - sc(22), cy + sc(12), sc(44), sc(20))
+        pygame.draw.arc(surf, (220, 60, 100),  collar_rect, math.pi, 0, sc(5))
+        pygame.draw.arc(surf, (255, 140, 170), collar_rect, math.pi, 0, sp(2))
+        bell_col = (255, int(220 + abs(math.sin(t * 3.0)) * 20), 40)
+        pygame.draw.circle(surf, (120, 80, 0), (cx, cy + sc(21)), sc(5))
+        pygame.draw.circle(surf, bell_col,     (cx, cy + sc(21)), sc(4))
+
+
+    elif unit_name == "Twitgunner":
+        # Drop shadow
+        pygame.draw.circle(surf, (20, 5, 30), (cx + sp(2), cy + sp(3)), sc(26))
+        # Base rings
+        pygame.draw.circle(surf, C_TWITGUN_DARK, (cx, cy), sc(26))
+        pygame.draw.circle(surf, (100, 40, 140),  (cx, cy), sc(22))
+        pygame.draw.circle(surf, C_TWITGUN,       (cx, cy), sc(18))
+        # Pulsing aura ring
+        pulse = int(abs(math.sin(t * 4)) * 40) + 20
+        aura = pygame.Surface((sc(60), sc(60)), pygame.SRCALPHA)
+        pygame.draw.circle(aura, (180, 80, 255, pulse), (sc(30), sc(30)), sc(28), sp(2))
+        surf.blit(aura, (cx - sc(30), cy - sc(30)))
+        # Rotating 3-spoke ornament
+        for i in range(3):
+            a = t * 1.8 + i * (math.pi * 2 / 3)
+            ix = cx + int(math.cos(a) * sc(14))
+            iy = cy + int(math.sin(a) * sc(14))
+            pygame.draw.circle(surf, (230, 160, 255), (ix, iy), sp(3))
+            pygame.draw.line(surf, (160, 60, 220), (cx, cy), (ix, iy), sp(1))
+        # Gun barrel pointing right (static in icon)
+        blen = sc(22)
+        bx2 = cx + blen; by2 = cy
+        pygame.draw.line(surf, (80, 20, 120),  (cx, cy), (bx2, by2), sp(7))
+        pygame.draw.line(surf, C_TWITGUN,      (cx, cy), (bx2, by2), sp(4))
+        pygame.draw.line(surf, (230, 180, 255),(cx, cy), (bx2, by2), sp(2))
+        pygame.draw.circle(surf, (255, 210, 255), (bx2, by2), sp(4))
+        pygame.draw.circle(surf, (180, 80, 255),  (bx2, by2), sp(2))
+        # Centre hub
+        pygame.draw.circle(surf, (40, 10, 60),    (cx, cy), sp(7))
+        pygame.draw.circle(surf, (200, 120, 255), (cx, cy), sp(4))
+        pygame.draw.circle(surf, (255, 240, 255), (cx, cy), sp(2))
+
+    elif unit_name == "Conduit":
+        # Drop shadow
+        pygame.draw.circle(surf, (5, 20, 40), (cx + sp(3), cy + sp(3)), sc(27))
+        # Base rings
+        pygame.draw.circle(surf, C_CONDUIT_DARK, (cx, cy), sc(27))
+        pygame.draw.circle(surf, (20, 80, 140),  (cx, cy), sc(22))
+        pygame.draw.circle(surf, C_CONDUIT,      (cx, cy), sc(17))
+        # Pulsing aura ring
+        pulse = int(abs(math.sin(t * 3.5)) * 35) + 15
+        aura = pygame.Surface((sc(70), sc(70)), pygame.SRCALPHA)
+        pygame.draw.circle(aura, (80, 200, 255, pulse), (sc(35), sc(35)), sc(33), sp(2))
+        surf.blit(aura, (cx - sc(35), cy - sc(35)))
+        # 3 rotating arc trails
+        arc_r = sc(20)
+        for i in range(3):
+            a_base = t * 1.8 + i * (math.pi * 2 / 3)
+            for da in range(0, 50, 10):
+                a = a_base + math.radians(da)
+                ix = cx + int(math.cos(a) * arc_r)
+                iy = cy + int(math.sin(a) * arc_r)
+                alpha_arc = 180 - da * 3
+                if alpha_arc <= 0: continue
+                dot = pygame.Surface((sp(6), sp(6)), pygame.SRCALPHA)
+                pygame.draw.circle(dot, (160, 230, 255, alpha_arc), (sp(3), sp(3)), sp(2))
+                surf.blit(dot, (ix - sp(3), iy - sp(3)))
+        # Centre hub
+        pygame.draw.circle(surf, (10, 40, 80),    (cx, cy), sp(8))
+        pygame.draw.circle(surf, (80, 200, 255),  (cx, cy), sp(5))
+        pygame.draw.circle(surf, (220, 240, 255), (cx, cy), sp(2))
 
     else:
         # Fallback: colored circle with unit's color
@@ -6442,7 +6523,7 @@ UNIT_BASE_STATS = {
     "Warlock":        {"cost": 4200, "limit": 3,  "damage": 250,  "firerate": 0.6,  "range": 8,  "income": None},
     "Caster":         {"cost": 7500, "limit": 2,  "damage": 400,  "firerate": 0.5,  "range": 9,  "income": None},
     "Jester":         {"cost": 650,  "limit": 4,  "damage": 100,  "firerate": 1.5,  "range": 7,  "income": None},
-    "Korzhik":        {"cost": 1200, "limit": 4,  "damage": 350,  "firerate": 0.8,  "range": 7,  "income": None},
+    "Korzhik":        {"cost": 600,  "limit": 6,  "damage": 350,  "firerate": 0.8,  "range": 7,  "income": None},
     "Conduit":        {"cost": 1800, "limit": 3,  "damage": 60,   "firerate": 1.2,  "range": 5,  "income": None},
     "Rubber Duck":    {"cost": 500,  "limit": 3,  "damage": 120,  "firerate": 1.0,  "range": 7,  "income": None},
     "Harvester":      {"cost": 2000, "limit": 5,  "damage": 80,   "firerate": 1.0,  "range": 6,  "income": 80},
@@ -6687,10 +6768,14 @@ class LoadoutScreen:
                     self.selected = None
                 return
 
-        # EQUIP button in detail panel
+        # EQUIP / CANCEL button in detail panel
         if self._btn_equip and self._btn_equip.collidepoint(pos):
-            self._slot_select = True
-            self._show_msg("Choose a slot")
+            if self._slot_select:
+                self._slot_select = False
+                self._show_msg("Cancelled")
+            else:
+                self._slot_select = True
+                self._show_msg("Choose a slot")
             return
 
         # UNEQUIP button in detail panel
@@ -6866,7 +6951,45 @@ class LoadoutScreen:
             uname = self.detail_unit
             rarity = next((u["rarity"] for u in ALL_UNITS_POOL if u["name"] == uname), "starter")
             rd = RARITY_DATA[rarity]
-            stats = UNIT_BASE_STATS.get(uname, {})
+            # Build stats from a fresh level-0 instance so values are always accurate
+            _name_to_cls_ld = {
+                "Assassin": Assassin, "Accelerator": Accelerator,
+                "Frostcelerator": Frostcelerator, "xw5yt": Xw5ytUnit,
+                "Lifestealer": Lifestealer, "Archer": Archer,
+                "Militant": Militant, "Swarmer": Swarmer,
+                "ArcherOld": ArcherOld, "Red Ball": RedBall, "Farm": Farm,
+                "Freezer": Freezer, "Frost Blaster": FrostBlaster,
+                "Sledger": Sledger, "Gladiator": Gladiator,
+                "Toxic Gunner": ToxicGunner, "Slasher": Slasher,
+                "Cowboy": GoldenCowboy, "Golden Cowboy": GoldenCowboy,
+                "Hallow Punk": HallowPunk, "Spotlight Tech": SpotlightTech,
+                "Snowballer": Snowballer, "Commander": Commander,
+                "Commando": Commando, "Caster": Caster,
+                "hacker_laser_effects_test": Caster,
+                "Warlock": Warlock, "Jester": Jester,
+                "Soul Weaver": SoulWeaver, "Rubber Duck": RubberDuck,
+                "Harvester": Harvester, "Twitgunner": Twitgunner,
+                "Korzhik": Korzhik, "Conduit": Conduit,
+            }
+            _cls_ld = _name_to_cls_ld.get(uname)
+            _static = UNIT_BASE_STATS.get(uname, {})
+            if _cls_ld:
+                try:
+                    _inst = _cls_ld(0, 0)
+                    _inst.level = 0
+                    _inst._apply_level() if hasattr(_inst, '_apply_level') else None
+                    stats = {
+                        "cost":     _static.get("cost", getattr(_inst, "PLACE_COST", None)),
+                        "limit":    _static.get("limit", UNIT_LIMITS.get(getattr(_inst, "NAME", uname))),
+                        "damage":   getattr(_inst, "damage", None),
+                        "firerate": getattr(_inst, "firerate", None),
+                        "range":    getattr(_inst, "range_tiles", None),
+                        "income":   _static.get("income", None),
+                    }
+                except Exception:
+                    stats = _static
+            else:
+                stats = _static
             desc  = UNIT_DESCRIPTIONS.get(uname, "")
             is_equipped = uname in self.loadout
 
@@ -8010,10 +8133,6 @@ class Game:
                             self.ui._thorn_place_mode  = False
                             self.ui._thorn_place_owner = None
                             self.ui.show_msg("Thorns placement cancelled.", 1.5)
-                        elif self.ui._catnip_place_mode:
-                            self.ui._catnip_place_mode  = False
-                            self.ui._catnip_place_owner = None
-                            self.ui.show_msg("Kitty Curse placement cancelled.", 1.5)
                         elif self.ui.drag_unit:
                             self.ui.drag_unit = None; self.ui.selected_slot = None
                         elif not self.paused: self.paused = True
@@ -8071,11 +8190,6 @@ class Game:
                                         self.ui._thorn_place_mode  = True
                                         self.ui._thorn_place_owner = _u
                                         self.ui.show_msg("Click on the path to place Thorns  [RMB / Esc to cancel]", 4.0)
-                                    elif isinstance(_u, Korzhik) and _best is _u.ability:
-                                        # Korzhik Kitty Curse needs player to pick a location
-                                        self.ui._catnip_place_mode  = True
-                                        self.ui._catnip_place_owner = _u
-                                        self.ui.show_msg("Click on the path to place Kitty Curse  [RMB / Esc to cancel]", 4.0)
                                     else:
                                         _best.activate(self.enemies, self.effects)
                                     # Advance cycle index past this unit for next press
@@ -8086,10 +8200,16 @@ class Game:
                     if ev.key in slot_keys and not self.console.visible:
                         idx = slot_keys[ev.key]; UType = self.ui.SLOT_TYPES[idx]
                         if UType is None: pass
-                        elif self.money < int(UType.PLACE_COST * getattr(self.ui, 'cost_mult', 1.0)): self.ui.show_msg("Not enough money!")
+                        elif self.mode != "sandbox" and self.money < int(UType.PLACE_COST * getattr(self.ui, 'cost_mult', 1.0)): self.ui.show_msg("Not enough money!")
+                        elif self.mode != "sandbox" and (lambda lim, own: lim is not None and sum(1 for u in own if type(u)==UType) >= lim)(UNIT_LIMITS.get(UType.NAME), [u for u in self.units if not getattr(u,'_mp_peer',False)]): self.ui.show_msg(f"Limit: {UNIT_LIMITS.get(UType.NAME)} {UType.NAME}!")
                         else:
                             mx2, my2 = pygame.mouse.get_pos()
-                            self.ui.selected_slot = idx; self.ui.drag_unit = UType(mx2, my2)
+                            self.ui.selected_slot = idx
+                            self.ui.drag_unit = UType(mx2, my2)
+                            _sk_rng = getattr(self, '_sk_range_bonus', 0)
+                            if _sk_rng > 0:
+                                self.ui.drag_unit._base_range_tiles = self.ui.drag_unit.range_tiles
+                                self.ui.drag_unit.range_tiles = round(self.ui.drag_unit.range_tiles * (1.0 + _sk_rng), 4)
                 if self.game_over or self.win:
                     if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                         if self._end_btn.collidepoint(ev.pos):
@@ -8107,10 +8227,6 @@ class Game:
                             self.ui._thorn_place_mode  = False
                             self.ui._thorn_place_owner = None
                             self.ui.show_msg("Thorns placement cancelled.", 1.5)
-                        elif self.ui._catnip_place_mode:
-                            self.ui._catnip_place_mode  = False
-                            self.ui._catnip_place_owner = None
-                            self.ui.show_msg("Kitty Curse placement cancelled.", 1.5)
                         elif self.ui.drag_unit:
                             self.ui.drag_unit = None; self.ui.selected_slot = None
                     if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
@@ -8737,10 +8853,10 @@ class Game:
                     self.player_hp=max(0,self.player_hp-max(1,int(e.hp))); e.alive=False
                     e._reward_paid=True  # reached end — no kill reward
                     # SpecterEnemy (???) — мгновенное поражение если дойдёт до базы
-                    if _INFERNAL_AVAILABLE and getattr(e, 'INSTANT_DEFEAT', False):
+                    if _INFERNAL_AVAILABLE and getattr(e, 'INSTANT_DEFEAT', False) and self.mode != "sandbox":
                         self.player_hp = 0
                 if dead_reached: self._wave_leaked=True
-                if self.player_hp<=0 and dead_reached:
+                if self.player_hp<=0 and dead_reached and self.mode != "sandbox":
                     self.game_over=True
                     # ── Achievement: Жертва Короля ─ lose to FallenKing at wave 40 in Fallen
                     if self.mode=="fallen" and self.wave_mgr.wave==40:

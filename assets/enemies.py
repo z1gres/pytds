@@ -1244,7 +1244,7 @@ class FrozenEnemy(Enemy):
         if hovered: self._hover_label(surf)
 
 class SnowyEnemy(Enemy):
-    DISPLAY_NAME="Snowy"; BASE_HP=16; BASE_SPEED=28; KILL_REWARD=20
+    DISPLAY_NAME="Snowy"; BASE_HP=16; BASE_SPEED=34; KILL_REWARD=20
     def __init__(self, wave=1):
         super().__init__(wave)
         self.hp=16; self.maxhp=16; self.speed=self.BASE_SPEED+(wave-1); self.radius=20
@@ -1592,7 +1592,7 @@ class MegaFrostMystery(Enemy):
         if hovered: self._hover_label(surf)
 
 class FrostRavager(Enemy):
-    DISPLAY_NAME="Frost Ravager"; BASE_HP=25000; BASE_SPEED=28; KILL_REWARD=20000
+    DISPLAY_NAME="Frost Ravager"; BASE_HP=25000; BASE_SPEED=21; KILL_REWARD=20000
     def __init__(self, wave=1):
         super().__init__(wave)
         self.hp=25000; self.maxhp=25000
