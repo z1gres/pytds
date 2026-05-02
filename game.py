@@ -1827,7 +1827,10 @@ class UI:
 
         # ── Money display ──────────────────────────────────────
         money_cy = SLOT_AREA_Y + panel_h // 2
-        mx, my = getattr(self, "ui_layout", {}).get("money", (SCREEN_W - 220, money_cy - 23))
+        _slots_end_def = (SCREEN_W - (5*SLOT_W + 4*8)) // 2 + 5*SLOT_W + 4*8
+        _def_money_x = _slots_end_def + 8   # flush right of slots with small gap
+        _def_money_y = SLOT_AREA_Y + 28     # 20px lower than slot top (8+20)
+        mx, my = getattr(self, "ui_layout", {}).get("money", (_def_money_x, _def_money_y))
         
         ico_money = load_icon("money_ico", 36)
         if gl or is_sandbox:
@@ -2851,11 +2854,11 @@ class UI:
                 _FELYNE_LV_DESCS = [
                     None,   # lv0 (базовый)
                     None,   # lv0 -> lv1: шарики не меняются
-                    ["Orbital Balls Upgrade:", "  - Attack speed: 1.0s to 0.2s"],   # lv1 -> lv2
-                    ["Orbital Balls Upgrade:", "  - +1 ball (Total: 2)"],           # lv2 -> lv3
-                    ["Orbital Balls Upgrade:", "  - Damage: 2 to 4", "  - Attack speed: 0.2s to 0.15s"], # lv3 -> lv4
-                    ["Orbital Balls Upgrade:", "  - +1 ball (Total: 3)"],           # lv4 -> lv5
-                    ["Orbital Balls Upgrade:", "  - +1 ball (Total: 4)", "  - Damage: 4 to 5", "  - Attack speed: 0.15s to 0.10s"], # lv5 -> lv6
+                    ["Sentry Upgrade:", "  - Attack speed: 1.0s to 0.2s"],   # lv1 -> lv2
+                    ["Sentry Upgrade:", "  - +1 sentry (Total: 2)"],        # lv2 -> lv3
+                    ["Sentry Upgrade:", "  - Damage: 2 to 4", "  - Attack speed: 0.2s to 0.15s"], # lv3 -> lv4
+                    ["Sentry Upgrade:", "  - +1 sentry (Total: 3)"],        # lv4 -> lv5
+                    ["Sentry Upgrade:", "  - +1 sentry (Total: 4)", "  - Damage: 4 to 5", "  - Attack speed: 0.15s to 0.10s"], # lv5 -> lv6
                 ]
                 _nxt_klv = u.level + 1
                 _kdesc = _FELYNE_LV_DESCS[_nxt_klv] if _nxt_klv < len(_FELYNE_LV_DESCS) else None
@@ -3020,17 +3023,95 @@ class UI:
 
 # ── Rarity card drawing helper ──────────────────────────────────────────────────
 def draw_accel_icon(surf, cx, cy, t, size=28):
-    spin = t * 180
-    orb_r = int(size * 0.65)
+    """Draw the Accelerator icon — scales to any size."""
+    s = size / 28.0  # scale factor
+
+    def sc(v): return max(1, int(v * s))
+
+    pulse = abs(math.sin(t * 3.5))
+
+    # ── Outer aura ────────────────────────────────────────────────────────────
+    aura_r = sc(38) + int(pulse * sc(5))
+    aura_alpha = int(28 + pulse * 36)
+    aura_surf = pygame.Surface((aura_r * 2 + 4, aura_r * 2 + 4), pygame.SRCALPHA)
+    pygame.draw.circle(aura_surf, (100, 40, 255, aura_alpha),
+                       (aura_r + 2, aura_r + 2), aura_r)
+    surf.blit(aura_surf, (cx - aura_r - 2, cy - aura_r - 2))
+
+    # ── Outer rotating dashed ring ────────────────────────────────────────────
+    ring1_r = sc(30)
+    ring1_spin = t * 140
+    seg_count = 8
+    seg_arc = math.pi * 2 / seg_count
+    ring1_s = pygame.Surface((ring1_r * 2 + 8, ring1_r * 2 + 8), pygame.SRCALPHA)
+    sc1 = ring1_r + 4
+    for i in range(seg_count):
+        a_start = math.radians(ring1_spin) + i * seg_arc
+        a_end = a_start + seg_arc * 0.55
+        steps = max(4, int(10 * s))
+        pts = []
+        for st in range(steps + 1):
+            a = a_start + (a_end - a_start) * st / steps
+            pts.append((sc1 + math.cos(a) * ring1_r, sc1 + math.sin(a) * ring1_r))
+        if len(pts) >= 2:
+            intensity = int(180 + abs(math.sin(t * 4 + i)) * 60)
+            pygame.draw.lines(ring1_s, (intensity, 80, 255, 220), False, pts, max(1, sc(3)))
+    surf.blit(ring1_s, (cx - sc1, cy - sc1))
+
+    # ── Inner counter-rotating dashed ring ────────────────────────────────────
+    ring2_r = sc(22)
+    ring2_spin = -t * 200
+    ring2_s = pygame.Surface((ring2_r * 2 + 8, ring2_r * 2 + 8), pygame.SRCALPHA)
+    sc2 = ring2_r + 4
+    for i in range(6):
+        a_start = math.radians(ring2_spin) + i * (math.pi / 3)
+        a_end = a_start + math.pi / 3 * 0.45
+        steps = max(3, int(8 * s))
+        pts = []
+        for st in range(steps + 1):
+            a = a_start + (a_end - a_start) * st / steps
+            pts.append((sc2 + math.cos(a) * ring2_r, sc2 + math.sin(a) * ring2_r))
+        if len(pts) >= 2:
+            pygame.draw.lines(ring2_s, (200, 150, 255, 195), False, pts, max(1, sc(2)))
+    surf.blit(ring2_s, (cx - sc2, cy - sc2))
+
+    # ── 4 spinning energy nodes ───────────────────────────────────────────────
+    node_spin = t * 90
+    node_r = sc(30)
     for i in range(4):
-        a = math.radians(spin + i * 90)
-        ox = cx + int(math.cos(a) * orb_r)
-        oy = cy + int(math.sin(a) * orb_r)
-        pygame.draw.circle(surf, (160, 100, 255), (ox, oy), max(2, size // 7))
-    pygame.draw.circle(surf, (40, 20, 80), (cx, cy), int(size * 0.65))
-    pygame.draw.circle(surf, C_ACCEL, (cx, cy), int(size * 0.48))
-    hi = max(1, size // 6)
-    pygame.draw.circle(surf, (200, 170, 255), (cx - hi, cy - hi), hi + 1)
+        na = math.radians(node_spin + i * 90)
+        nx = int(cx + math.cos(na) * node_r)
+        ny = int(cy + math.sin(na) * node_r)
+        gn_r = max(4, sc(7))
+        gn = pygame.Surface((gn_r * 2 + 4, gn_r * 2 + 4), pygame.SRCALPHA)
+        node_glow = int(100 + abs(math.sin(t * 5 + i)) * 100)
+        pygame.draw.circle(gn, (180, 80, 255, node_glow), (gn_r + 2, gn_r + 2), gn_r)
+        surf.blit(gn, (nx - gn_r - 2, ny - gn_r - 2))
+        pygame.draw.circle(surf, (80, 20, 160), (nx, ny), max(2, sc(5)))
+        pygame.draw.circle(surf, (220, 160, 255), (nx, ny), max(1, sc(3)))
+        pygame.draw.circle(surf, (255, 240, 255), (nx, ny), max(1, sc(1)))
+
+    # ── Body: layered gradient core ───────────────────────────────────────────
+    pygame.draw.circle(surf, (20, 8, 50),   (cx, cy), sc(20))
+    pygame.draw.circle(surf, (60, 20, 140), (cx, cy), sc(17))
+    pygame.draw.circle(surf, (100, 40, 200),(cx, cy), sc(13))
+    pygame.draw.circle(surf, C_ACCEL,       (cx, cy), sc(10))
+    pygame.draw.circle(surf, (200, 140, 255),(cx, cy), sc(6))
+
+    # ── Rotating cross lines inside core ─────────────────────────────────────
+    cross_spin = t * 260
+    for i in range(4):
+        ca = math.radians(cross_spin + i * 90)
+        ex = int(cx + math.cos(ca) * sc(13))
+        ey = int(cy + math.sin(ca) * sc(13))
+        pygame.draw.line(surf, (220, 180, 255), (cx, cy), (ex, ey), max(1, sc(2)))
+
+    # ── Pulsing nucleus ───────────────────────────────────────────────────────
+    nuc_r = max(2, sc(3) + int(pulse * sc(2)))
+    nuc_s = pygame.Surface((nuc_r * 2 + 4, nuc_r * 2 + 4), pygame.SRCALPHA)
+    pygame.draw.circle(nuc_s, (255, 240, 255, int(200 + pulse * 55)),
+                       (nuc_r + 2, nuc_r + 2), nuc_r)
+    surf.blit(nuc_s, (cx - nuc_r - 2, cy - nuc_r - 2))
 
 
 def draw_frost_icon(surf, cx, cy, t, size=28):

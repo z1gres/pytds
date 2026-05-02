@@ -1216,10 +1216,10 @@ class TrueFallenKing(FallenKing):
 # ══════════════════════════════════════════════════════════════════════════════
 
 class FrozenEnemy(Enemy):
-    DISPLAY_NAME="Frozen"; BASE_HP=10; BASE_SPEED=68; KILL_REWARD=12
+    DISPLAY_NAME="Frozen"; BASE_HP=8; BASE_SPEED=68; KILL_REWARD=12
     def __init__(self, wave=1):
         super().__init__(wave)
-        self.hp=10; self.maxhp=10; self.speed=self.BASE_SPEED+(wave-1)*2; self.radius=15
+        self.hp=8; self.maxhp=8; self.speed=self.BASE_SPEED+(wave-1)*2; self.radius=15
     def draw(self, surf, hovered=False, detected=False):
         bob=math.sin(self._bob*1.4)*2; cx,cy=int(self.x),int(self.y+bob)
         # Hexagonal crystal shape

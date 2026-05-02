@@ -143,11 +143,11 @@ ACHIEVEMENT_DEFS = [
     {"id": "has_skin",         "name": "Stylist",              "desc": "Own at least 1 skin",                        "color": (200, 100, 220),"border": (230, 160, 255)},
     {"id": "naked_run",        "name": "Lightweight",              "desc": "Start game with no units equipped",            "color": (120, 120, 120),"border": (180, 180, 180)},
     {"id": "fallen_duo",       "name": "Duo",                 "desc": "Beat Fallen with max 2 units",          "color": (180, 60, 255), "border": (210, 120, 255)},
-    {"id": "grand_slam",       "name": "Grand Slam",           "desc": "Beat Easy->Fallen->Frosty->Hardcore in a row", "color": (255, 200, 0), "border": (255, 240, 80)},
+    {"id": "grand_slam",       "name": "Grand Slam",           "desc": "Beat every difficulty in a row", "color": (255, 200, 0), "border": (255, 240, 80)},
     # ── Batch 2 achievements ──────────────────────────────────────────────────
-    {"id": "capitalist",       "name": "Capitalist",           "desc": "Build 8 Farms all upgraded to max level",     "color": (80, 180, 60),  "border": (140, 255, 100)},
-    {"id": "overkill",         "name": "Overkill",             "desc": "Apply Freeze, Burn and Armor Shred to one boss at once", "color": (180, 60, 220), "border": (220, 120, 255)},
-    {"id": "moonwalk",         "name": "Moonwalk",             "desc": "Have 15 enemies walking in reverse simultaneously", "color": (80, 160, 255), "border": (140, 210, 255)},
+    {"id": "capitalist",       "name": "Capitalist",           "desc": "Place 8 Farms all upgraded to max level",     "color": (80, 180, 60),  "border": (140, 255, 100)},
+    {"id": "overkill",         "name": "Overkill",             "desc": "Apply every debuff to a boss at once", "color": (180, 60, 220), "border": (220, 120, 255)},
+    {"id": "moonwalk",         "name": "Moonwalk",             "desc": "Have 15 enemies walking in confusion", "color": (80, 160, 255), "border": (140, 210, 255)},
     {"id": "why",              "name": "Why",                  "desc": "Do nothing for 1 hour",                       "color": (60, 60, 80),   "border": (100, 100, 140)},
     {"id": "gold_rush",        "name": "Gold Rush",            "desc": "Earn $10,000 in one game using only Cowboys",  "color": (220, 170, 20), "border": (255, 230, 80)},
     {"id": "hacker",           "name": "Hacker",               "desc": "Open the admin panel in Sandbox mode",        "color": (40, 200, 120), "border": (80, 255, 180)},
@@ -297,7 +297,11 @@ def path_progress(e):
     Чем больше значение — тем ближе враг к финишу.
     Корректно работает на зигзаг/петлях/frosty-картах.
     """
-    path = getattr(e, '_frosty_path', None) or get_map_path()
+    # Используем sys.modules чтобы всегда получать актуальную (возможно
+    # monkey-patched) версию get_map_path, а не локальную копию имени.
+    import sys as _sys
+    _gc = _sys.modules.get('game_core')
+    path = getattr(e, '_frosty_path', None) or (_gc.get_map_path() if _gc else get_map_path())
     wp = e._wp_index  # индекс СЛЕДУЮЩЕГО вейпоинта
 
     # Суммируем длины всех уже пройденных отрезков пути

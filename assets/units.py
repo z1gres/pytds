@@ -257,34 +257,165 @@ class Accelerator(Unit):
         for m in self.mini_ops: m.update(dt, enemies)
         self.mini_ops=[m for m in self.mini_ops if m.alive]
     def draw(self, surf):
-        cx,cy=int(self.px),int(self.py)
-        spin=self._laser_t*180
+        cx, cy = int(self.px), int(self.py)
+        t = self._laser_t
+
+        # ── Outer energy pulse aura ───────────────────────────────────────────
+        pulse = abs(math.sin(t * 3.5))
+        aura_r = 38 + int(pulse * 6)
+        aura_alpha = int(30 + pulse * 40)
+        aura_surf = pygame.Surface((aura_r * 2 + 4, aura_r * 2 + 4), pygame.SRCALPHA)
+        pygame.draw.circle(aura_surf, (100, 40, 255, aura_alpha),
+                           (aura_r + 2, aura_r + 2), aura_r)
+        pygame.draw.circle(aura_surf, (180, 100, 255, aura_alpha // 2),
+                           (aura_r + 2, aura_r + 2), aura_r, 3)
+        surf.blit(aura_surf, (cx - aura_r - 2, cy - aura_r - 2))
+
+        # ── Outer rotating ring (dashed arc segments) ─────────────────────────
+        ring1_r = 30
+        ring1_spin = t * 140  # degrees/sec
+        seg_count = 8
+        seg_arc = math.pi * 2 / seg_count
+        seg_len = seg_arc * 0.55
+        ring1_s = pygame.Surface((ring1_r * 2 + 8, ring1_r * 2 + 8), pygame.SRCALPHA)
+        sc1 = ring1_r + 4
+        for i in range(seg_count):
+            a_start = math.radians(ring1_spin) + i * seg_arc
+            a_end = a_start + seg_len
+            steps = 12
+            pts = []
+            for st in range(steps + 1):
+                a = a_start + (a_end - a_start) * st / steps
+                pts.append((sc1 + math.cos(a) * ring1_r, sc1 + math.sin(a) * ring1_r))
+            if len(pts) >= 2:
+                intensity = int(180 + abs(math.sin(t * 4 + i)) * 60)
+                pygame.draw.lines(ring1_s, (intensity, 80, 255, 230), False, pts, 3)
+        surf.blit(ring1_s, (cx - sc1, cy - sc1))
+
+        # ── Inner counter-rotating ring (thinner, faster) ─────────────────────
+        ring2_r = 22
+        ring2_spin = -t * 200
+        ring2_s = pygame.Surface((ring2_r * 2 + 8, ring2_r * 2 + 8), pygame.SRCALPHA)
+        sc2 = ring2_r + 4
+        for i in range(6):
+            a_start = math.radians(ring2_spin) + i * (math.pi * 2 / 6)
+            a_end = a_start + math.pi * 2 / 6 * 0.45
+            steps = 10
+            pts = []
+            for st in range(steps + 1):
+                a = a_start + (a_end - a_start) * st / steps
+                pts.append((sc2 + math.cos(a) * ring2_r, sc2 + math.sin(a) * ring2_r))
+            if len(pts) >= 2:
+                pygame.draw.lines(ring2_s, (200, 150, 255, 200), False, pts, 2)
+        surf.blit(ring2_s, (cx - sc2, cy - sc2))
+
+        # ── 4 spinning energy nodes on outer ring ─────────────────────────────
+        node_spin = t * 90  # slower rotation
         for i in range(4):
-            a=math.radians(spin+i*90)
-            pygame.draw.circle(surf,(160,100,255),(int(cx+math.cos(a)*27),int(cy+math.sin(a)*27)),5)
-        pygame.draw.circle(surf,(40,20,80),(cx,cy),27)
-        pygame.draw.circle(surf,C_ACCEL,(cx,cy),20)
-        # Inner ring detail
-        pygame.draw.circle(surf,(160,80,255),(cx,cy),20,2)
-        # Lightning bolt symbol
-        bolt=[(cx+4,cy-14),(cx-3,cy-1),(cx+5,cy-1),(cx-4,cy+14),(cx+3,cy+1),(cx-5,cy+1)]
-        pygame.draw.polygon(surf,(220,180,255),bolt)
-        pygame.draw.polygon(surf,(255,240,255),bolt,1)
-        for i in range(self.level): pygame.draw.circle(surf,C_GOLD,(cx-14+i*7,cy+36),3)
+            na = math.radians(node_spin + i * 90)
+            nx = int(cx + math.cos(na) * 30)
+            ny = int(cy + math.sin(na) * 30)
+            # Glow behind node
+            gn = pygame.Surface((16, 16), pygame.SRCALPHA)
+            node_glow = int(100 + abs(math.sin(t * 5 + i)) * 100)
+            pygame.draw.circle(gn, (180, 80, 255, node_glow), (8, 8), 7)
+            surf.blit(gn, (nx - 8, ny - 8))
+            # Node core
+            pygame.draw.circle(surf, (80, 20, 160), (nx, ny), 5)
+            pygame.draw.circle(surf, (220, 160, 255), (nx, ny), 3)
+            pygame.draw.circle(surf, (255, 240, 255), (nx, ny), 1)
+
+        # ── Body: dark shell + gradient core ──────────────────────────────────
+        pygame.draw.circle(surf, (20, 8, 50), (cx, cy), 20)    # dark outer shell
+        # Core: concentric gradient rings
+        for r_step, col in [(18, (60, 20, 140)),
+                             (14, (100, 40, 200)),
+                             (10, C_ACCEL),
+                             (6,  (200, 140, 255))]:
+            pygame.draw.circle(surf, col, (cx, cy), r_step)
+
+        # ── Rotating inner cross (energy lines inside core) ───────────────────
+        cross_spin = t * 260
+        for i in range(4):
+            ca = math.radians(cross_spin + i * 90)
+            ex = int(cx + math.cos(ca) * 13)
+            ey = int(cy + math.sin(ca) * 13)
+            cross_alpha = int(160 + abs(math.sin(t * 6 + i)) * 80)
+            cs = pygame.Surface((4, 4), pygame.SRCALPHA)
+            pygame.draw.line(surf, (220, 180, 255), (cx, cy), (ex, ey), 2)
+
+        # ── Central pulsing nucleus ────────────────────────────────────────────
+        nuc_r = int(3 + pulse * 2)
+        nuc_surf = pygame.Surface((nuc_r * 2 + 4, nuc_r * 2 + 4), pygame.SRCALPHA)
+        nuc_alpha = int(200 + pulse * 55)
+        pygame.draw.circle(nuc_surf, (255, 240, 255, nuc_alpha),
+                           (nuc_r + 2, nuc_r + 2), nuc_r)
+        surf.blit(nuc_surf, (cx - nuc_r - 2, cy - nuc_r - 2))
+
+        # ── Level upgrade dots ────────────────────────────────────────────────
+        for i in range(self.level):
+            dot_a = math.radians(-90 + i * (360 / max(len(ACCEL_LEVELS), 1)))
+            dot_x = int(cx + math.cos(dot_a) * 37)
+            dot_y = int(cy + math.sin(dot_a) * 37)
+            pygame.draw.circle(surf, C_GOLD, (dot_x, dot_y), 3)
+            pygame.draw.circle(surf, (255, 240, 160), (dot_x, dot_y), 1)
+
+        # ── Laser beams to targets ────────────────────────────────────────────
         for target in self._laser_targets:
             if not target.alive: continue
-            tx,ty=int(target.x),int(target.y); tv=self._laser_t
-            s2=pygame.Surface((SCREEN_W,SCREEN_H),pygame.SRCALPHA)
-            flicker=int(abs(math.sin(tv*22))*3)
-            for width,color,alpha in [(20+flicker,(120,40,255),18),(13,(160,80,255),35),
-                                       (8,(200,130,255),70),(4,(230,190,255),140),(2,(255,240,255),220)]:
-                pygame.draw.line(s2,(*color,alpha),(cx,cy),(tx,ty),width)
-            surf.blit(s2,(0,0))
-            fs=pygame.Surface((40,40),pygame.SRCALPHA)
-            fr2=int(abs(math.sin(tv*18))*8)+6
-            pygame.draw.circle(fs,(220,180,255,100),(20,20),fr2+4)
-            pygame.draw.circle(fs,(255,240,255,180),(20,20),fr2)
-            surf.blit(fs,(tx-20,ty-20))
+            tx, ty = int(target.x), int(target.y)
+            tv = t
+
+            # Beam: layered glow lines on dedicated surface
+            s2 = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            flicker = int(abs(math.sin(tv * 28)) * 4)
+            # Core beam (bright, thin) + glow layers (wide, dim)
+            beam_layers = [
+                (22 + flicker, (80,  20, 200),  12),
+                (14,           (120, 50, 255),  28),
+                (8,            (160, 90, 255),  60),
+                (4,            (210, 150, 255), 120),
+                (2,            (240, 210, 255), 200),
+                (1,            (255, 250, 255), 240),
+            ]
+            for width, color, alpha in beam_layers:
+                pygame.draw.line(s2, (*color, alpha), (cx, cy), (tx, ty), width)
+
+            # Secondary zigzag arc for a plasma/lightning feel
+            seg_n = 8
+            zz_pts = [(cx, cy)]
+            for si in range(1, seg_n):
+                frac = si / seg_n
+                mx_ = int(cx + (tx - cx) * frac)
+                my_ = int(cy + (ty - cy) * frac)
+                perp_x = -(ty - cy); perp_y = (tx - cx)
+                plen = max(1, math.hypot(perp_x, perp_y))
+                jitter = math.sin(tv * 30 + si * 1.7) * 4
+                zz_pts.append((mx_ + int(perp_x / plen * jitter),
+                                my_ + int(perp_y / plen * jitter)))
+            zz_pts.append((tx, ty))
+            if len(zz_pts) >= 2:
+                pygame.draw.lines(s2, (210, 170, 255, 90), False, zz_pts, 2)
+
+            surf.blit(s2, (0, 0))
+
+            # Impact flash at target
+            fr2 = int(abs(math.sin(tv * 20)) * 10) + 8
+            fs = pygame.Surface((fr2 * 2 + 8, fr2 * 2 + 8), pygame.SRCALPHA)
+            fc = fr2 + 4
+            pygame.draw.circle(fs, (140, 60, 255, 60),  (fc, fc), fr2 + 6)
+            pygame.draw.circle(fs, (200, 130, 255, 130), (fc, fc), fr2 + 2)
+            pygame.draw.circle(fs, (240, 200, 255, 200), (fc, fc), fr2)
+            pygame.draw.circle(fs, (255, 250, 255, 240), (fc, fc), max(1, fr2 - 4))
+            surf.blit(fs, (tx - fc, ty - fc))
+
+            # Muzzle flash at tower base
+            mz = pygame.Surface((20, 20), pygame.SRCALPHA)
+            mz_r = int(abs(math.sin(tv * 25)) * 4) + 4
+            pygame.draw.circle(mz, (200, 160, 255, 160), (10, 10), mz_r)
+            pygame.draw.circle(mz, (255, 240, 255, 220), (10, 10), max(1, mz_r - 2))
+            surf.blit(mz, (cx - 10, cy - 10))
+
         for m in self.mini_ops: m.draw(surf)
     def get_info(self):
         return {"Damage":self.damage,"Range":self.range_tiles,
@@ -732,6 +863,47 @@ class LifestealerBullet:
         surf.blit(s,(cx-10,cy-10))
 
 
+class BloodExplosion:
+    """Visual effect: red burst ring spawned on Blood Frenzy kill."""
+    def __init__(self, x, y, radius):
+        self.x = x; self.y = y
+        self.max_r = radius
+        self.r = 0.0
+        self.alive = True
+        self._t = 0.0
+        self.duration = 0.38
+
+    def update(self, dt):
+        self._t += dt
+        if self._t >= self.duration:
+            self.alive = False; return
+        prog = self._t / self.duration
+        self.r = self.max_r * prog
+
+    def draw(self, surf):
+        if not self.alive: return
+        prog = self._t / self.duration
+        alpha = int(255 * (1.0 - prog))
+        r = int(self.r)
+        if r < 2: return
+        s = pygame.Surface((r*2+4, r*2+4), pygame.SRCALPHA)
+        # Outer ring
+        pygame.draw.circle(s, (220, 30, 60, alpha),      (r+2, r+2), r, 3)
+        # Inner fill
+        pygame.draw.circle(s, (180, 20, 40, alpha//3),   (r+2, r+2), r)
+        # Bright rim
+        pygame.draw.circle(s, (255, 120, 150, alpha//2), (r+2, r+2), r, 1)
+        surf.blit(s, (int(self.x)-r-2, int(self.y)-r-2))
+
+
+# ── Blood Frenzy thresholds: hits on same target to trigger frenzy
+_BLOOD_FRENZY_HITS = 4        # hits on single target to charge frenzy
+_BLOOD_FRENZY_DUR  = 3.5      # seconds of speed boost
+_BLOOD_FRENZY_MULT = 0.45     # firerate multiplier while frenzied (lower = faster)
+_BLOOD_BURST_RANGE = 2.5      # tiles radius of kill explosion
+_BLOOD_BURST_DMG   = 6.0      # base splash damage on kill explosion
+
+
 class Lifestealer(Unit):
     PLACE_COST=400; COLOR=C_LIFESTEALER; NAME="Lifestealer"; hidden_detection=False
 
@@ -741,11 +913,20 @@ class Lifestealer(Unit):
         self._dmg_tracker = {}
         self._bullets = []
         self._laser_t = 0.0
+
+        # ── Blood Frenzy state ────────────────────────────────────────────────
+        self._frenzy_hit_tracker = {}   # enemy id → consecutive hit count
+        self._frenzy_active = False
+        self._frenzy_timer  = 0.0
+        self._last_target_id = None
+        self._blood_effects = []        # BloodExplosion list
+
         self._apply_level()
 
     def _apply_level(self):
         d,fr,r,_,mp=LIFESTEALER_LEVELS[self.level]
         self.damage=d; self.firerate=fr; self.range_tiles=r; self.money_pct=mp
+        self._base_firerate = fr   # keep original for frenzy reset
 
     def upgrade_cost(self):
         nxt=self.level+1
@@ -759,70 +940,153 @@ class Lifestealer(Unit):
     def _calc_reward(self, enemy):
         return max(1, int(enemy.maxhp * self.money_pct))
 
+    def _get_frenzy_firerate(self):
+        """Return current effective firerate (lowered if frenzy active)."""
+        if self._frenzy_active:
+            return self._base_firerate * _BLOOD_FRENZY_MULT
+        return self._base_firerate
+
+    def _activate_frenzy(self, effects):
+        """Start Blood Frenzy boost."""
+        self._frenzy_active = True
+        self._frenzy_timer  = _BLOOD_FRENZY_DUR
+        effects.append(FloatingText(int(self.px), int(self.py) - 36,
+                                    "BLOOD FRENZY!", (255, 60, 100)))
+
+    def _blood_burst(self, dead_enemy, enemies, effects):
+        """Explode on kill: deal splash damage in radius."""
+        burst_r = _BLOOD_BURST_RANGE * TILE
+        splash_dmg = _BLOOD_BURST_DMG + self.damage * 0.5
+        for e in enemies:
+            if not e.alive: continue
+            if math.hypot(e.x - dead_enemy.x, e.y - dead_enemy.y) <= burst_r:
+                e.take_damage(splash_dmg)
+        self._blood_effects.append(BloodExplosion(dead_enemy.x, dead_enemy.y, burst_r))
+        effects.append(FloatingText(int(dead_enemy.x), int(dead_enemy.y) - 20,
+                                    f"Splash! -{int(splash_dmg)}", (255, 110, 130)))
+
     def update(self, dt, enemies, effects, money):
-        self._laser_t+=dt
-        if self.cd_left>0: self.cd_left-=dt
+        self._laser_t += dt
+        if self.cd_left > 0: self.cd_left -= dt
+
+        # ── Blood Frenzy timer ────────────────────────────────────────────────
+        if self._frenzy_active:
+            self._frenzy_timer -= dt
+            if self._frenzy_timer <= 0:
+                self._frenzy_active = False
+                self._frenzy_timer  = 0.0
+
+        # Update blood burst visuals
+        for be in self._blood_effects: be.update(dt)
+        self._blood_effects = [be for be in self._blood_effects if be.alive]
 
         # Fire — spawn bullet that will deal damage when it lands
-        targets=self._get_rightmost(enemies,1)
-        if self.cd_left<=0 and targets:
-            t=targets[0]
-            self.cd_left=self.firerate
-            eid=id(t)
+        targets = self._get_rightmost(enemies, 1)
+        if self.cd_left <= 0 and targets:
+            t = targets[0]
+            self.cd_left = self._get_frenzy_firerate()
+            eid = id(t)
+
+            # Track consecutive hits on same target for frenzy charge
+            if eid != self._last_target_id:
+                self._frenzy_hit_tracker = {}   # reset on target switch
+            self._last_target_id = eid
+            self._frenzy_hit_tracker[eid] = self._frenzy_hit_tracker.get(eid, 0) + 1
+
+            # Trigger frenzy after enough hits on same enemy
+            if (not self._frenzy_active and
+                    self._frenzy_hit_tracker.get(eid, 0) >= _BLOOD_FRENZY_HITS):
+                self._frenzy_hit_tracker[eid] = 0
+                self._activate_frenzy(effects)
+
             self._bullets.append(LifestealerBullet(
                 self.px, self.py, t,
                 self.damage, self._dmg_tracker, eid
             ))
-            # total_damage tracked on hit inside bullet, but we track shots fired here for display
-            self.total_damage+=self.damage
+            self.total_damage += self.damage
 
         # Update bullets (damage dealt inside bullet.update on arrival)
         for b in self._bullets: b.update(dt)
-        self._bullets=[b for b in self._bullets if b.alive and math.hypot(b.x - self.px, b.y - self.py) <= self.range_tiles * TILE]
+        self._bullets = [b for b in self._bullets if b.alive and
+                         math.hypot(b.x - self.px, b.y - self.py) <= self.range_tiles * TILE * 2]
 
-        # Check for kills / threshold — gather rewards
-        earned=0
-        dead_ids=set()
+        # Check for kills / threshold — gather rewards + blood burst
+        earned = 0
+        dead_ids = set()
         for e in enemies:
-            eid=id(e)
+            eid = id(e)
             if eid not in self._dmg_tracker: continue
-            dealt=self._dmg_tracker[eid]
-            threshold=e.maxhp*0.25
-            if dealt>=threshold and not e.alive:
-                earned+=self._calc_reward(e)
+            dealt = self._dmg_tracker[eid]
+            threshold = e.maxhp * 0.25
+            if dealt >= threshold and not e.alive:
+                earned += self._calc_reward(e)
                 dead_ids.add(eid)
+                # ── Blood Burst on kill ───────────────────────────────────────
+                self._blood_burst(e, enemies, effects)
         for eid in dead_ids:
             del self._dmg_tracker[eid]
+            self._frenzy_hit_tracker.pop(eid, None)
 
         # Clean up trackers for enemies no longer in list
-        alive_ids={id(e) for e in enemies}
-        stale=[k for k in list(self._dmg_tracker) if k not in alive_ids]
+        alive_ids = {id(e) for e in enemies}
+        stale = [k for k in list(self._dmg_tracker) if k not in alive_ids]
         for k in stale: del self._dmg_tracker[k]
 
-        self._pending_money=earned
+        self._pending_money = earned
 
     def draw(self, surf):
         cx,cy=int(self.px),int(self.py)
+        t = self._laser_t  # use existing timer for animation
+
+        # ── Blood Frenzy aura ─────────────────────────────────────────────────
+        if self._frenzy_active:
+            pulse = abs(math.sin(t * 8.0))
+            aura_r = 30 + int(pulse * 8)
+            aura_alpha = int(60 + pulse * 80)
+            aura_s = pygame.Surface((aura_r*2+4, aura_r*2+4), pygame.SRCALPHA)
+            pygame.draw.circle(aura_s, (220, 20, 50, aura_alpha), (aura_r+2, aura_r+2), aura_r)
+            pygame.draw.circle(aura_s, (255, 80, 100, aura_alpha//2), (aura_r+2, aura_r+2), aura_r, 3)
+            surf.blit(aura_s, (cx-aura_r-2, cy-aura_r-2))
+
+        # ── Blood burst explosion visuals ─────────────────────────────────────
+        for be in self._blood_effects: be.draw(surf)
+
         pygame.draw.circle(surf,C_LIFESTEALER_DARK,(cx,cy),27)
         pygame.draw.circle(surf,C_LIFESTEALER,(cx,cy),20)
         # Inner ring detail
         pygame.draw.circle(surf,(200,60,100),(cx,cy),20,2)
-        # Cross / drain symbol
-        pygame.draw.line(surf,(255,100,140),(cx,cy-13),(cx,cy+13),3)
-        pygame.draw.line(surf,(255,100,140),(cx-9,cy-4),(cx+9,cy-4),3)
+        # Cross / drain symbol — glows red during frenzy
+        sym_col = (255, 220, 60) if self._frenzy_active else (255,100,140)
+        pygame.draw.line(surf,sym_col,(cx,cy-13),(cx,cy+13),3)
+        pygame.draw.line(surf,sym_col,(cx-9,cy-4),(cx+9,cy-4),3)
         # Fang drops at bottom
         for dx2 in [-7,7]:
             pts=[(cx+dx2,cy+13),(cx+dx2-3,cy+21),(cx+dx2,cy+25),(cx+dx2+3,cy+21)]
             pygame.draw.polygon(surf,(220,50,80),pts)
         # Rim glow
-        pygame.draw.circle(surf,(255,80,120),(cx,cy),27,2)
+        rim_col = (255, 220, 50) if self._frenzy_active else (255,80,120)
+        pygame.draw.circle(surf,rim_col,(cx,cy),27,2)
         for i in range(self.level):
             pygame.draw.circle(surf,C_GOLD,(cx-7+i*7,cy+36),3)
+
+        # ── Frenzy charge indicator: small dots above tower ───────────────────
+        if not self._frenzy_active and self._last_target_id is not None:
+            charges = self._frenzy_hit_tracker.get(self._last_target_id, 0)
+            for i in range(_BLOOD_FRENZY_HITS):
+                dot_col = (255, 60, 80) if i < charges else (60, 20, 30)
+                pygame.draw.circle(surf, dot_col, (cx - 10 + i * 7, cy - 34), 3)
+
         for b in self._bullets: b.draw(surf)
 
     def get_info(self):
-        return {"Damage":self.damage,"Range":self.range_tiles,
-                "Firerate":f"{self.firerate:.3f}","Money":f"{int(self.money_pct*100)}% HP"}
+        info = {"Damage": self.damage, "Range": self.range_tiles,
+                "Firerate": f"{self.firerate:.3f}", "Money": f"{int(self.money_pct*100)}% HP"}
+        if self._frenzy_active:
+            info["FRENZY"] = f"{self._frenzy_timer:.1f}s"
+        else:
+            charges = self._frenzy_hit_tracker.get(self._last_target_id, 0) if self._last_target_id else 0
+            info["Frenzy"] = f"{charges}/{_BLOOD_FRENZY_HITS} hits"
+        return info
 
 
 # ── Archer ─────────────────────────────────────────────────────────────────────
@@ -8335,20 +8599,21 @@ C_FELYNE_DARK = (120,  40,  80)
 # Felyne stats (damage and firerate from screenshot, second value after arrow)
 FELYNE_LEVELS = [
     # dmg  firerate  range_tiles cost     hidden_det
-    (4,    1.2,      5.7,       None,    False),   # lv0  — 162 px; 1 orbital ball, ball_dmg 2, ball_fr 1.0
+    (4,    1.2,      5.7,       None,    False),   # lv0  — 162 px; 1 orbital sentry, sentry_dmg 2, sentry_fr 1.0
     (6,    1.0,      6,        350,     False),   # lv1  — 200 px; +2 dmg, firerate 1.2->1.0
-    (8,    1.0,      6,      1000,    True),    # lv2  — 225 px; +2 dmg, hidden detection, ball_fr 1.0->0.2
-    (20,   1.0,      7,      2000,    True),    # lv3  — 225 px; +12 dmg, +1 ball (total 2)
-    (25,   0.7,      7,       7500,    True),    # lv4  — 250 px; +5 dmg, firerate 1.0->0.7, ball_dmg +2, ball_fr 0.15
-    (75,   0.7,      7.5,       12500,   True),    # lv5  — 250 px; +50 dmg, +1 ball (total 3)
-    (85,   0.6,      8.5,      32500,   True),    # lv6  — 281 px; +10 dmg, firerate 0.6, +1 ball (total 4), ball_fr 0.1, ball_dmg +1
+    (8,    1.0,      6,      1000,    True),    # lv2  — 225 px; +2 dmg, hidden detection, sentry_fr 1.0->0.2
+    (20,   1.0,      7,      2000,    True),    # lv3  — 225 px; +12 dmg, +1 sentry (total 2)
+    (25,   0.7,      7,       7500,    True),    # lv4  — 250 px; +5 dmg, firerate 1.0->0.7, sentry_dmg +2, sentry_fr 0.15
+    (75,   0.7,      7.5,       12500,   True),    # lv5  — 250 px; +50 dmg, +1 sentry (total 3)
+    (100,  0.5,      8.5,      32500,   True),    # lv6  — buffed: dmg 85->100, firerate 0.6->0.5, +1 sentry (total 4), sentry_fr 0.1, sentry_dmg+2
 ]
 
 
 class FelyneBullet:
-    """Homing bullet fired by Felyne — glowing star with rainbow trail."""
-    SPEED  = 560.0
+    """Homing bullet fired by Felyne — fast straight laser-line with long glowing tail."""
+    SPEED  = 2200.0   # very fast
     RADIUS = 5
+    TRAIL_LEN = 55    # pixels behind the bullet for the tail
 
     def __init__(self, ox, oy, target, damage):
         self.x = float(ox); self.y = float(oy)
@@ -8358,100 +8623,60 @@ class FelyneBullet:
         self.vx = dx / d; self.vy = dy / d
         self.damage = damage
         self.alive  = True
-        self._trail = []   # list of (x, y, age) where age 0=newest
-        self._t = 0.0
+        # Store previous position for the line tail
+        self._prev_x = self.x
+        self._prev_y = self.y
 
     def update(self, dt, enemies):
         if not self.alive: return
-        self._t += dt
+        self._prev_x = self.x
+        self._prev_y = self.y
         if self._target and self._target.alive:
             dx = self._target.x - self.x; dy = self._target.y - self.y
             d  = math.hypot(dx, dy) or 1
             self.vx = dx / d; self.vy = dy / d
         else:
-            # Target died — vanish immediately
             self.alive = False; return
-        step = self.SPEED * dt
-        self.x += self.vx * step; self.y += self.vy * step
-        self._trail.append((self.x, self.y))
-        if len(self._trail) > 18: self._trail.pop(0)
-        for e in enemies:
-            if not e.alive: continue
-            if math.hypot(e.x - self.x, e.y - self.y) < e.radius + self.RADIUS:
-                e.take_damage(self.damage)
-                self.alive = False; return
+
+        # ── Substep movement to prevent tunneling at high speed ──────────────
+        # Split the frame into chunks no larger than ~1 bullet radius at a time
+        total_dist = self.SPEED * dt
+        max_step   = max(self.RADIUS * 1.5, 8.0)
+        steps      = max(1, int(math.ceil(total_dist / max_step)))
+        sub_dist   = total_dist / steps
+
+        for _ in range(steps):
+            self.x += self.vx * sub_dist
+            self.y += self.vy * sub_dist
+            for e in enemies:
+                if not e.alive: continue
+                if math.hypot(e.x - self.x, e.y - self.y) < e.radius + self.RADIUS:
+                    e.take_damage(self.damage)
+                    self.alive = False; return
+
         if self.x < -200 or self.x > 2200 or self.y < -200 or self.y > 1200:
             self.alive = False
 
     def draw(self, surf):
         if not self.alive: return
-        n = len(self._trail)
-
-        # Trail: fades from hot pink → purple → transparent
-        TRAIL_COLORS = [
-            (255, 80,  180),   # hot pink
-            (220, 60,  200),
-            (180, 50,  220),   # purple
-            (140, 40,  240),
-            (100, 60,  255),   # blue-violet
-        ]
-        for i, (tx, ty) in enumerate(self._trail):
-            frac = (i + 1) / max(n, 1)
-            alpha = int(200 * frac * frac)
-            radius = max(1, int(5 * frac))
-            ci = int(frac * (len(TRAIL_COLORS) - 1))
-            r, g, b = TRAIL_COLORS[ci]
-            sz = radius * 2 + 2
-            s = pygame.Surface((sz, sz), pygame.SRCALPHA)
-            pygame.draw.circle(s, (r, g, b, alpha), (sz // 2, sz // 2), radius)
-            surf.blit(s, (int(tx) - sz // 2, int(ty) - sz // 2))
-
-        # Sparkle dots scattered along trail
-        for i in range(0, n, 3):
-            tx, ty = self._trail[i]
-            frac = (i + 1) / max(n, 1)
-            if frac < 0.3: continue
-            alpha = int(180 * frac)
-            angle = self._t * 8 + i * 1.2
-            ox2 = math.cos(angle) * 3
-            oy2 = math.sin(angle) * 3
-            s = pygame.Surface((6, 6), pygame.SRCALPHA)
-            pygame.draw.circle(s, (255, 220, 255, alpha), (3, 3), 2)
-            surf.blit(s, (int(tx + ox2) - 3, int(ty + oy2) - 3))
-
-        # Core bullet: outer glow + bright center + white hot spot
         cx, cy = int(self.x), int(self.y)
 
-        # Outer glow ring
-        s = pygame.Surface((26, 26), pygame.SRCALPHA)
-        pygame.draw.circle(s, (255, 60, 180, 60),  (13, 13), 12)
-        pygame.draw.circle(s, (220, 40, 220, 100), (13, 13), 8)
-        surf.blit(s, (cx - 13, cy - 13))
+        # Tail: line going TRAIL_LEN pixels behind the bullet along movement direction
+        tail_x = int(self.x - self.vx * self.TRAIL_LEN)
+        tail_y = int(self.y - self.vy * self.TRAIL_LEN)
 
-        # Star shape (4 spikes)
-        spike_len = 6
-        for angle in [0, 90, 180, 270]:
-            rad = math.radians(angle + self._t * 180)
-            ex = cx + math.cos(rad) * spike_len
-            ey = cy + math.sin(rad) * spike_len
-            s2 = pygame.Surface((4, 4), pygame.SRCALPHA)
-            pygame.draw.circle(s2, (255, 180, 255, 200), (2, 2), 2)
-            surf.blit(s2, (int(ex) - 2, int(ey) - 2))
-
-        # Solid core
-        s3 = pygame.Surface((14, 14), pygame.SRCALPHA)
-        pygame.draw.circle(s3, (255, 80,  200, 255), (7, 7), 6)
-        pygame.draw.circle(s3, (255, 180, 240, 255), (7, 7), 4)
-        pygame.draw.circle(s3, (255, 255, 255, 255), (7, 7), 2)
-        surf.blit(s3, (cx - 7, cy - 7))
+        # Outer glow line (wider, semi-transparent hot-pink)
+        pygame.draw.line(surf, (255, 60, 200), (tail_x, tail_y), (cx, cy), 4)
+        # Inner bright line (white-pink core, 1px)
+        pygame.draw.line(surf, (255, 220, 255), (tail_x, tail_y), (cx, cy), 1)
 
 
 
 
-# ── Orbital ball that orbits Felyne ─────────────────────────────────────────
+# ── Orbital sentry that orbits Felyne ───────────────────────────────────────
 class _OrbitalBall:
-    """Fixed turret satellite around Felyne — stands still, aims and shoots at enemies."""
-    ORBIT_R       = 75    # pixels from tower centre (fixed position)
+    """Fixed sentry satellite around Felyne — stands still, aims and shoots at enemies."""
+    ORBIT_R       = 50    # pixels from tower centre (fixed position)
     BALL_R        = 14    # collision radius
     SHOT_SPEED    = 480.0 # shooting bullet speed
     SHOT_FIRERATE = 1.0   # default; overridden per-instance by Felyne._apply_level
@@ -8467,12 +8692,14 @@ class _OrbitalBall:
         self.shot_damage  = 2
         self.shot_range   = None
         self.SHOT_FIRERATE = 1.0
+        self.owner      = None     # set by Felyne._apply_level; used for total_damage tracking
         self._hit_cd    = {}       # id(enemy) → remaining cooldown (melee contact)
         self._shot_cd   = 0.0
         self._bullets   = []
         self._aim_angle = self.angle  # direction the barrel is pointing (radians)
         self._recoil    = 0.0         # current recoil offset (pixels)
         self._recoil_cd = 0.0         # timer for recoil animation
+        self._current_target = None   # persistent target lock
 
     def update(self, dt, owner_x, owner_y, enemies):
         # Position is FIXED — no rotation of self.angle
@@ -8513,6 +8740,8 @@ class _OrbitalBall:
                 if id(e) in self._hit_cd: continue
                 if math.hypot(e.x - self.x, e.y - self.y) <= self.BALL_R + getattr(e, 'radius', 14):
                     e.take_damage(self.damage)
+                    if self.owner is not None:
+                        self.owner.total_damage += self.damage
                     self._hit_cd[id(e)] = 0.6
 
         # ── Shooting mode ─────────────────────────────────────────────────────
@@ -8531,6 +8760,7 @@ class _OrbitalBall:
                     'vy': dy / d * self.SHOT_SPEED,
                     'alive': True,
                     'target': aim_target,
+                    'lifetime': 4.0,   # safety timeout — bullet dies after 4s
                 })
                 # Trigger recoil
                 self._recoil = self.BARREL_RECOIL
@@ -8540,9 +8770,20 @@ class _OrbitalBall:
                 if not b['alive']: continue
                 if not b['target'].alive:
                     b['alive'] = False; continue
-                # Recalculate direction toward target each frame
+                # Lifetime timeout — prevents bullets from chasing forever
+                b['lifetime'] -= dt
+                if b['lifetime'] <= 0:
+                    b['alive'] = False; continue
+                # Pre-movement distance check — handles overshoot at low FPS
                 dx = b['target'].x - b['x']; dy = b['target'].y - b['y']
                 d  = math.hypot(dx, dy) or 1
+                hit_radius = getattr(b['target'], 'radius', 14) + 4
+                if d <= hit_radius:
+                    b['target'].take_damage(self.shot_damage)
+                    if self.owner is not None:
+                        self.owner.total_damage += self.shot_damage
+                    b['alive'] = False; continue
+                # Recalculate direction toward target each frame
                 b['vx'] = dx / d * self.SHOT_SPEED
                 b['vy'] = dy / d * self.SHOT_SPEED
                 b['x'] += b['vx'] * dt
@@ -8551,6 +8792,8 @@ class _OrbitalBall:
                     if not e.alive: continue
                     if math.hypot(e.x - b['x'], e.y - b['y']) <= getattr(e, 'radius', 14) + 4:
                         e.take_damage(self.shot_damage)
+                        if self.owner is not None:
+                            self.owner.total_damage += self.shot_damage
                         b['alive'] = False; break
                 if b['x'] < -200 or b['x'] > 2200 or b['y'] < -200 or b['y'] > 1200:
                     b['alive'] = False
@@ -8559,23 +8802,38 @@ class _OrbitalBall:
     def draw(self, surf, owner_x=0, owner_y=0):
         cx, cy = int(self.x), int(self.y)
 
-        # ── Shot bullets ──────────────────────────────────────────────────────
+        # ── Shot bullets — tracer rays (TDS engineer style) ──────────────────
         for b in self._bullets:
-            bx, by = int(b['x']), int(b['y'])
-            bs = pygame.Surface((12, 12), pygame.SRCALPHA)
-            pygame.draw.circle(bs, (255, 200, 80, 220), (6, 6), 5)
-            pygame.draw.circle(bs, (255, 255, 200, 255), (6, 6), 2)
-            surf.blit(bs, (bx - 6, by - 6))
+            bx, by = b['x'], b['y']
+            spd = math.hypot(b['vx'], b['vy']) or 1
+            ndx, ndy = -b['vx'] / spd, -b['vy'] / spd  # tail direction
+            tail_len = 28
+            tail_x = bx + ndx * tail_len
+            tail_y = by + ndy * tail_len
+            mid_x  = bx + ndx * tail_len * 0.5
+            mid_y  = by + ndy * tail_len * 0.5
+            # Layered tracer: outer glow → core → bright spine
+            pygame.draw.line(surf, (255, 180, 40,  80),
+                             (int(tail_x), int(tail_y)), (int(bx), int(by)), 4)
+            pygame.draw.line(surf, (255, 220, 80, 160),
+                             (int(mid_x),  int(mid_y)),  (int(bx), int(by)), 2)
+            pygame.draw.line(surf, (255, 255, 200, 240),
+                             (int(mid_x),  int(mid_y)),  (int(bx), int(by)), 1)
+            # Bright tip flash
+            tip_s = pygame.Surface((10, 10), pygame.SRCALPHA)
+            pygame.draw.circle(tip_s, (255, 200, 80,  180), (5, 5), 5)
+            pygame.draw.circle(tip_s, (255, 255, 220, 255), (5, 5), 3)
+            surf.blit(tip_s, (int(bx) - 5, int(by) - 5))
 
         # ── Turret base glow ──────────────────────────────────────────────────
-        glow_col = (255, 220, 80, 90) if self.shooting else (255, 100, 200, 80)
+        glow_col = (255, 130, 200, 100)
         g = pygame.Surface((38, 38), pygame.SRCALPHA)
         pygame.draw.circle(g, glow_col, (19, 19), 17)
         surf.blit(g, (cx - 19, cy - 19))
 
         # ── Turret base body — hexagonal plate ───────────────────────────────
-        base_col  = (110, 60, 140) if not self.shooting else (140, 110, 30)
-        rim_col   = (200, 130, 220) if not self.shooting else (240, 200, 80)
+        base_col  = (140, 60, 110)
+        rim_col   = (255, 140, 200)
         n_sides   = 6
         base_r    = 13
         hex_pts   = [
@@ -8587,14 +8845,14 @@ class _OrbitalBall:
         pygame.draw.polygon(surf, rim_col,  hex_pts, 2)
 
         # ── Turret dome (top circle) ──────────────────────────────────────────
-        dome_col = (200, 100, 230) if not self.shooting else (255, 200, 60)
+        dome_col = (255, 160, 210)
         pygame.draw.circle(surf, dome_col, (cx, cy), 7)
         pygame.draw.circle(surf, (255, 255, 255), (cx, cy), 2)
 
         # ── Barrel (drawn pointing toward aim angle, with recoil) ─────────────
         recoil_offset = self._recoil
-        barrel_col    = (80, 40, 110) if not self.shooting else (100, 80, 20)
-        barrel_rim    = (220, 160, 240) if not self.shooting else (240, 210, 100)
+        barrel_col    = (120, 50, 90)
+        barrel_rim    = (255, 180, 220)
         aim_a         = self._aim_angle
 
         # Barrel root (from dome edge, accounting for recoil pull-back)
@@ -8625,19 +8883,11 @@ class _OrbitalBall:
             pygame.draw.circle(fs, flash_col, (10, 10), 8)
             surf.blit(fs, (int(tip_x) - 10, int(tip_y) - 10))
 
-        # ── Connector strut from turret base toward tower center ─────────────
-        strut_col = (160, 100, 180) if not self.shooting else (180, 150, 60)
-        # Direction from orb back to tower
-        back_angle = self.angle + math.pi
-        strut_start_x = cx + int(math.cos(back_angle) * 13)
-        strut_start_y = cy + int(math.sin(back_angle) * 13)
-        strut_end_x   = int(owner_x + math.cos(self.angle) * 24)
-        strut_end_y   = int(owner_y + math.sin(self.angle) * 24)
-        pygame.draw.line(surf, strut_col, (strut_start_x, strut_start_y), (strut_end_x, strut_end_y), 2)
+
 
 
 class Felyne(Unit):
-    """Cat-eared tower — balanced reroll. 7 levels (lv0–lv6). Fires bullets + orbital balls."""
+    """Cat-eared tower — balanced reroll. 7 levels (lv0–lv6). Fires bullets + orbital sentries."""
     PLACE_COST = 600
     COLOR      = C_FELYNE
     NAME       = "Felyne"
@@ -8656,17 +8906,17 @@ class Felyne(Unit):
         self.cd_left = 0.0
 
 
-        # Orbital ball config per level:
-        # lv0-1: 1 ball, dmg 2, ball_fr 1.0
-        # lv2:   1 ball, dmg 2, ball_fr 0.2
-        # lv3:   2 balls, dmg 2, ball_fr 0.2
-        # lv4:   2 balls, dmg 4, ball_fr 0.15
-        # lv5:   3 balls, dmg 4, ball_fr 0.15
-        # lv6:   4 balls, dmg 5, ball_fr 0.1, shooting=True
-        # All levels: orbs always shoot
+        # Orbital sentry config per level:
+        # lv0-1: 1 sentry, dmg 2, sentry_fr 1.0
+        # lv2:   1 sentry, dmg 2, sentry_fr 0.2
+        # lv3:   2 sentries, dmg 2, sentry_fr 0.2
+        # lv4:   2 sentries, dmg 4, sentry_fr 0.15
+        # lv5:   3 sentries, dmg 4, sentry_fr 0.15
+        # lv6:   4 sentries, dmg 5, sentry_fr 0.1, shooting=True
+        # All levels: sentries always shoot
         if self.level >= 6:
             _orb_count = 4
-            _orb_dmg   = 5
+            _orb_dmg   = 7
             _orb_fr    = 0.1
         elif self.level >= 5:
             _orb_count = 3
@@ -8690,17 +8940,56 @@ class Felyne(Unit):
             _orb_fr    = 1.0
         _orb_shooting = True  # orbs always shoot
 
-        # lv6 shooting balls are range-limited to tower range
+        # Orbs use the same shooting range as Felyne itself (measured from orb position)
         _orb_shot_dmg   = _orb_dmg
         _orb_shot_range = self.range_tiles * TILE if _orb_shooting else None
 
         # Rebuild orbs only if count changed (preserve angles otherwise)
         if not hasattr(self, '_orbs') or len(self._orbs) != _orb_count:
-            self._orbs = [
-                _OrbitalBall(i * (math.pi * 2 / _orb_count))
-                for i in range(_orb_count)
-            ]
+            R = _OrbitalBall.ORBIT_R
+            min_sep = _OrbitalBall.BALL_R * 2 + 6
+
+            def _orb_on_path(angle, owner_py):
+                """True if the orb at this angle would overlap the path strip."""
+                orb_y = owner_py + math.sin(angle) * R
+                return PATH_Y - _OrbitalBall.BALL_R <= orb_y <= PATH_Y + PATH_H + _OrbitalBall.BALL_R
+
+            def _orbs_overlap(angles):
+                for i in range(len(angles)):
+                    for j in range(i + 1, len(angles)):
+                        ax = math.cos(angles[i]) * R; ay = math.sin(angles[i]) * R
+                        bx = math.cos(angles[j]) * R; by = math.sin(angles[j]) * R
+                        if math.hypot(ax - bx, ay - by) < min_sep:
+                            return True
+                return False
+
+            owner_py = self.py
+            # Evenly spaced fallback (above and below, never on path)
+            def _evenly_spaced_safe(n, owner_py):
+                """Return n evenly-spaced angles guaranteed off the path."""
+                candidates = []
+                for k in range(n * 8):
+                    a = k * (math.pi * 2 / (n * 8))
+                    if not _orb_on_path(a, owner_py):
+                        candidates.append(a)
+                # Pick n evenly spread from valid candidates
+                if len(candidates) < n:
+                    # Fallback: place above the path (270° = straight up)
+                    return [math.pi * 1.5 + i * (math.pi / max(n, 1)) for i in range(n)]
+                step = len(candidates) // n
+                return [candidates[i * step] for i in range(n)]
+
+            best_angles = _evenly_spaced_safe(_orb_count, owner_py)
+            for _ in range(500):
+                candidate = [random.uniform(0, math.pi * 2) for _ in range(_orb_count)]
+                if _orbs_overlap(candidate): continue
+                if any(_orb_on_path(a, owner_py) for a in candidate): continue
+                best_angles = candidate
+                break
+
+            self._orbs = [_OrbitalBall(a) for a in best_angles]
         for orb in self._orbs:
+            orb.owner       = self
             orb.damage      = _orb_dmg
             orb.shooting    = _orb_shooting
             orb.shot_damage = _orb_shot_dmg
@@ -8721,10 +9010,16 @@ class Felyne(Unit):
         self._anim_t += dt
         if self.cd_left > 0: self.cd_left -= dt
 
-        # ── Orbital balls ─────────────────────────────────────────────────────
+        # ── Orbital sentries — always update, even while Felyne is stunned ──────
+        _is_stunned = getattr(self, '_stun_timer', 0) > 0
         for orb in self._orbs: orb.update(dt, self.px, self.py, enemies)
 
-        # ── Main shooting attack ──────────────────────────────────────────────
+        # ── Main shooting attack (skipped while stunned) ──────────────────────
+        if _is_stunned:
+            for b in self._bullets: b.update(dt, enemies)
+            _rng_px_kz = self.range_tiles * TILE
+            self._bullets = [b for b in self._bullets if b.alive and math.hypot(b.x - self.px, b.y - self.py) <= _rng_px_kz]
+            return
         targets = self._get_targets(enemies, 1)
         if targets:
             t0 = targets[0]
@@ -8885,6 +9180,27 @@ class Felyne(Unit):
         old_clip = surf.get_clip()
         surf.set_clip(pygame.Rect(0, 0, SCREEN_W, SLOT_AREA_Y))
         surf.blit(s, (int(self.px) - r, int(self.py) - r))
+
+        # ── Пунктирный красный круг — радиус спавна турелек ──────────────────
+        orb_r = _OrbitalBall.ORBIT_R
+        cx, cy = int(self.px), int(self.py)
+        dash_count = 24
+        dash_angle = math.pi * 2 / dash_count
+        dash_len_a = dash_angle * 0.55
+        orb_s = pygame.Surface((orb_r * 2 + 8, orb_r * 2 + 8), pygame.SRCALPHA)
+        sc = orb_r + 4
+        for i in range(dash_count):
+            a_start = i * dash_angle
+            a_end   = a_start + dash_len_a
+            steps   = 10
+            pts = []
+            for st in range(steps + 1):
+                a = a_start + (a_end - a_start) * st / steps
+                pts.append((sc + math.cos(a) * orb_r, sc + math.sin(a) * orb_r))
+            if len(pts) >= 2:
+                pygame.draw.lines(orb_s, (220, 50, 60, 200), False, pts, 2)
+        surf.blit(orb_s, (cx - sc, cy - sc))
+
         surf.set_clip(old_clip)
 
     def get_info(self):
