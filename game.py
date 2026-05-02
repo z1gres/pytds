@@ -42,6 +42,8 @@ UNIT_LIMITS["Twitgunner"]  = 6
 UNIT_LIMITS["Felyne"]     = 6
 UNIT_LIMITS["Conduit"]    = 3
 
+UNIT_LIMITS["ControlPanel"] = 1
+
 # ── Patch early_access rarity into RARITY_DATA (from game_core) ───────────────
 RARITY_DATA.setdefault("early_access", {
     "color":    (20,  80,  65),
@@ -262,6 +264,7 @@ from units import (
     Twitgunner, TWITGUN_LEVELS, C_TWITGUN, C_TWITGUN_DARK,
     Felyne, FELYNE_LEVELS, C_FELYNE, C_FELYNE_DARK,
     Conduit, CONDUIT_LEVELS, C_CONDUIT, C_CONDUIT_DARK,
+    ControlPanel, C_CTRLPANEL, C_CTRLPANEL_DARK, RemoteControlAbility, _CP_BUFF_DEFS, _CP_ABILITY_CD,
 )
 
 # ── Archer level 3 upgrade cost → 750 ────────────────────────────────────────
@@ -631,6 +634,7 @@ class AdminPanel:
                 ("Twitgunner",Twitgunner,C_TWITGUN),
                 ("Felyne",Felyne,C_FELYNE),
                 ("Conduit",Conduit,C_CONDUIT),
+                ("CtrlPanel",ControlPanel,C_CTRLPANEL),
             ]
             cols=8; cw=(pw-28)//cols; ch=100; gap=6
             start_x=px+10; start_y=content_top+6
@@ -846,6 +850,14 @@ class UI:
         # Harvester thorn-placement mode
         self._thorn_place_mode = False   # True while waiting for player to click on map
         self._thorn_place_owner = None   # which Harvester triggered the mode
+        # ControlPanel Remote Control UI
+        self._rc_open     = False
+        self._rc_panel    = None   # ControlPanel owner
+        self._rc_units    = []     # candidate towers in range
+        self._rc_sel_unit = None   # currently selected target
+        self._rc_sel_buff = "Damage"
+        self._rc_duration = 30     # seconds
+        self._rc_strength = 1.0    # buff strength multiplier (0.25–2.0)
         self.t = 0.0  # elapsed time for animations
         self.admin_panel=AdminPanel()
         self.admin_mode = False  # set to True by Game when launched from sandbox
@@ -875,6 +887,9 @@ class UI:
         if self.msg_timer>0: self.msg_timer-=dt
         self.t += dt
     def handle_click(self,pos,units,money,effects,enemies,wave=1,save_data=None,mode="easy",wave_mgr=None):
+        # ── Remote Control UI takes priority ─────────────────────────────────
+        if getattr(self, '_rc_open', False):
+            return self.handle_rc_click(pos, money)
         # ── Harvester thorn-placement mode ───────────────────────────────────
         if self._thorn_place_mode and self._thorn_place_owner:
             owner = self._thorn_place_owner
@@ -996,6 +1011,20 @@ class UI:
                         self._thorn_place_mode  = True
                         self._thorn_place_owner = u
                         self.show_msg("Click on the path to place Thorns  [RMB / Esc to cancel]", 4.0)
+                    elif isinstance(u, ControlPanel):
+                        # Open Remote Control UI
+                        other = [x for x in units if x is not u and
+                                 dist((x.px, x.py), (u.px, u.py)) <= u.range_tiles * TILE]
+                        if not other:
+                            self.show_msg("No towers in range to buff!", 3.0)
+                        else:
+                            self._rc_panel       = u        # owner
+                            self._rc_units       = other    # targets
+                            self._rc_sel_unit    = other[0]
+                            self._rc_sel_buff    = "Damage"
+                            self._rc_duration    = 30
+                            self._rc_strength    = 1.0
+                            self._rc_open        = True
                     else:
                         u.ability.activate(enemies,effects)
                 return 0
@@ -1098,6 +1127,20 @@ class UI:
                         self._thorn_place_mode  = True
                         self._thorn_place_owner = self.open_unit
                         self.show_msg("Click on the path to place Thorns  [RMB / Esc to cancel]", 4.0)
+                    elif isinstance(self.open_unit, ControlPanel):
+                        other = [x for x in units if x is not self.open_unit and
+                                 dist((x.px, x.py), (self.open_unit.px, self.open_unit.py))
+                                 <= self.open_unit.range_tiles * TILE]
+                        if not other:
+                            self.show_msg("No towers in range to buff!", 3.0)
+                        else:
+                            self._rc_panel    = self.open_unit
+                            self._rc_units    = other
+                            self._rc_sel_unit = other[0]
+                            self._rc_sel_buff = "Damage"
+                            self._rc_duration = 30
+                            self._rc_strength = 1.0
+                            self._rc_open     = True
                     else:
                         self.open_unit.ability.activate(enemies, effects)
                 return 0
@@ -1399,6 +1442,7 @@ class UI:
         elif cls==Swarmer: levels=SWARMER_LEVELS; cost_idx=3
         elif cls==Harvester: levels=HARVESTER_LEVELS; cost_idx=3
         elif cls==Conduit: levels=CONDUIT_LEVELS; cost_idx=3
+        elif cls==ControlPanel: levels=[]; cost_idx=3   # no upgrades, only placement cost
         elif cls==Militant: levels=MILITANT_LEVELS; cost_idx=3
         elif cls==Twitgunner: levels=TWITGUN_LEVELS; cost_idx=3
         elif cls==Felyne: levels=FELYNE_LEVELS; cost_idx=3
@@ -1609,6 +1653,8 @@ class UI:
             d,fr,r,_,ccd,jmp=CONDUIT_LEVELS[nxt]
             return {"Damage":d,"Firerate":f"{fr:.3f}","Range":r,
                     "Jumps":jmp,"ChargeCD":f"{ccd:.1f}s"}
+        elif cls==ControlPanel:
+            return None   # no upgrades
         elif cls==HackerLaserTest:
             if nxt>=len(CASTER_LEVELS): return None
             d,fr,r,_,hd=CASTER_LEVELS[nxt]
@@ -2444,6 +2490,18 @@ class UI:
                     ("Jumps",    u._base_jumps,           nxt.get("Jumps")   if nxt else None),
                     ("ChargeCD", f"{u._charge_max_cd:.1f}s", nxt.get("ChargeCD") if nxt else None),
                 ]
+            elif cls==ControlPanel:
+                ab = u.ability
+                stats = [("Type", "Support (no attack)", None),
+                         ("Range", u.range_tiles, None)]
+                if ab.is_buffing():
+                    tgt_name = getattr(ab._active_buff_unit, "NAME",
+                                       type(ab._active_buff_unit).__name__)
+                    stats.append(("Buffing", f"{ab._active_buff_type}", None))
+                    stats.append(("Target",  tgt_name, None))
+                    stats.append(("Buff left", f"{ab._active_buff_dur:.1f}s", None))
+                stats.append(("AbilCD", "READY" if ab.cd_left <= 0 else f"{ab.cd_left:.1f}s", None))
+                stats.append(("AbilCD_max", f"{_CP_ABILITY_CD:.0f}s CD", None))
             elif cls==SoulWeaver:
                 nxt_sw = _SW_LEVELS[u.level+1] if u.level+1 < len(_SW_LEVELS) else None
                 p_sw = _SW_SURGE_PARAMS[u.level+1] if u.level+1 < len(_SW_SURGE_PARAMS) else None
@@ -2883,7 +2941,7 @@ class UI:
                         
                     surf.set_clip(old_clip_k)
 
-            _abil_min_level = 0 if isinstance(u, (Harvester, Felyne)) else 2
+            _abil_min_level = 0 if isinstance(u, (Harvester, Felyne, ControlPanel)) else 2
             if u.ability and u.level >= _abil_min_level:
                 ab=u.ability
                 ab_r=btns["ability_sq"]
@@ -2982,7 +3040,7 @@ class UI:
         ab_entries=[]
         for u in units:
             if getattr(u,'ability2',None) and u.level>=1: ab_entries.append((u, u.ability2, 'ab2'))
-            _ab1_min = 0 if isinstance(u, Harvester) else 2
+            _ab1_min = 0 if isinstance(u, (Harvester, ControlPanel)) else 2
             if u.ability and u.level >= _ab1_min: ab_entries.append((u, u.ability, 'ab1'))
             if getattr(u,'ability3',None) and u.level>=4: ab_entries.append((u, u.ability3, 'ab3'))
         _ab_clip_bottom = SLOT_AREA_Y - 4
@@ -3020,6 +3078,228 @@ class UI:
         for e in enemies:
             if e.alive and dist((e.x,e.y),(mx2,my2))<e.radius+5:
                 e.draw(surf,hovered=True,detected=True)
+
+        # ── Remote Control ability UI ─────────────────────────────────────────
+        if getattr(self, '_rc_open', False):
+            self._draw_rc_panel(surf, money)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Remote Control (ControlPanel ability) overlay UI
+    # ─────────────────────────────────────────────────────────────────────────
+    def _draw_rc_panel(self, surf, money):
+        """Draw the Remote Control selection popup and store button rects."""
+        W, H = 520, 430
+        px2 = SCREEN_W // 2 - W // 2
+        py2 = SCREEN_H // 2 - H // 2
+
+        # Darken background
+        dim = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+        dim.fill((0, 0, 0, 140))
+        surf.blit(dim, (0, 0))
+
+        # Panel background
+        draw_rect_alpha(surf, (10, 30, 50), (px2, py2, W, H), 230, 12)
+        pygame.draw.rect(surf, C_CTRLPANEL, (px2, py2, W, H), 2, border_radius=12)
+
+        lf16 = pygame.font.SysFont("segoeui", 16, bold=True)
+        lf14 = pygame.font.SysFont("segoeui", 14)
+        lf13 = pygame.font.SysFont("segoeui", 13)
+        lf12 = pygame.font.SysFont("consolas", 12, bold=True)
+
+        # Title
+        title_s = lf16.render("Remote Control", True, C_CTRLPANEL)
+        surf.blit(title_s, title_s.get_rect(centerx=px2 + W // 2, top=py2 + 10))
+
+        # ── Section 1: Choose target tower ───────────────────────────────────
+        sec_s = lf14.render("Target Tower:", True, (160, 200, 255))
+        surf.blit(sec_s, (px2 + 14, py2 + 38))
+
+        btn_w = (W - 28) // max(len(self._rc_units), 1)
+        btn_w = min(btn_w, 110)
+        self._rc_tower_btns = []
+        for i, u in enumerate(self._rc_units[:8]):
+            bx = px2 + 14 + i * (btn_w + 4)
+            by = py2 + 58
+            bh = 38
+            sel = (u is self._rc_sel_unit)
+            bg  = (20, 80, 120) if sel else (15, 40, 60)
+            brd = C_CTRLPANEL if sel else (40, 100, 130)
+            pygame.draw.rect(surf, bg,  (bx, by, btn_w, bh), border_radius=6)
+            pygame.draw.rect(surf, brd, (bx, by, btn_w, bh), 2, border_radius=6)
+            uname = getattr(u, "NAME", type(u).__name__)
+            ns = lf12.render(uname[:10], True, C_WHITE if sel else (160, 190, 210))
+            surf.blit(ns, ns.get_rect(centerx=bx + btn_w // 2, centery=by + bh // 2))
+            self._rc_tower_btns.append((pygame.Rect(bx, by, btn_w, bh), u))
+
+        # ── Section 2: Choose buff type ───────────────────────────────────────
+        sec_s2 = lf14.render("Buff Type:", True, (160, 200, 255))
+        surf.blit(sec_s2, (px2 + 14, py2 + 110))
+
+        buff_names = ["Range", "Damage", "Firerate"]
+        # Show actual bonus based on current strength
+        def _bonus_str(bname):
+            base_bonus = _CP_BUFF_DEFS[bname]["mult"] - 1.0
+            pct = int(base_bonus * getattr(self, '_rc_strength', 1.0) * 100)
+            return f"+{pct}% {bname}"
+        buff_descs = [_bonus_str(b) for b in buff_names]
+        buff_costs_base = [_CP_BUFF_DEFS[b]["base"] for b in buff_names]
+        self._rc_buff_btns = []
+        bw_b = (W - 28) // 3 - 4
+        for i, (bname, bdesc) in enumerate(zip(buff_names, buff_descs)):
+            bx = px2 + 14 + i * (bw_b + 6)
+            by = py2 + 130
+            bh = 48
+            sel = (bname == self._rc_sel_buff)
+            bcol = _CP_BUFF_DEFS[bname]["color"]
+            bg   = (*[min(255, c // 3 + 20) for c in bcol],)
+            brd  = bcol if sel else tuple(max(0, c - 80) for c in bcol)
+            pygame.draw.rect(surf, bg,  (bx, by, bw_b, bh), border_radius=6)
+            pygame.draw.rect(surf, brd, (bx, by, bw_b, bh), 2 if not sel else 3, border_radius=6)
+            ns  = lf13.render(bname, True, C_WHITE)
+            ds  = lf12.render(bdesc, True, (200, 220, 200))
+            c_s = lf12.render(f"${buff_costs_base[i]}+", True, C_GOLD)
+            surf.blit(ns,  ns.get_rect(centerx=bx + bw_b // 2, top=by + 4))
+            surf.blit(ds,  ds.get_rect(centerx=bx + bw_b // 2, top=by + 20))
+            surf.blit(c_s, c_s.get_rect(centerx=bx + bw_b // 2, top=by + 34))
+            self._rc_buff_btns.append((pygame.Rect(bx, by, bw_b, bh), bname))
+
+        # ── Section 3: Buff Strength slider ───────────────────────────────────
+        strength = getattr(self, '_rc_strength', 1.0)
+        base_bonus = _CP_BUFF_DEFS[self._rc_sel_buff]["mult"] - 1.0
+        actual_pct = int(base_bonus * strength * 100)
+        str_col = (
+            (120, 255, 100) if strength <= 1.0 else
+            (255, 200, 60)  if strength <= 1.5 else
+            (255, 100, 60)
+        )
+        sec_s_str = lf14.render(f"Buff Strength:  +{actual_pct}%  (×{strength:.2f})", True, str_col)
+        surf.blit(sec_s_str, (px2 + 14, py2 + 192))
+
+        sstr_x = px2 + 14
+        sstr_y = py2 + 216
+        sstr_w = W - 28
+        sstr_h = 14
+        # range: 0.25 → 2.0  (7 steps of 0.25, frac 0–1)
+        str_frac = (strength - 0.25) / 1.75
+        pygame.draw.rect(surf, (20, 50, 70), (sstr_x, sstr_y, sstr_w, sstr_h), border_radius=6)
+        fill_col = str_col
+        pygame.draw.rect(surf, fill_col,
+                         (sstr_x, sstr_y, int(sstr_w * str_frac), sstr_h), border_radius=6)
+        sstr_handle_x = sstr_x + int(sstr_w * str_frac)
+        pygame.draw.circle(surf, C_WHITE,    (sstr_handle_x, sstr_y + sstr_h // 2), 10)
+        pygame.draw.circle(surf, fill_col,   (sstr_handle_x, sstr_y + sstr_h // 2), 10, 2)
+        # tick marks at 0.25 intervals
+        for tick_i in range(8):
+            tx = sstr_x + int(sstr_w * tick_i / 7)
+            pygame.draw.line(surf, (60, 90, 110), (tx, sstr_y + sstr_h + 2), (tx, sstr_y + sstr_h + 7), 1)
+            lbl_v = 0.25 + tick_i * 0.25
+            lbl_s = lf12.render(f"×{lbl_v:.2g}", True, (80, 110, 130))
+            surf.blit(lbl_s, lbl_s.get_rect(centerx=tx, top=sstr_y + sstr_h + 8))
+        self._rc_str_slider_rect = pygame.Rect(sstr_x - 10, sstr_y - 8, sstr_w + 20, sstr_h + 16)
+
+        # ── Section 4: Duration slider ────────────────────────────────────────
+        sec_s3 = lf14.render(f"Duration: {self._rc_duration}s", True, (160, 200, 255))
+        surf.blit(sec_s3, (px2 + 14, py2 + 254))
+
+        slider_x  = px2 + 14
+        slider_y  = py2 + 276
+        slider_w  = W - 28
+        slider_h  = 14
+        dur_frac  = (self._rc_duration - 5) / 115.0  # 5–120 range
+        pygame.draw.rect(surf, (20, 50, 70), (slider_x, slider_y, slider_w, slider_h), border_radius=6)
+        pygame.draw.rect(surf, C_CTRLPANEL,
+                         (slider_x, slider_y, int(slider_w * dur_frac), slider_h), border_radius=6)
+        handle_x = slider_x + int(slider_w * dur_frac)
+        pygame.draw.circle(surf, C_WHITE, (handle_x, slider_y + slider_h // 2), 10)
+        pygame.draw.circle(surf, C_CTRLPANEL, (handle_x, slider_y + slider_h // 2), 10, 2)
+        # Label min/max
+        mn = lf12.render("5s", True, (100, 140, 160))
+        mx3 = lf12.render("120s", True, (100, 140, 160))
+        surf.blit(mn,  (slider_x, slider_y + 16))
+        surf.blit(mx3, (slider_x + slider_w - mx3.get_width(), slider_y + 16))
+        self._rc_slider_rect = pygame.Rect(slider_x - 10, slider_y - 8, slider_w + 20, slider_h + 16)
+
+        # ── Cost summary ──────────────────────────────────────────────────────
+        total_cost = RemoteControlAbility.buff_cost(self._rc_sel_buff, self._rc_duration, strength)
+        can_afford = money >= total_cost
+        cost_col   = (100, 220, 80) if can_afford else (220, 80, 60)
+        per_s      = _CP_BUFF_DEFS[self._rc_sel_buff]["per_sec"]
+        base_cost  = _CP_BUFF_DEFS[self._rc_sel_buff]["base"] + per_s * int(self._rc_duration)
+        cost_s = lf14.render(
+            f"Cost: ${total_cost}  (${base_cost} × {strength:.2f} strength)",
+            True, cost_col)
+        surf.blit(cost_s, cost_s.get_rect(centerx=px2 + W // 2, top=py2 + 303))
+
+        # ── Confirm / Cancel buttons ──────────────────────────────────────────
+        btn_h = 40
+        confirm_r = pygame.Rect(px2 + W // 2 - 180, py2 + H - 56, 160, btn_h)
+        cancel_r  = pygame.Rect(px2 + W // 2 + 20,  py2 + H - 56, 160, btn_h)
+        # Confirm
+        c_bg  = (20, 90, 30) if can_afford else (40, 40, 40)
+        c_brd = (60, 200, 80) if can_afford else (80, 80, 80)
+        pygame.draw.rect(surf, c_bg,  confirm_r, border_radius=8)
+        pygame.draw.rect(surf, c_brd, confirm_r, 2, border_radius=8)
+        conf_lbl = lf16.render("Confirm" if can_afford else "Not enough $", True,
+                               (100, 255, 120) if can_afford else (140, 140, 140))
+        surf.blit(conf_lbl, conf_lbl.get_rect(center=confirm_r.center))
+        # Cancel
+        pygame.draw.rect(surf, (70, 20, 20),   cancel_r, border_radius=8)
+        pygame.draw.rect(surf, (200, 50, 50),  cancel_r, 2, border_radius=8)
+        cancel_lbl = lf16.render("Cancel", True, (255, 100, 100))
+        surf.blit(cancel_lbl, cancel_lbl.get_rect(center=cancel_r.center))
+
+        self._rc_confirm_rect = confirm_r
+        self._rc_cancel_rect  = cancel_r
+        self._rc_can_afford   = can_afford
+
+    def handle_rc_click(self, pos, money):
+        """Returns money_delta (negative = spent) or 0.  Closes panel on confirm/cancel."""
+        if not getattr(self, '_rc_open', False):
+            return 0
+        mx2, my2 = pos
+        # Cancel
+        if getattr(self, '_rc_cancel_rect', None) and self._rc_cancel_rect.collidepoint(pos):
+            self._rc_open = False
+            return 0
+        # Confirm
+        strength = getattr(self, '_rc_strength', 1.0)
+        if (getattr(self, '_rc_confirm_rect', None) and
+                self._rc_confirm_rect.collidepoint(pos) and
+                getattr(self, '_rc_can_afford', False)):
+            cost = RemoteControlAbility.buff_cost(self._rc_sel_buff, self._rc_duration, strength)
+            self._rc_panel.ability.apply_buff(self._rc_sel_unit, self._rc_sel_buff, self._rc_duration, strength)
+            self._rc_open = False
+            return -cost
+        # Tower selection buttons
+        for rect, u in getattr(self, '_rc_tower_btns', []):
+            if rect.collidepoint(pos):
+                self._rc_sel_unit = u
+                return 0
+        # Buff type buttons
+        for rect, bname in getattr(self, '_rc_buff_btns', []):
+            if rect.collidepoint(pos):
+                self._rc_sel_buff = bname
+                return 0
+        # Strength slider drag
+        sstr = getattr(self, '_rc_str_slider_rect', None)
+        if sstr and sstr.collidepoint(pos):
+            sstr_x = sstr.x + 10
+            sstr_w = sstr.w - 20
+            frac = max(0.0, min(1.0, (mx2 - sstr_x) / sstr_w))
+            # snap to 0.25 increments: 0.25 … 2.0 (7 steps)
+            raw = 0.25 + frac * 1.75
+            self._rc_strength = round(round(raw / 0.25) * 0.25, 4)
+            self._rc_strength = max(0.25, min(2.0, self._rc_strength))
+            return 0
+        # Duration slider drag
+        sl = getattr(self, '_rc_slider_rect', None)
+        if sl and sl.collidepoint(pos):
+            slider_x = sl.x + 10
+            slider_w = sl.w - 20
+            frac = max(0.0, min(1.0, (mx2 - slider_x) / slider_w))
+            self._rc_duration = max(5, min(120, int(5 + frac * 115)))
+            return 0
+        return 0
 
 # ── Rarity card drawing helper ──────────────────────────────────────────────────
 def draw_accel_icon(surf, cx, cy, t, size=28):
@@ -6539,6 +6819,7 @@ ALL_UNITS_POOL = [
     {"name": "Jester",       "rarity": "mythic"},
     {"name": "Rubber Duck",  "rarity": "exclusive"},
     {"name": "Harvester",   "rarity": "epic"},
+    {"name": "Control Panel", "rarity": "early_access"},
 ]
 
 # Coin cost to unlock units (None = not purchasable / exclusive)
@@ -6574,6 +6855,7 @@ UNIT_SHOP_PRICES = {
     "Jester": None,
     "Rubber Duck": None,
     "Harvester":   5000,
+    "Control Panel": None,   # Early Access — free to unlock
 }
 
 # ── Base stats for detail panel ───────────────────────────────────────────────
@@ -6608,6 +6890,7 @@ UNIT_BASE_STATS = {
     "Conduit":        {"cost": 1800, "limit": 3,  "damage": 60,   "firerate": 1.2,  "range": 5,  "income": None},
     "Rubber Duck":    {"cost": 500,  "limit": 3,  "damage": 120,  "firerate": 1.0,  "range": 7,  "income": None},
     "Harvester":      {"cost": 2000, "limit": 5,  "damage": 80,   "firerate": 1.0,  "range": 6,  "income": 80},
+    "Control Panel":  {"cost": 5000, "limit": 1,  "damage": 0,    "firerate": 0.0,  "range": 6,  "income": None},
     "hacker_laser_effects_test": {"cost": 7500, "limit": 1, "damage": 9999, "firerate": 9.9, "range": 20, "income": None},
 }
 
@@ -6641,6 +6924,7 @@ UNIT_DESCRIPTIONS = {
     "Conduit":        "Draws charge from nearby towers and unleashes chain lightning. The more allies, the stronger the mega-discharge!",
     "Rubber Duck":    "Exclusive squeaky menace. Don't underestimate it.",
     "Harvester":      "A haunted scarecrow that fires piercing bolts and can summon thorns to slow enemies.",
+    "Control Panel":  "A remote support station. Use 'Remote Control' to buff a nearby tower with boosted Range, Damage, or Firerate for a chosen duration.",
     "hacker_laser_effects_test": "??? ERROR 404 UNIT NOT FOUND ???",
 }
 
@@ -6730,6 +7014,8 @@ class LoadoutScreen:
             owned = list(owned) + ["Twitgunner"]
         if "Conduit" not in owned:
             owned = list(owned) + ["Conduit"]
+        if "Control Panel" not in owned:
+            owned = list(owned) + ["Control Panel"]
         # Felyne — Mythic, покупается за 1500 шардов
         return owned
 
@@ -8308,6 +8594,8 @@ class Game:
                             self.ui._thorn_place_mode  = False
                             self.ui._thorn_place_owner = None
                             self.ui.show_msg("Thorns placement cancelled.", 1.5)
+                        elif getattr(self.ui, '_rc_open', False):
+                            self.ui._rc_open = False
                         elif self.ui.drag_unit:
                             self.ui.drag_unit = None; self.ui.selected_slot = None
                     if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
@@ -8360,6 +8648,22 @@ class Game:
                         _pre_len = len(self.units)
                         delta = self.ui.handle_release(ev.pos, self.units, self.money)
                         self.money += delta
+                    if ev.type == pygame.MOUSEMOTION and pygame.mouse.get_pressed()[0]:
+                        if getattr(self.ui, '_rc_open', False):
+                            sl = getattr(self.ui, '_rc_slider_rect', None)
+                            if sl and sl.collidepoint(ev.pos):
+                                slider_x = sl.x + 10
+                                slider_w = sl.w - 20
+                                frac = max(0.0, min(1.0, (ev.pos[0] - slider_x) / slider_w))
+                                self.ui._rc_duration = max(5, min(120, int(5 + frac * 115)))
+                            sstr = getattr(self.ui, '_rc_str_slider_rect', None)
+                            if sstr and sstr.collidepoint(ev.pos):
+                                sstr_x = sstr.x + 10
+                                sstr_w = sstr.w - 20
+                                frac = max(0.0, min(1.0, (ev.pos[0] - sstr_x) / sstr_w))
+                                raw = 0.25 + frac * 1.75
+                                snapped = round(round(raw / 0.25) * 0.25, 4)
+                                self.ui._rc_strength = max(0.25, min(2.0, snapped))
 
             if not self.game_over and not self.win:
                 self._elapsed += raw_dt

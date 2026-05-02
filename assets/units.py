@@ -9211,3 +9211,208 @@ class Felyne(Unit):
         info["Firerate"] = f"{self.firerate:.3f}"
         info["Range"]    = self.range_tiles
         return info
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Control Panel  —  Early Access Support Tower
+# ═══════════════════════════════════════════════════════════════════════════════
+
+C_CTRLPANEL      = (40, 180, 220)
+C_CTRLPANEL_DARK = (10,  60,  90)
+
+_CP_BUFF_DEFS = {
+    "Range":    {"base": 300,  "per_sec": 15,  "mult": 1.35, "color": (80,  200, 255)},
+    "Damage":   {"base": 400,  "per_sec": 20,  "mult": 1.40, "color": (255, 120,  60)},
+    "Firerate": {"base": 350,  "per_sec": 18,  "mult": 1.35, "color": (120, 255, 100)},
+}
+_CP_ABILITY_CD = 30.0
+
+
+class RemoteControlAbility:
+    name     = "Remote Control"
+    cooldown = _CP_ABILITY_CD
+
+    def __init__(self, owner):
+        self.owner = owner
+        self.cd_left = 0.0
+        self._active_buff_unit    = None
+        self._active_buff_type    = None
+        self._active_buff_dur     = 0.0
+        self._active_buff_dur_max = 0.0
+        self._saved_range    = None
+        self._saved_damage   = None
+        self._saved_firerate = None
+
+    def ready(self):
+        return self.cd_left <= 0 and self._active_buff_unit is None
+
+    def is_buffing(self):
+        return self._active_buff_unit is not None
+
+    def update(self, dt):
+        if self.cd_left > 0:
+            self.cd_left -= dt
+        if self._active_buff_unit is not None:
+            self._active_buff_dur -= dt
+            if self._active_buff_dur <= 0:
+                self._remove_buff()
+
+    def activate(self, enemies, effects):
+        pass   # UI drives this ability directly via apply_buff()
+
+    def apply_buff(self, unit, buff_type, duration, strength=1.0):
+        """Apply buff to unit.  strength in [0.25, 2.0] scales the mult linearly."""
+        if self._active_buff_unit is not None:
+            self._remove_buff()
+        self._active_buff_unit    = unit
+        self._active_buff_type    = buff_type
+        self._active_buff_dur     = float(duration)
+        self._active_buff_dur_max = float(duration)
+        base_bonus = _CP_BUFF_DEFS[buff_type]["mult"] - 1.0   # e.g. 0.35
+        actual_mult = 1.0 + base_bonus * float(strength)       # scaled
+        self._active_buff_strength = float(strength)
+        if buff_type == "Range":
+            self._saved_range  = unit.range_tiles
+            unit.range_tiles   = round(unit.range_tiles * actual_mult, 4)
+        elif buff_type == "Damage":
+            self._saved_damage = getattr(unit, "damage", None)
+            if self._saved_damage is not None:
+                unit.damage = round(unit.damage * actual_mult, 2)
+        elif buff_type == "Firerate":
+            self._saved_firerate = getattr(unit, "firerate", None)
+            if self._saved_firerate is not None:
+                unit.firerate = round(unit.firerate / actual_mult, 4)
+        self.cd_left = self.cooldown
+
+    def _remove_buff(self):
+        u = self._active_buff_unit
+        if u is not None:
+            if self._active_buff_type == "Range" and self._saved_range is not None:
+                u.range_tiles = self._saved_range
+            elif self._active_buff_type == "Damage" and self._saved_damage is not None:
+                u.damage = self._saved_damage
+            elif self._active_buff_type == "Firerate" and self._saved_firerate is not None:
+                u.firerate = self._saved_firerate
+        self._active_buff_unit    = None
+        self._active_buff_type    = None
+        self._active_buff_dur     = 0.0
+        self._active_buff_dur_max = 0.0
+        self._saved_range    = None
+        self._saved_damage   = None
+        self._saved_firerate = None
+
+    @staticmethod
+    def buff_cost(buff_type, duration, strength=1.0):
+        d = _CP_BUFF_DEFS[buff_type]
+        base = d["base"] + d["per_sec"] * int(duration)
+        return max(1, int(base * float(strength)))
+
+
+class ControlPanel(Unit):
+    PLACE_COST = 5000
+    COLOR      = C_CTRLPANEL
+    NAME       = "Control Panel"
+    hidden_detection = False
+    _LEVELS = [(6.0,)]
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._anim_t = 0.0
+        self._apply_level()
+        self.ability = RemoteControlAbility(self)
+
+    def _apply_level(self):
+        self.range_tiles = self._LEVELS[self.level][0]
+        self.damage      = 0
+        self.firerate    = 0
+
+    def upgrade_cost(self): return None
+    def upgrade(self):      pass
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t += dt
+        if self.ability:
+            self.ability.update(dt)
+
+    def _try_attack(self, enemies, effects): pass
+
+    def draw(self, surf):
+        cx, cy = int(self.px), int(self.py)
+        t = self._anim_t
+        pulse = abs(math.sin(t * 1.8))
+
+        # outer glow
+        glow_a = int(pulse * 40 + 15)
+        gs = pygame.Surface((72, 72), pygame.SRCALPHA)
+        pygame.draw.circle(gs, (*C_CTRLPANEL, glow_a), (36, 36), 34)
+        surf.blit(gs, (cx - 36, cy - 36))
+
+        # body
+        body_rect = pygame.Rect(cx - 24, cy - 22, 48, 44)
+        pygame.draw.rect(surf, C_CTRLPANEL_DARK, body_rect, border_radius=8)
+        pygame.draw.rect(surf, C_CTRLPANEL,      body_rect, 2, border_radius=8)
+
+        # screen
+        screen_rect = pygame.Rect(cx - 18, cy - 16, 36, 18)
+        screen_col  = (int(20 + pulse * 40), int(160 + pulse * 60), int(200 + pulse * 30))
+        pygame.draw.rect(surf, (10, 20, 35), screen_rect, border_radius=3)
+        pygame.draw.rect(surf, screen_col,   screen_rect, 1, border_radius=3)
+        for row in range(3):
+            sl = pygame.Surface((34, 1), pygame.SRCALPHA)
+            sl.fill((*screen_col, int(80 + pulse * 60)))
+            surf.blit(sl, (screen_rect.x + 1, screen_rect.y + 4 + row * 5))
+
+        # animated dot on screen
+        dot_x = cx + int(math.sin(t * 3.0) * 12)
+        dot_s = pygame.Surface((8, 8), pygame.SRCALPHA)
+        pygame.draw.circle(dot_s, (*C_CTRLPANEL, 220), (4, 4), 3)
+        surf.blit(dot_s, (dot_x - 4, cy - 11))
+
+        # buttons
+        for bx_off in (-8, 8):
+            pygame.draw.circle(surf, (60,  180, 140), (cx + bx_off, cy + 14), 5)
+            pygame.draw.circle(surf, (100, 220, 180), (cx + bx_off, cy + 14), 5, 1)
+
+        # antenna
+        pygame.draw.line(surf, C_CTRLPANEL, (cx, cy - 22), (cx, cy - 38), 2)
+        blink_a = int(abs(math.sin(t * 4.0)) * 200 + 55)
+        tip_s = pygame.Surface((10, 10), pygame.SRCALPHA)
+        pygame.draw.circle(tip_s, (*C_CTRLPANEL, blink_a), (5, 5), 3)
+        surf.blit(tip_s, (cx - 5, cy - 43))
+
+        # buff timer arc
+        ab = self.ability
+        if ab.is_buffing() and ab._active_buff_dur_max > 0:
+            frac     = max(0.0, ab._active_buff_dur / ab._active_buff_dur_max)
+            arc_r    = 32
+            arc_surf = pygame.Surface((arc_r * 2 + 4, arc_r * 2 + 4), pygame.SRCALPHA)
+            bcol     = _CP_BUFF_DEFS.get(ab._active_buff_type, {}).get("color", C_CTRLPANEL)
+            pygame.draw.circle(arc_surf, (*bcol, 30), (arc_r + 2, arc_r + 2), arc_r, 3)
+            if frac > 0:
+                end_angle = -math.pi / 2 + frac * math.pi * 2
+                pygame.draw.arc(arc_surf, (*bcol, 180),
+                                (2, 2, arc_r * 2, arc_r * 2),
+                                -math.pi / 2, end_angle, 3)
+            surf.blit(arc_surf, (cx - arc_r - 2, cy - arc_r - 2))
+
+        # EA badge
+        badge_f = pygame.font.SysFont("consolas", 9, bold=True)
+        badge_s = badge_f.render("EA", True, (60, 220, 180))
+        surf.blit(badge_s, badge_s.get_rect(centerx=cx, top=cy + 22))
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (*C_CTRLPANEL, 18), (r, r), r)
+        pygame.draw.circle(s, (*C_CTRLPANEL, 55), (r, r), r, 2)
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+
+    def get_info(self):
+        ab = self.ability
+        info = {"Type": "Support (no attack)", "Range": self.range_tiles}
+        if ab.is_buffing():
+            tgt_name = getattr(ab._active_buff_unit, "NAME",
+                               type(ab._active_buff_unit).__name__)
+            info["Buffing"]   = f"{ab._active_buff_type} -> {tgt_name}"
+            info["Buff left"] = f"{ab._active_buff_dur:.1f}s"
+        info["AbilCD"] = "READY" if ab.cd_left <= 0 else f"{ab.cd_left:.1f}s"
+        return info
