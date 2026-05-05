@@ -3618,7 +3618,7 @@ class Slasher(Unit):
             e._slash_bleed_owner = id(self)
             # Bleed burst at max stacks
             if new >= self._bleed_max:
-                burst = self._bleed_max * self._bleed_base_dmg * max(1, int(e.maxhp * _SLASHER_BLEED_HP_FACTOR * self._bleed_max))
+                burst = self._bleed_max * self._bleed_base_dmg
                 e.take_damage(burst)
                 self.total_damage += burst
                 e._slash_bleed = 0
@@ -3668,56 +3668,146 @@ class Slasher(Unit):
     def draw(self, surf):
         t  = self._swing_t
         cx, cy = int(self.px), int(self.py)
-
-        pygame.draw.circle(surf, C_SLASHER_DARK, (cx, cy), 27)
-        pygame.draw.circle(surf, C_SLASHER,      (cx, cy), 21)
-        pygame.draw.circle(surf, (220, 80, 80),   (cx, cy), 21, 2)
-
-        # Knife pointing at aim angle, animates on hit
         time_since = t - self._last_swing_t
-        if 0 < time_since < self.firerate * 0.6:
-            swing_p = time_since / (self.firerate * 0.6)
-            knife_a = self._aim_angle + math.radians(60 - swing_p * 120)
+
+        # ── Swing animation progress ──────────────────────────────────────────
+        swing_dur = self.firerate * 0.55
+        swinging  = 0 < time_since < swing_dur
+        swing_p   = (time_since / swing_dur) if swinging else 1.0
+
+        # Current blade angle (sweeps 120° on swing)
+        if swinging:
+            eased    = math.sin(swing_p * math.pi)          # 0→1→0 bell
+            offset   = math.radians(60 - swing_p * 120)
+            blade_a  = self._aim_angle + offset
         else:
-            knife_a = self._aim_angle
+            blade_a  = self._aim_angle
 
-        ca, sa = math.cos(knife_a), math.sin(knife_a)
-        pa, pb = -sa, ca   # perpendicular
+        # ── Blood-mist aura ───────────────────────────────────────────────────
+        mist_r = 36
+        mist_a = int(28 + abs(math.sin(t * 1.4)) * 18)
+        mist_s = pygame.Surface((mist_r * 2 + 4, mist_r * 2 + 4), pygame.SRCALPHA)
+        pygame.draw.circle(mist_s, (180, 10, 10, mist_a),
+                           (mist_r + 2, mist_r + 2), mist_r)
+        surf.blit(mist_s, (cx - mist_r - 2, cy - mist_r - 2))
 
-        # Blade
-        kx1 = cx + int(ca * 8);  ky1 = cy + int(sa * 8)
-        kx2 = cx + int(ca * 32); ky2 = cy + int(sa * 32)
-        pygame.draw.line(surf, (220, 200, 200), (kx1, ky1), (kx2, ky2), 2)
-        # Tip
-        pygame.draw.circle(surf, (255, 230, 230), (kx2, ky2), 3)
-        # Guard
-        gx1 = int(cx + ca * 14 + pa * 7); gy1 = int(cy + sa * 14 + pb * 7)
-        gx2 = int(cx + ca * 14 - pa * 7); gy2 = int(cy + sa * 14 - pb * 7)
-        pygame.draw.line(surf, (180, 60, 60), (gx1, gy1), (gx2, gy2), 3)
-
-        # Crit flash (every _crit_every hits)
+        # ── Crit flash ring ───────────────────────────────────────────────────
         next_crit = self._crit_every - (self._hit_count % self._crit_every)
-        if next_crit == 1 and 0 < time_since < 0.15:
-            fl = pygame.Surface((60, 60), pygame.SRCALPHA)
-            fa = int(220 * (1 - time_since / 0.15))
-            pygame.draw.circle(fl, (255, 80, 80, fa), (30, 30), 28)
-            surf.blit(fl, (cx - 30, cy - 30))
+        if next_crit == 1 and swinging:
+            fa = int(200 * (1 - swing_p))
+            fl = pygame.Surface((70, 70), pygame.SRCALPHA)
+            pygame.draw.circle(fl, (255, 50, 0, fa), (35, 35), 33, 4)
+            surf.blit(fl, (cx - 35, cy - 35))
 
-        # Swing trail
-        if 0 < time_since < 0.14:
+        # ── Body: dark plate armour silhouette ────────────────────────────────
+        # Outer dark shell
+        pygame.draw.circle(surf, (18, 4, 4),    (cx, cy), 26)
+        # Armour body
+        pygame.draw.circle(surf, (80, 12, 12),  (cx, cy), 22)
+        # Chest-plate highlight
+        pygame.draw.circle(surf, (130, 20, 20), (cx, cy), 16)
+        # Core — deep crimson heart
+        pygame.draw.circle(surf, (200, 30, 30), (cx, cy), 9)
+        pygame.draw.circle(surf, (255, 80, 60), (cx, cy), 4)
+
+        # Rim glow
+        rim_s = pygame.Surface((56, 56), pygame.SRCALPHA)
+        pygame.draw.circle(rim_s, (255, 40, 0, 55), (28, 28), 22, 3)
+        surf.blit(rim_s, (cx - 28, cy - 28))
+
+        # ── Shoulder spikes (4 fixed spikes, always visible) ─────────────────
+        for i, spike_a in enumerate([45, 135, 225, 315]):
+            sa_r = math.radians(spike_a + t * 8)   # very slow idle sway
+            sx   = cx + int(math.cos(sa_r) * 20)
+            sy   = cy + int(math.sin(sa_r) * 20)
+            tip_x = cx + int(math.cos(sa_r) * 30)
+            tip_y = cy + int(math.sin(sa_r) * 30)
+            pygame.draw.line(surf, (60, 8, 8),   (sx, sy), (tip_x, tip_y), 3)
+            pygame.draw.circle(surf, (200, 40, 20), (tip_x, tip_y), 2)
+
+        # ── Main scythe / cleaver blade ───────────────────────────────────────
+        ca, sa_v = math.cos(blade_a), math.sin(blade_a)
+        perp_x, perp_y = -sa_v, ca
+
+        # Handle
+        hx1 = cx + int(ca * 6);   hy1 = cy + int(sa_v * 6)
+        hx2 = cx + int(ca * 28);  hy2 = cy + int(sa_v * 28)
+        pygame.draw.line(surf, (40, 10, 10), (hx1, hy1), (hx2, hy2), 4)
+
+        # Broad cleaver blade body (wide trapezoid painted as thick lines)
+        blade_start = 10
+        blade_end   = 34
+        for step in range(7):
+            frac  = step / 6.0
+            blen  = blade_start + frac * (blade_end - blade_start)
+            width_frac = 1.0 - frac * 0.55   # wider at base
+            w_off = int(7 * width_frac)
+            bx = cx + int(ca * blen)
+            by = cy + int(sa_v * blen)
+            # Left/right edge of the blade at this point
+            lx = int(bx + perp_x * w_off)
+            ly = int(by + perp_y * w_off)
+            rx = int(bx - perp_x * w_off)
+            ry = int(by - perp_y * w_off)
+            col_mix = int(150 + frac * 70)
+            pygame.draw.line(surf, (col_mix, col_mix - 10, col_mix - 10),
+                             (lx, ly), (rx, ry), 2)
+
+        # Blade edge highlight (bright steel edge)
+        tip_x = cx + int(ca * blade_end + perp_x * 2)
+        tip_y = cy + int(sa_v * blade_end + perp_y * 2)
+        base_x = cx + int(ca * blade_start + perp_x * 6)
+        base_y = cy + int(sa_v * blade_start + perp_y * 6)
+        pygame.draw.line(surf, (230, 200, 200), (base_x, base_y), (tip_x, tip_y), 2)
+        pygame.draw.circle(surf, (255, 240, 230), (int(tip_x), int(tip_y)), 3)
+
+        # Blood groove (dark line down centre of blade)
+        groove_x1 = cx + int(ca * 14)
+        groove_y1 = cy + int(sa_v * 14)
+        groove_x2 = cx + int(ca * 32)
+        groove_y2 = cy + int(sa_v * 32)
+        pygame.draw.line(surf, (100, 5, 5), (groove_x1, groove_y1), (groove_x2, groove_y2), 1)
+
+        # Crossguard
+        ga = blade_a + math.pi / 2
+        g_len = 9
+        gx1 = cx + int(ca * 12 + math.cos(ga) * g_len)
+        gy1 = cy + int(sa_v * 12 + math.sin(ga) * g_len)
+        gx2 = cx + int(ca * 12 - math.cos(ga) * g_len)
+        gy2 = cy + int(sa_v * 12 - math.sin(ga) * g_len)
+        pygame.draw.line(surf, (80, 15, 15),  (gx1, gy1), (gx2, gy2), 4)
+        pygame.draw.line(surf, (150, 30, 30), (gx1, gy1), (gx2, gy2), 2)
+
+        # ── Swing trail (arc of blood streaks) ───────────────────────────────
+        if swinging:
             arc_s = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
-            alpha = int(160 * (1 - time_since / 0.14))
-            arc_r = int(self.range_tiles * TILE)
-            for i in range(10):
-                a = self._aim_angle + math.radians(40 - 80 * i / 9)
-                pygame.draw.line(arc_s, (220, 60, 60, alpha),
-                    (cx + int(math.cos(a)*8), cy + int(math.sin(a)*8)),
-                    (cx + int(math.cos(a)*arc_r), cy + int(math.sin(a)*arc_r)), 2)
+            trail_alpha = int(180 * math.sin(swing_p * math.pi))
+            trail_r     = 32
+            for i in range(12):
+                frac = i / 11.0
+                a    = self._aim_angle + math.radians(60 - frac * 120)
+                fade = int(trail_alpha * (1.0 - frac * 0.5))
+                width = max(1, 3 - int(frac * 2))
+                pygame.draw.line(arc_s, (210, 40, 40, fade),
+                    (cx + int(math.cos(a) * 10), cy + int(math.sin(a) * 10)),
+                    (cx + int(math.cos(a) * trail_r), cy + int(math.sin(a) * trail_r)),
+                    width)
+            # Blood droplets along trail
+            for i in range(4):
+                dp = i / 3.0
+                da = self._aim_angle + math.radians(55 - dp * 110)
+                dr = 18 + int(dp * 14)
+                dsx = cx + int(math.cos(da) * dr)
+                dsy = cy + int(math.sin(da) * dr)
+                drop_a = int(trail_alpha * 0.8 * (1 - dp * 0.4))
+                ds = pygame.Surface((8, 8), pygame.SRCALPHA)
+                pygame.draw.circle(ds, (200, 20, 20, drop_a), (4, 4), 2)
+                arc_s.blit(ds, (dsx - 4, dsy - 4))
             surf.blit(arc_s, (0, 0))
 
-
+        # ── Level pips (kept small, below unit) ──────────────────────────────
         for i in range(self.level):
-            pygame.draw.circle(surf, C_SLASHER, (cx - 8 + i * 6, cy + 36), 3)
+            pygame.draw.circle(surf, (200, 40, 40), (cx - 8 + i * 6, cy + 36), 3)
 
     def draw_range(self, surf):
         r = int(self.range_tiles * TILE)
@@ -4115,19 +4205,39 @@ class HallowPunkRocket:
 
     def draw(self, surf):
         if not self.alive: return
-        # Smoke trail
+        # Trail — purple smoke fading to orange burn at lv1+
         for tx, ty, age in self._trail:
-            alpha = max(0, min(255, int(180 * (1 - age / 0.3))))
+            frac  = age / 0.3
+            alpha = max(0, min(255, int(200 * (1 - frac))))
             if alpha <= 0: continue
-            ts = pygame.Surface((10, 10), pygame.SRCALPHA)
-            pygame.draw.circle(ts, (180, 100, 200, alpha), (5, 5), 4)
-            surf.blit(ts, (int(tx) - 5, int(ty) - 5))
-        # Rocket body
+            # Colour interpolates from bright purple → orange as it ages
+            r_ = int(200 + frac * 55)
+            g_ = int(80  + frac * 20)
+            b_ = int(200 - frac * 190)
+            r_sz = max(2, int(5 * (1 - frac * 0.5)))
+            ts = pygame.Surface((r_sz*2+2, r_sz*2+2), pygame.SRCALPHA)
+            pygame.draw.circle(ts, (r_, g_, b_, alpha), (r_sz+1, r_sz+1), r_sz)
+            surf.blit(ts, (int(tx) - r_sz - 1, int(ty) - r_sz - 1))
+
+        # Rocket body — sleek elongated design
         cx, cy = int(self.x), int(self.y)
-        angle = math.degrees(math.atan2(self.vy, self.vx))
-        rs = pygame.Surface((22, 8), pygame.SRCALPHA)
-        pygame.draw.ellipse(rs, (220, 100, 220), (0, 1, 18, 6))
-        pygame.draw.polygon(rs, (255, 150, 255), [(18, 4), (22, 1), (22, 7)])
+        angle  = math.degrees(math.atan2(self.vy, self.vx))
+
+        rs = pygame.Surface((26, 10), pygame.SRCALPHA)
+        # Body gradient via two ellipses
+        pygame.draw.ellipse(rs, (60, 15, 80),   (0, 1, 22, 8))    # shadow
+        pygame.draw.ellipse(rs, (140, 50, 180), (1, 2, 20, 6))    # body
+        pygame.draw.ellipse(rs, (200, 80, 200), (2, 3, 14, 4))    # highlight
+        # Nose cone (pointing right in local space = direction of travel)
+        pygame.draw.polygon(rs, (230, 120, 240), [(20, 5), (26, 2), (26, 8)])
+        # Burn glow at exhaust (left end)
+        es = pygame.Surface((8, 8), pygame.SRCALPHA)
+        if self.burn_dmg > 0:
+            pygame.draw.circle(es, (210, 100, 10, 180), (4, 4), 3)
+        else:
+            pygame.draw.circle(es, (180, 60, 220, 140), (4, 4), 3)
+        rs.blit(es, (-2, 1))
+
         import pygame.transform as _pt
         rot = _pt.rotate(rs, -angle)
         surf.blit(rot, rot.get_rect(center=(cx, cy)))
@@ -4204,33 +4314,158 @@ class HallowPunk(Unit):
     def draw(self, surf):
         t  = self._anim_t
         cx, cy = int(self.px), int(self.py)
+        lv = self.level
 
-        # Outer glow
-        glow = pygame.Surface((66, 66), pygame.SRCALPHA)
-        ga = int(abs(math.sin(t * 2.5)) * 50 + 30)
-        pygame.draw.circle(glow, (180, 60, 180, ga), (33, 33), 31)
-        surf.blit(glow, (cx - 33, cy - 33))
+        # ── Palette (matches concept art) ──────────────────────────────────────
+        C_BASE      = (18,   8,  28)    # base / deep shadow
+        C_BODY      = (42,  14,  68)    # body dark
+        C_MID       = (88,  30, 120)    # mid purple
+        C_ACCENT    = (140,  50, 180)   # accent
+        C_BRIGHT    = (200,  80, 200)   # bright purple  (= C_HALLOWPUNK)
+        C_CORE      = (230, 120, 240)   # core / highlight
+        C_BURN      = (210, 100,  10)   # orange burn colour
+        C_LIGHTNING = (255, 240,  60)   # lightning yellow
 
-        pygame.draw.circle(surf, C_HALLOWPUNK_DARK, (cx, cy), 27)
-        pygame.draw.circle(surf, C_HALLOWPUNK,      (cx, cy), 21)
-        pygame.draw.circle(surf, (240, 140, 240),    (cx, cy), 21, 2)
+        pulse = abs(math.sin(t * 2.5))   # 0-1 breathing
 
-        # Launcher tube pointing at aim angle
+        # ── Outer glow ─────────────────────────────────────────────────────────
+        glow_s = pygame.Surface((70, 70), pygame.SRCALPHA)
+        ga = int(pulse * 55 + 25)
+        pygame.draw.circle(glow_s, (*C_ACCENT, ga), (35, 35), 32)
+        surf.blit(glow_s, (cx - 35, cy - 35))
+
+        # ── Burn ring (lv1+) — orange outer ring ───────────────────────────────
+        if lv >= 1:
+            burn_a = int(pulse * 80 + 60)
+            br_s = pygame.Surface((60, 60), pygame.SRCALPHA)
+            pygame.draw.circle(br_s, (*C_BURN, burn_a), (30, 30), 28, 3)
+            surf.blit(br_s, (cx - 30, cy - 30))
+
+        # ── Spikes (grow with level) ────────────────────────────────────────────
+        # lv0: 4 small spikes; lv1: 4 medium; lv2: 8 spikes; lv3: 8 longer + glow
+        n_spikes    = 8 if lv >= 2 else 4
+        spike_len   = 8 + lv * 4          # 8 / 12 / 16 / 20
+        spike_w     = 2 + (1 if lv >= 3 else 0)
+        spike_col   = C_BRIGHT if lv < 3 else C_LIGHTNING
+        # Pre-build a small local surface for lv3 glow lines instead of full-screen SRCALPHA
+        _spike_glow_surf = None
+        if lv >= 3:
+            _sg_size = int((22 + spike_len) * 2 + 8)
+            _spike_glow_surf = pygame.Surface((_sg_size, _sg_size), pygame.SRCALPHA)
+        for i in range(n_spikes):
+            ang = math.pi * 2 * i / n_spikes - math.pi / 2
+            inner_r = 22
+            outer_r = inner_r + spike_len
+            sx1 = cx + math.cos(ang) * inner_r
+            sy1 = cy + math.sin(ang) * inner_r
+            sx2 = cx + math.cos(ang) * outer_r
+            sy2 = cy + math.sin(ang) * outer_r
+            if lv >= 3 and _spike_glow_surf is not None:
+                _sg_cx = _sg_size // 2
+                _spike_glow_surf.fill((0, 0, 0, 0))
+                lx1 = int(sx1 - cx + _sg_cx); ly1 = int(sy1 - cy + _sg_cx)
+                lx2 = int(sx2 - cx + _sg_cx); ly2 = int(sy2 - cy + _sg_cx)
+                pygame.draw.line(_spike_glow_surf, (*C_LIGHTNING, 120), (lx1, ly1), (lx2, ly2), spike_w + 2)
+                surf.blit(_spike_glow_surf, (cx - _sg_cx, cy - _sg_cx))
+            pygame.draw.line(surf, spike_col, (int(sx1), int(sy1)), (int(sx2), int(sy2)), spike_w)
+
+        # ── Armour plates (lv1+) — small rectangles around body ────────────────
+        if lv >= 1:
+            plate_angles = [0, math.pi/2, math.pi, 3*math.pi/2]
+            for pa in plate_angles:
+                pr = 19
+                px_ = cx + math.cos(pa) * pr
+                py_ = cy + math.sin(pa) * pr
+                # perpendicular offset for plate width
+                perp = pa + math.pi/2
+                w2 = 5
+                pts = [
+                    (px_ + math.cos(perp)*w2, py_ + math.sin(perp)*w2),
+                    (px_ - math.cos(perp)*w2, py_ - math.sin(perp)*w2),
+                    (px_ - math.cos(perp)*w2 + math.cos(pa)*5, py_ - math.sin(perp)*w2 + math.sin(pa)*5),
+                    (px_ + math.cos(perp)*w2 + math.cos(pa)*5, py_ + math.sin(perp)*w2 + math.sin(pa)*5),
+                ]
+                pygame.draw.polygon(surf, C_ACCENT, [(int(x), int(y)) for x, y in pts])
+                pygame.draw.polygon(surf, C_BRIGHT, [(int(x), int(y)) for x, y in pts], 1)
+
+        # ── Main body: hexagonal + circles ─────────────────────────────────────
+        # Outer hex silhouette
+        hex_pts = []
+        for i in range(6):
+            ang = math.pi * 2 * i / 6 - math.pi / 6
+            hex_pts.append((cx + math.cos(ang) * 20, cy + math.sin(ang) * 20))
+        pygame.draw.polygon(surf, C_BODY, [(int(x), int(y)) for x, y in hex_pts])
+        pygame.draw.polygon(surf, C_MID,  [(int(x), int(y)) for x, y in hex_pts], 2)
+
+        # Inner core circle (pulsing)
+        core_r = int(12 + pulse * 2)
+        pygame.draw.circle(surf, C_MID,    (cx, cy), core_r)
+        pygame.draw.circle(surf, C_ACCENT, (cx, cy), core_r - 3)
+        core_bright = int(pulse * 40 + 180)
+        pygame.draw.circle(surf, (core_bright, 80, core_bright), (cx, cy), core_r - 6)
+
+        # ── Launcher tube(s) ───────────────────────────────────────────────────
         a  = self._aim_angle
         ca, sa = math.cos(a), math.sin(a)
-        bx1 = cx + int(ca * 6);  by1 = cy + int(sa * 6)
-        bx2 = cx + int(ca * 28); by2 = cy + int(sa * 28)
-        pygame.draw.line(surf, (160, 60, 160), (bx1, by1), (bx2, by2), 7)
-        pygame.draw.line(surf, (220, 120, 220), (bx1, by1), (bx2, by2), 4)
-        pygame.draw.circle(surf, (240, 160, 240), (bx2, by2), 5)
 
-        # Explosion radius indicator when hovering (draw_range handles this)
+        def _draw_tube(offset_angle, col_dark, col_bright, length=28):
+            oa = a + offset_angle
+            ca2, sa2 = math.cos(oa), math.sin(oa)
+            bx1 = cx + int(ca2 * 7);  by1 = cy + int(sa2 * 7)
+            bx2 = cx + int(ca2 * length); by2 = cy + int(sa2 * length)
+            pygame.draw.line(surf, col_dark,   (bx1, by1), (bx2, by2), 6)
+            pygame.draw.line(surf, col_bright, (bx1, by1), (bx2, by2), 3)
+            # Muzzle end cap
+            pygame.draw.circle(surf, col_bright, (bx2, by2), 4)
+            if lv >= 1:  # burn ring on muzzle
+                ms = pygame.Surface((12, 12), pygame.SRCALPHA)
+                pygame.draw.circle(ms, (*C_BURN, 160), (6, 6), 5, 2)
+                surf.blit(ms, (bx2 - 6, by2 - 6))
 
-        # Level pips
-        for i in range(self.level):
-            pygame.draw.circle(surf, C_HALLOWPUNK, (cx - 6 + i * 6, cy + 36), 3)
+        if lv == 0:
+            # Single barrel
+            _draw_tube(0, C_MID, C_BRIGHT)
+        elif lv == 1:
+            # Single barrel, slightly thicker
+            _draw_tube(0, C_ACCENT, C_CORE)
+        elif lv == 2:
+            # Dual launcher
+            _draw_tube( 0.18, C_ACCENT, C_CORE)
+            _draw_tube(-0.18, C_ACCENT, C_CORE)
+        else:
+            # Triple launcher (lv3) – max power
+            _draw_tube( 0.22, C_ACCENT, C_CORE, 30)
+            _draw_tube( 0.00, C_MID,    C_BRIGHT, 32)
+            _draw_tube(-0.22, C_ACCENT, C_CORE, 30)
 
-        # Rockets
+        # ── Antenna (lv3: lightning bolt tip) ──────────────────────────────────
+        ant_top = cy - 28
+        pygame.draw.line(surf, C_MID, (cx, cy - 20), (cx, ant_top), 2)
+        if lv >= 3:
+            # Lightning-bolt tip — use a tiny local surface instead of full-screen
+            blink_a = int(abs(math.sin(t * 6.0)) * 200 + 55)
+            zx = [cx, cx+4, cx+1, cx+5]
+            zy = [ant_top, ant_top+5, ant_top+5, ant_top+10]
+            _zap_s = pygame.Surface((20, 18), pygame.SRCALPHA)
+            _zap_ox = cx - 2; _zap_oy = ant_top - 2
+            for qi in range(len(zx)-1):
+                pygame.draw.line(_zap_s, (*C_LIGHTNING, blink_a),
+                                 (zx[qi] - _zap_ox, zy[qi] - _zap_oy),
+                                 (zx[qi+1] - _zap_ox, zy[qi+1] - _zap_oy), 2)
+            surf.blit(_zap_s, (_zap_ox, _zap_oy))
+        else:
+            # Simple dot tip
+            blink_a = int(abs(math.sin(t * 4.0)) * 200 + 55)
+            tip_s = pygame.Surface((8, 8), pygame.SRCALPHA)
+            pygame.draw.circle(tip_s, (*C_BRIGHT, blink_a), (4, 4), 3)
+            surf.blit(tip_s, (cx - 4, ant_top - 4))
+
+        # ── Level pips ─────────────────────────────────────────────────────────
+        pip_col = C_BURN if lv >= 1 else C_BRIGHT
+        for i in range(lv):
+            pygame.draw.circle(surf, pip_col, (cx - 9 + i * 6, cy + 30), 3)
+
+        # ── Rockets ────────────────────────────────────────────────────────────
         for r in self._rockets: r.draw(surf)
 
     def draw_range(self, surf):
@@ -4860,11 +5095,12 @@ class SnowballerBall:
         if not hasattr(e, '_sb_orig_speed'):
             e._sb_orig_speed = e.speed
         resistance = getattr(e, 'SLOW_RESISTANCE', 0.0)
-        e.speed = e._sb_orig_speed * (1.0 - new * resistance)
-        # Freeze check
+        e.speed = e._sb_orig_speed * (1.0 - new * (1.0 - resistance))
+        # Freeze check — only apply if not already frozen (prevents infinite freeze on repeated hits)
         if self.freeze_thresh > 0 and new >= self.freeze_thresh and self.freeze_time > 0:
-            e.frozen = True
-            e._sb_freeze_timer = self.freeze_time * _dm()
+            if not getattr(e, 'frozen', False):
+                e.frozen = True
+                e._sb_freeze_timer = self.freeze_time * _dm()
 
     def _hit_enemy(self, e):
         if self.defense_bypass:
@@ -4986,6 +5222,12 @@ class Snowballer(Unit):
                 e._sb_freeze_timer = ft - dt
                 if e._sb_freeze_timer <= 0:
                     e.frozen = False
+                    # Reset slow stacks on unfreeze so next hits must rebuild to freeze_thresh again
+                    e._sb_slow = 0.0
+                    e._sb_timer = 0.0
+                    if hasattr(e, '_sb_orig_speed'):
+                        e.speed = e._sb_orig_speed
+                        del e._sb_orig_speed
 
         # Tick slow timers
         for e in enemies:
