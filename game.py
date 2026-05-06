@@ -39,7 +39,7 @@ UNIT_LIMITS["Harvester"]   = 5   # placement limit per player
 UNIT_LIMITS["ToxicGunner"] = 5
 UNIT_LIMITS["Gladiator"]   = 6
 UNIT_LIMITS["Twitgunner"]  = 6
-UNIT_LIMITS["Felyne"]     = 6
+UNIT_LIMITS["Korzhik"]     = 6
 UNIT_LIMITS["Conduit"]    = 3
 
 UNIT_LIMITS["ControlPanel"] = 1
@@ -52,6 +52,15 @@ RARITY_DATA.setdefault("early_access", {
     "text_col": (60, 220, 180),
     "shimmer":  (120, 255, 220),
 })
+
+# ── Patch apex rarity into RARITY_DATA (replaces mythic) ──────────────────────
+RARITY_DATA["apex"] = {
+    "color":    (80,  20,  10),
+    "border":   (255, 120,  20),
+    "label":    "Apex",
+    "text_col": (255, 180,  40),
+    "shimmer":  (255, 220, 100),
+}
 
 
 
@@ -632,7 +641,7 @@ class AdminPanel:
                 ("ArcherPrime",ArcherPrime,C_ARCHERPRIME),
                 ("Harvester",Harvester,C_HARVESTER),
                 ("Twitgunner",Twitgunner,C_TWITGUN),
-                ("Felyne",Felyne,C_FELYNE),
+                ("Korzhik",Felyne,C_FELYNE),
                 ("Conduit",Conduit,C_CONDUIT),
                 ("CtrlPanel",ControlPanel,C_CTRLPANEL),
             ]
@@ -857,7 +866,6 @@ class UI:
         self._rc_sel_unit = None   # currently selected target
         self._rc_sel_buff = "Damage"
         self._rc_duration = 30     # seconds
-        self._rc_strength = 1.0    # buff strength multiplier (0.25–2.0)
         self.t = 0.0  # elapsed time for animations
         self.admin_panel=AdminPanel()
         self.admin_mode = False  # set to True by Game when launched from sandbox
@@ -998,6 +1006,8 @@ class UI:
                         self.show_msg(f"Limit: {limit} {UType.NAME}!")
                         return 0
                 u=UType(mx,my); units.append(u)
+                if UType is ControlPanel and u.ability is not None:
+                    u.ability.cd_left = 60.0  # starting cooldown on placement
                 _sk_rng = getattr(self, '_sk_range_bonus', 0)
                 if _sk_rng > 0:
                     u._base_range_tiles = u.range_tiles
@@ -1023,7 +1033,6 @@ class UI:
                             self._rc_sel_unit    = other[0]
                             self._rc_sel_buff    = "Damage"
                             self._rc_duration    = 30
-                            self._rc_strength    = 1.0
                             self._rc_open        = True
                     else:
                         u.ability.activate(enemies,effects)
@@ -1139,7 +1148,6 @@ class UI:
                             self._rc_sel_unit = other[0]
                             self._rc_sel_buff = "Damage"
                             self._rc_duration = 30
-                            self._rc_strength = 1.0
                             self._rc_open     = True
                     else:
                         self.open_unit.ability.activate(enemies, effects)
@@ -1287,14 +1295,54 @@ class UI:
                 pygame.draw.circle(surf,(60,160,40),(rx,ry),3)
         elif isinstance(u,Slasher):
             t2=pygame.time.get_ticks()*0.001
-            pygame.draw.circle(surf,C_SLASHER_DARK,(cx,cy),28)
-            pygame.draw.circle(surf,C_SLASHER,(cx,cy),22)
-            pygame.draw.circle(surf,(220,80,80),(cx,cy),22,2)
-            a2=math.radians(-40)+math.sin(t2*5)*0.15
+            # Blood-mist aura
+            mist_r=36; mist_a=int(28+abs(math.sin(t2*1.4))*18)
+            mist_s=pygame.Surface((mist_r*2+4,mist_r*2+4),pygame.SRCALPHA)
+            pygame.draw.circle(mist_s,(180,10,10,mist_a),(mist_r+2,mist_r+2),mist_r)
+            surf.blit(mist_s,(cx-mist_r-2,cy-mist_r-2))
+            # Body layers
+            pygame.draw.circle(surf,(18,4,4),(cx,cy),26)
+            pygame.draw.circle(surf,(80,12,12),(cx,cy),22)
+            pygame.draw.circle(surf,(130,20,20),(cx,cy),16)
+            pygame.draw.circle(surf,(200,30,30),(cx,cy),9)
+            pygame.draw.circle(surf,(255,80,60),(cx,cy),4)
+            rim_s=pygame.Surface((56,56),pygame.SRCALPHA)
+            pygame.draw.circle(rim_s,(255,40,0,55),(28,28),22,3)
+            surf.blit(rim_s,(cx-28,cy-28))
+            # Shoulder spikes
+            for spike_a in [45,135,225,315]:
+                sa_r=math.radians(spike_a+t2*8)
+                sx=cx+int(math.cos(sa_r)*20); sy=cy+int(math.sin(sa_r)*20)
+                tx2=cx+int(math.cos(sa_r)*30); ty2=cy+int(math.sin(sa_r)*30)
+                pygame.draw.line(surf,(60,8,8),(sx,sy),(tx2,ty2),3)
+                pygame.draw.circle(surf,(200,40,20),(tx2,ty2),2)
+            # Cleaver blade pointing right at idle angle
+            a2=math.radians(-40)
             ca2,sa2=math.cos(a2),math.sin(a2)
-            pygame.draw.line(surf,(220,200,200),(cx+int(ca2*5),cy+int(sa2*5)),(cx+int(ca2*20),cy+int(sa2*20)),2)
-            pygame.draw.circle(surf,(255,230,230),(cx+int(ca2*20),cy+int(sa2*20)),3)
-            pygame.draw.line(surf,(180,60,60),(cx+int(ca2*12-sa2*6),cy+int(sa2*12+ca2*6)),(cx+int(ca2*12+sa2*6),cy+int(sa2*12-ca2*6)),2)
+            perp2x,perp2y=-sa2,ca2
+            # Handle
+            pygame.draw.line(surf,(40,10,10),(cx+int(ca2*6),cy+int(sa2*6)),(cx+int(ca2*28),cy+int(sa2*28)),4)
+            # Blade body
+            for step in range(7):
+                frac=step/6.0; blen=10+frac*24; w_off=int(7*(1.0-frac*0.55))
+                bx2=cx+int(ca2*blen); by2=cy+int(sa2*blen)
+                lx2=int(bx2+perp2x*w_off); ly2=int(by2+perp2y*w_off)
+                rx2=int(bx2-perp2x*w_off); ry2=int(by2-perp2y*w_off)
+                col_m=int(150+frac*70)
+                pygame.draw.line(surf,(col_m,col_m-10,col_m-10),(lx2,ly2),(rx2,ry2),2)
+            # Blade edge highlight
+            tip2x=cx+int(ca2*34+perp2x*2); tip2y=cy+int(sa2*34+perp2y*2)
+            base2x=cx+int(ca2*10+perp2x*6); base2y=cy+int(sa2*10+perp2y*6)
+            pygame.draw.line(surf,(230,200,200),(base2x,base2y),(tip2x,tip2y),2)
+            pygame.draw.circle(surf,(255,240,230),(tip2x,tip2y),3)
+            # Blood groove
+            pygame.draw.line(surf,(100,5,5),(cx+int(ca2*14),cy+int(sa2*14)),(cx+int(ca2*32),cy+int(sa2*32)),1)
+            # Crossguard
+            ga2=a2+math.pi/2
+            gx1=cx+int(ca2*12+math.cos(ga2)*9); gy1=cy+int(sa2*12+math.sin(ga2)*9)
+            gx2=cx+int(ca2*12-math.cos(ga2)*9); gy2=cy+int(sa2*12-math.sin(ga2)*9)
+            pygame.draw.line(surf,(80,15,15),(gx1,gy1),(gx2,gy2),4)
+            pygame.draw.line(surf,(150,30,30),(gx1,gy1),(gx2,gy2),2)
         elif isinstance(u,GoldenCowboy):
             t2=pygame.time.get_ticks()*0.001
             pygame.draw.circle(surf,C_GCOWBOY_DARK,(cx,cy),28)
@@ -1308,14 +1356,54 @@ class UI:
             pygame.draw.circle(surf,(255,220,80),(cx+int(ca2*20),cy+int(sa2*20)),4)
         elif isinstance(u,HallowPunk):
             t2=pygame.time.get_ticks()*0.001
-            pygame.draw.circle(surf,C_HALLOWPUNK_DARK,(cx,cy),28)
-            pygame.draw.circle(surf,C_HALLOWPUNK,(cx,cy),22)
-            pygame.draw.circle(surf,(240,140,240),(cx,cy),22,2)
-            a2=0.3+math.sin(t2*2)*0.2
+            lv2=u.level
+            pulse2=abs(math.sin(t2*2.5))
+            # Glow
+            gs2=pygame.Surface((62,62),pygame.SRCALPHA)
+            pygame.draw.circle(gs2,(140,50,180,int(pulse2*50+20)),(31,31),29)
+            surf.blit(gs2,(cx-31,cy-31))
+            # Burn ring (lv1+)
+            if lv2>=1:
+                brs=pygame.Surface((58,58),pygame.SRCALPHA)
+                pygame.draw.circle(brs,(210,100,10,int(pulse2*70+50)),(29,29),26,3)
+                surf.blit(brs,(cx-29,cy-29))
+            # Spikes
+            n_sp=8 if lv2>=2 else 4
+            sp_len=6+lv2*3
+            for i in range(n_sp):
+                ang2=math.pi*2*i/n_sp-math.pi/2
+                sx1=cx+math.cos(ang2)*20; sy1=cy+math.sin(ang2)*20
+                sx2=cx+math.cos(ang2)*(20+sp_len); sy2=cy+math.sin(ang2)*(20+sp_len)
+                col2=(255,240,60) if lv2>=3 else (200,80,200)
+                pygame.draw.line(surf,col2,(int(sx1),int(sy1)),(int(sx2),int(sy2)),2)
+            # Body hex
+            hpts=[(cx+int(math.cos(math.pi*2*i/6-math.pi/6)*18),cy+int(math.sin(math.pi*2*i/6-math.pi/6)*18)) for i in range(6)]
+            pygame.draw.polygon(surf,(42,14,68),hpts)
+            pygame.draw.polygon(surf,(88,30,120),hpts,2)
+            pygame.draw.circle(surf,(140,50,180),(cx,cy),9)
+            pygame.draw.circle(surf,(int(pulse2*40+180),80,int(pulse2*40+180)),(cx,cy),6)
+            # Launcher(s)
+            a2=0.0
             ca2,sa2=math.cos(a2),math.sin(a2)
-            pygame.draw.line(surf,(160,60,160),(cx+int(ca2*5),cy+int(sa2*5)),(cx+int(ca2*20),cy+int(sa2*20)),7)
-            pygame.draw.line(surf,(220,120,220),(cx+int(ca2*5),cy+int(sa2*5)),(cx+int(ca2*20),cy+int(sa2*20)),4)
-            pygame.draw.circle(surf,(240,160,240),(cx+int(ca2*20),cy+int(sa2*20)),5)
+            if lv2<=1:
+                pygame.draw.line(surf,(88,30,120),(cx+int(ca2*6),cy+int(sa2*6)),(cx+int(ca2*22),cy+int(sa2*22)),5)
+                pygame.draw.line(surf,(200,80,200),(cx+int(ca2*6),cy+int(sa2*6)),(cx+int(ca2*22),cy+int(sa2*22)),3)
+                pygame.draw.circle(surf,(230,120,240),(cx+int(ca2*22),cy+int(sa2*22)),4)
+            elif lv2==2:
+                for off2 in (0.16,-0.16):
+                    ao=a2+off2; cao=math.cos(ao); sao=math.sin(ao)
+                    pygame.draw.line(surf,(88,30,120),(cx+int(cao*6),cy+int(sao*6)),(cx+int(cao*22),cy+int(sao*22)),4)
+                    pygame.draw.line(surf,(200,80,200),(cx+int(cao*6),cy+int(sao*6)),(cx+int(cao*22),cy+int(sao*22)),2)
+                    pygame.draw.circle(surf,(230,120,240),(cx+int(cao*22),cy+int(sao*22)),3)
+            else:
+                for off2 in (0.22,0.0,-0.22):
+                    ao=a2+off2; cao=math.cos(ao); sao=math.sin(ao)
+                    pygame.draw.line(surf,(88,30,120),(cx+int(cao*6),cy+int(sao*6)),(cx+int(cao*24),cy+int(sao*24)),4)
+                    pygame.draw.line(surf,(200,80,200),(cx+int(cao*6),cy+int(sao*6)),(cx+int(cao*24),cy+int(sao*24)),2)
+                    pygame.draw.circle(surf,(230,120,240),(cx+int(cao*24),cy+int(sao*24)),3)
+            # Level pips
+            for i in range(lv2):
+                pygame.draw.circle(surf,(210,100,10),(cx-9+i*6,cy+30),3)
         elif isinstance(u,SpotlightTech):
             t2=pygame.time.get_ticks()*0.001
             pygame.draw.circle(surf,C_SPOTLIGHT_DARK,(cx,cy),28)
@@ -1408,6 +1496,43 @@ class UI:
                     pygame.draw.polygon(surf, (55, 175, 55), pts_ico)
             pygame.draw.circle(surf, (80, 200, 80), (cx, cy), 5)
             pygame.draw.circle(surf, (200, 255, 150),(cx, cy), 2)
+        elif isinstance(u, ControlPanel):
+            t2 = pygame.time.get_ticks() * 0.001
+            pulse2 = abs(math.sin(t2 * 1.8))
+            C_CP2  = (40, 180, 220)
+            C_CPD2 = (10, 60,  90)
+            # glow
+            glow_s2 = pygame.Surface((60, 60), pygame.SRCALPHA)
+            pygame.draw.circle(glow_s2, (*C_CP2, int(pulse2 * 40 + 15)), (30, 30), 29)
+            surf.blit(glow_s2, (cx - 30, cy - 30))
+            # body
+            b2 = pygame.Rect(cx - 20, cy - 18, 40, 36)
+            pygame.draw.rect(surf, C_CPD2, b2, border_radius=7)
+            pygame.draw.rect(surf, C_CP2,  b2, 2, border_radius=7)
+            # screen
+            scr_col2 = (int(20 + pulse2 * 40), int(160 + pulse2 * 60), int(200 + pulse2 * 30))
+            s2 = pygame.Rect(cx - 15, cy - 13, 30, 14)
+            pygame.draw.rect(surf, (10, 20, 35), s2, border_radius=3)
+            pygame.draw.rect(surf, scr_col2, s2, 1, border_radius=3)
+            for row in range(3):
+                sl2 = pygame.Surface((28, 1), pygame.SRCALPHA)
+                sl2.fill((*scr_col2, int(80 + pulse2 * 60)))
+                surf.blit(sl2, (s2.x + 1, s2.y + 3 + row * 4))
+            # animated dot
+            dot_x2 = cx + int(math.sin(t2 * 3.0) * 10)
+            ds2 = pygame.Surface((6, 6), pygame.SRCALPHA)
+            pygame.draw.circle(ds2, (*C_CP2, 220), (3, 3), 3)
+            surf.blit(ds2, (dot_x2 - 3, cy - 9))
+            # buttons
+            for bx_o in (-7, 7):
+                pygame.draw.circle(surf, (60, 180, 140), (cx + bx_o, cy + 12), 4)
+                pygame.draw.circle(surf, (100, 220, 180), (cx + bx_o, cy + 12), 4, 1)
+            # antenna
+            pygame.draw.line(surf, C_CP2, (cx, cy - 18), (cx, cy - 32), 2)
+            blink_a2 = int(abs(math.sin(t2 * 4.0)) * 200 + 55)
+            ts2 = pygame.Surface((8, 8), pygame.SRCALPHA)
+            pygame.draw.circle(ts2, (*C_CP2, blink_a2), (4, 4), 3)
+            surf.blit(ts2, (cx - 4, cy - 36))
         else:
             pygame.draw.circle(surf,(70,40,100),(cx,cy),28)
             pygame.draw.circle(surf,u.COLOR,(cx,cy),22)
@@ -3088,7 +3213,7 @@ class UI:
     # ─────────────────────────────────────────────────────────────────────────
     def _draw_rc_panel(self, surf, money):
         """Draw the Remote Control selection popup and store button rects."""
-        W, H = 520, 430
+        W, H = 520, 380
         px2 = SCREEN_W // 2 - W // 2
         py2 = SCREEN_H // 2 - H // 2
 
@@ -3136,12 +3261,7 @@ class UI:
         surf.blit(sec_s2, (px2 + 14, py2 + 110))
 
         buff_names = ["Range", "Damage", "Firerate"]
-        # Show actual bonus based on current strength
-        def _bonus_str(bname):
-            base_bonus = _CP_BUFF_DEFS[bname]["mult"] - 1.0
-            pct = int(base_bonus * getattr(self, '_rc_strength', 1.0) * 100)
-            return f"+{pct}% {bname}"
-        buff_descs = [_bonus_str(b) for b in buff_names]
+        buff_descs = ["+35% Range", "+40% Damage", "+35% Firerate"]
         buff_costs_base = [_CP_BUFF_DEFS[b]["base"] for b in buff_names]
         self._rc_buff_btns = []
         bw_b = (W - 28) // 3 - 4
@@ -3163,46 +3283,12 @@ class UI:
             surf.blit(c_s, c_s.get_rect(centerx=bx + bw_b // 2, top=by + 34))
             self._rc_buff_btns.append((pygame.Rect(bx, by, bw_b, bh), bname))
 
-        # ── Section 3: Buff Strength slider ───────────────────────────────────
-        strength = getattr(self, '_rc_strength', 1.0)
-        base_bonus = _CP_BUFF_DEFS[self._rc_sel_buff]["mult"] - 1.0
-        actual_pct = int(base_bonus * strength * 100)
-        str_col = (
-            (120, 255, 100) if strength <= 1.0 else
-            (255, 200, 60)  if strength <= 1.5 else
-            (255, 100, 60)
-        )
-        sec_s_str = lf14.render(f"Buff Strength:  +{actual_pct}%  (×{strength:.2f})", True, str_col)
-        surf.blit(sec_s_str, (px2 + 14, py2 + 192))
-
-        sstr_x = px2 + 14
-        sstr_y = py2 + 216
-        sstr_w = W - 28
-        sstr_h = 14
-        # range: 0.25 → 2.0  (7 steps of 0.25, frac 0–1)
-        str_frac = (strength - 0.25) / 1.75
-        pygame.draw.rect(surf, (20, 50, 70), (sstr_x, sstr_y, sstr_w, sstr_h), border_radius=6)
-        fill_col = str_col
-        pygame.draw.rect(surf, fill_col,
-                         (sstr_x, sstr_y, int(sstr_w * str_frac), sstr_h), border_radius=6)
-        sstr_handle_x = sstr_x + int(sstr_w * str_frac)
-        pygame.draw.circle(surf, C_WHITE,    (sstr_handle_x, sstr_y + sstr_h // 2), 10)
-        pygame.draw.circle(surf, fill_col,   (sstr_handle_x, sstr_y + sstr_h // 2), 10, 2)
-        # tick marks at 0.25 intervals
-        for tick_i in range(8):
-            tx = sstr_x + int(sstr_w * tick_i / 7)
-            pygame.draw.line(surf, (60, 90, 110), (tx, sstr_y + sstr_h + 2), (tx, sstr_y + sstr_h + 7), 1)
-            lbl_v = 0.25 + tick_i * 0.25
-            lbl_s = lf12.render(f"×{lbl_v:.2g}", True, (80, 110, 130))
-            surf.blit(lbl_s, lbl_s.get_rect(centerx=tx, top=sstr_y + sstr_h + 8))
-        self._rc_str_slider_rect = pygame.Rect(sstr_x - 10, sstr_y - 8, sstr_w + 20, sstr_h + 16)
-
-        # ── Section 4: Duration slider ────────────────────────────────────────
+        # ── Section 3: Duration slider ────────────────────────────────────────
         sec_s3 = lf14.render(f"Duration: {self._rc_duration}s", True, (160, 200, 255))
-        surf.blit(sec_s3, (px2 + 14, py2 + 254))
+        surf.blit(sec_s3, (px2 + 14, py2 + 196))
 
         slider_x  = px2 + 14
-        slider_y  = py2 + 276
+        slider_y  = py2 + 220
         slider_w  = W - 28
         slider_h  = 14
         dur_frac  = (self._rc_duration - 5) / 115.0  # 5–120 range
@@ -3220,15 +3306,14 @@ class UI:
         self._rc_slider_rect = pygame.Rect(slider_x - 10, slider_y - 8, slider_w + 20, slider_h + 16)
 
         # ── Cost summary ──────────────────────────────────────────────────────
-        total_cost = RemoteControlAbility.buff_cost(self._rc_sel_buff, self._rc_duration, strength)
+        total_cost = RemoteControlAbility.buff_cost(self._rc_sel_buff, self._rc_duration)
         can_afford = money >= total_cost
         cost_col   = (100, 220, 80) if can_afford else (220, 80, 60)
         per_s      = _CP_BUFF_DEFS[self._rc_sel_buff]["per_sec"]
-        base_cost  = _CP_BUFF_DEFS[self._rc_sel_buff]["base"] + per_s * int(self._rc_duration)
         cost_s = lf14.render(
-            f"Cost: ${total_cost}  (${base_cost} × {strength:.2f} strength)",
+            f"Cost: ${total_cost}  (${_CP_BUFF_DEFS[self._rc_sel_buff]['base']} + ${per_s}/s × {self._rc_duration}s)",
             True, cost_col)
-        surf.blit(cost_s, cost_s.get_rect(centerx=px2 + W // 2, top=py2 + 303))
+        surf.blit(cost_s, cost_s.get_rect(centerx=px2 + W // 2, top=py2 + 246))
 
         # ── Confirm / Cancel buttons ──────────────────────────────────────────
         btn_h = 40
@@ -3262,12 +3347,11 @@ class UI:
             self._rc_open = False
             return 0
         # Confirm
-        strength = getattr(self, '_rc_strength', 1.0)
         if (getattr(self, '_rc_confirm_rect', None) and
                 self._rc_confirm_rect.collidepoint(pos) and
                 getattr(self, '_rc_can_afford', False)):
-            cost = RemoteControlAbility.buff_cost(self._rc_sel_buff, self._rc_duration, strength)
-            self._rc_panel.ability.apply_buff(self._rc_sel_unit, self._rc_sel_buff, self._rc_duration, strength)
+            cost = RemoteControlAbility.buff_cost(self._rc_sel_buff, self._rc_duration)
+            self._rc_panel.ability.apply_buff(self._rc_sel_unit, self._rc_sel_buff, self._rc_duration)
             self._rc_open = False
             return -cost
         # Tower selection buttons
@@ -3280,18 +3364,7 @@ class UI:
             if rect.collidepoint(pos):
                 self._rc_sel_buff = bname
                 return 0
-        # Strength slider drag
-        sstr = getattr(self, '_rc_str_slider_rect', None)
-        if sstr and sstr.collidepoint(pos):
-            sstr_x = sstr.x + 10
-            sstr_w = sstr.w - 20
-            frac = max(0.0, min(1.0, (mx2 - sstr_x) / sstr_w))
-            # snap to 0.25 increments: 0.25 … 2.0 (7 steps)
-            raw = 0.25 + frac * 1.75
-            self._rc_strength = round(round(raw / 0.25) * 0.25, 4)
-            self._rc_strength = max(0.25, min(2.0, self._rc_strength))
-            return 0
-        # Duration slider drag
+        # Slider drag
         sl = getattr(self, '_rc_slider_rect', None)
         if sl and sl.collidepoint(pos):
             slider_x = sl.x + 10
@@ -3684,16 +3757,48 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
             pygame.draw.circle(surf, (60, 160, 40), (rx2, cy), sp(3))
 
     elif unit_name == "Slasher":
-        pygame.draw.circle(surf, C_SLASHER_DARK, (cx, cy), sc(27))
-        pygame.draw.circle(surf, C_SLASHER, (cx, cy), sc(21))
-        pygame.draw.circle(surf, (220, 80, 80), (cx, cy), sc(21), sp(2))
-        # Knife pointing right
-        kx1 = cx + sc(8); kx2 = cx + sc(32)
-        pygame.draw.line(surf, (220, 200, 200), (kx1, cy), (kx2, cy), sp(2))
-        pygame.draw.circle(surf, (255, 230, 230), (kx2, cy), sp(3))
-        # Guard
-        gx = cx + sc(14)
-        pygame.draw.line(surf, (180, 60, 60), (gx, cy - sc(7)), (gx, cy + sc(7)), sp(3))
+        # Blood-mist aura
+        mist_r=sc(34); mist_a=int(28+abs(math.sin(t*1.4))*18)
+        mist_s=pygame.Surface((mist_r*2+4,mist_r*2+4),pygame.SRCALPHA)
+        pygame.draw.circle(mist_s,(180,10,10,mist_a),(mist_r+2,mist_r+2),mist_r)
+        surf.blit(mist_s,(cx-mist_r-2,cy-mist_r-2))
+        # Body layers
+        pygame.draw.circle(surf,(18,4,4),(cx,cy),sc(26))
+        pygame.draw.circle(surf,(80,12,12),(cx,cy),sc(22))
+        pygame.draw.circle(surf,(130,20,20),(cx,cy),sc(16))
+        pygame.draw.circle(surf,(200,30,30),(cx,cy),sc(9))
+        pygame.draw.circle(surf,(255,80,60),(cx,cy),sc(4))
+        rim_sz=sc(56); rim_s=pygame.Surface((rim_sz,rim_sz),pygame.SRCALPHA)
+        pygame.draw.circle(rim_s,(255,40,0,55),(rim_sz//2,rim_sz//2),sc(22),sp(3))
+        surf.blit(rim_s,(cx-rim_sz//2,cy-rim_sz//2))
+        # Shoulder spikes
+        for spike_a in [45,135,225,315]:
+            sa_r=math.radians(spike_a+t*8)
+            sx=cx+int(math.cos(sa_r)*sc(20)); sy=cy+int(math.sin(sa_r)*sc(20))
+            tx2=cx+int(math.cos(sa_r)*sc(30)); ty2=cy+int(math.sin(sa_r)*sc(30))
+            pygame.draw.line(surf,(60,8,8),(sx,sy),(tx2,ty2),sp(3))
+            pygame.draw.circle(surf,(200,40,20),(tx2,ty2),sp(2))
+        # Cleaver blade pointing right
+        a2=math.radians(-40)
+        ca2,sa2=math.cos(a2),math.sin(a2); perp2x,perp2y=-sa2,ca2
+        pygame.draw.line(surf,(40,10,10),(cx+int(ca2*sc(6)),cy+int(sa2*sc(6))),(cx+int(ca2*sc(28)),cy+int(sa2*sc(28))),sp(4))
+        for step in range(7):
+            frac=step/6.0; blen=sc(int(10+frac*24)); w_off=int(sc(7)*(1.0-frac*0.55))
+            bx2=cx+int(ca2*blen); by2=cy+int(sa2*blen)
+            lx2=int(bx2+perp2x*w_off); ly2=int(by2+perp2y*w_off)
+            rx2=int(bx2-perp2x*w_off); ry2=int(by2-perp2y*w_off)
+            col_m=int(150+frac*70)
+            pygame.draw.line(surf,(col_m,col_m-10,col_m-10),(lx2,ly2),(rx2,ry2),sp(2))
+        tip2x=cx+int(ca2*sc(34)+perp2x*sp(2)); tip2y=cy+int(sa2*sc(34)+perp2y*sp(2))
+        base2x=cx+int(ca2*sc(10)+perp2x*sc(6)); base2y=cy+int(sa2*sc(10)+perp2y*sc(6))
+        pygame.draw.line(surf,(230,200,200),(base2x,base2y),(tip2x,tip2y),sp(2))
+        pygame.draw.circle(surf,(255,240,230),(tip2x,tip2y),sp(3))
+        pygame.draw.line(surf,(100,5,5),(cx+int(ca2*sc(14)),cy+int(sa2*sc(14))),(cx+int(ca2*sc(32)),cy+int(sa2*sc(32))),sp(1))
+        ga2=a2+math.pi/2
+        gx1=cx+int(ca2*sc(12)+math.cos(ga2)*sc(9)); gy1=cy+int(sa2*sc(12)+math.sin(ga2)*sc(9))
+        gx2=cx+int(ca2*sc(12)-math.cos(ga2)*sc(9)); gy2=cy+int(sa2*sc(12)-math.sin(ga2)*sc(9))
+        pygame.draw.line(surf,(80,15,15),(gx1,gy1),(gx2,gy2),sp(4))
+        pygame.draw.line(surf,(150,30,30),(gx1,gy1),(gx2,gy2),sp(2))
 
     elif unit_name in ("Cowboy", "Golden Cowboy"):
         pygame.draw.circle(surf, C_GCOWBOY_DARK, (cx, cy), sc(27))
@@ -3710,14 +3815,43 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
         pygame.draw.circle(surf, (255, 220, 80), (bx2, cy), sp(4))
 
     elif unit_name == "Hallow Punk":
-        pygame.draw.circle(surf, C_HALLOWPUNK_DARK, (cx, cy), sc(27))
-        pygame.draw.circle(surf, C_HALLOWPUNK, (cx, cy), sc(21))
-        pygame.draw.circle(surf, (240, 140, 240), (cx, cy), sc(21), sp(2))
+        pulse3 = abs(math.sin(t * 2.5))
+        # Glow
+        gs3 = pygame.Surface((sc(68), sc(68)), pygame.SRCALPHA)
+        pygame.draw.circle(gs3, (140, 50, 180, int(pulse3*50+20)), (sc(34), sc(34)), sc(31))
+        surf.blit(gs3, (cx - sc(34), cy - sc(34)))
+        # Burn ring
+        brs3 = pygame.Surface((sc(60), sc(60)), pygame.SRCALPHA)
+        pygame.draw.circle(brs3, (210, 100, 10, int(pulse3*70+50)), (sc(30), sc(30)), sc(27), sp(3))
+        surf.blit(brs3, (cx - sc(30), cy - sc(30)))
+        # Spikes (4 default for icon — static lv0 appearance)
+        for i in range(4):
+            ang3 = math.pi * 2 * i / 4 - math.pi / 4
+            sx1 = cx + math.cos(ang3) * sc(20); sy1 = cy + math.sin(ang3) * sc(20)
+            sx2 = cx + math.cos(ang3) * sc(28); sy2 = cy + math.sin(ang3) * sc(28)
+            pygame.draw.line(surf, (200, 80, 200), (int(sx1), int(sy1)), (int(sx2), int(sy2)), sp(2))
+        # Hex body
+        hpts3 = [(cx + int(math.cos(math.pi*2*i/6 - math.pi/6)*sc(19)),
+                  cy + int(math.sin(math.pi*2*i/6 - math.pi/6)*sc(19))) for i in range(6)]
+        pygame.draw.polygon(surf, (42, 14, 68), hpts3)
+        pygame.draw.polygon(surf, (88, 30, 120), hpts3, sp(2))
+        # Core
+        pygame.draw.circle(surf, (140, 50, 180), (cx, cy), sc(10))
+        pygame.draw.circle(surf, (int(pulse3*40+180), 80, int(pulse3*40+180)), (cx, cy), sc(7))
         # Rocket launcher tube pointing right
-        bx1 = cx + sc(6); bx2 = cx + sc(28)
-        pygame.draw.line(surf, (160, 60, 160), (bx1, cy), (bx2, cy), sp(7))
-        pygame.draw.line(surf, (220, 120, 220), (bx1, cy), (bx2, cy), sp(4))
-        pygame.draw.circle(surf, (240, 160, 240), (bx2, cy), sp(5))
+        bx1 = cx + sc(6); bx2 = cx + sc(27)
+        pygame.draw.line(surf, (60, 15, 80), (bx1, cy), (bx2, cy), sp(6))
+        pygame.draw.line(surf, (200, 80, 200), (bx1, cy), (bx2, cy), sp(3))
+        pygame.draw.circle(surf, (230, 120, 240), (bx2, cy), sp(4))
+        # Muzzle burn ring
+        ms3 = pygame.Surface((sp(12), sp(12)), pygame.SRCALPHA)
+        pygame.draw.circle(ms3, (210, 100, 10, 160), (sp(6), sp(6)), sp(5), sp(2))
+        surf.blit(ms3, (bx2 - sp(6), cy - sp(6)))
+        # Antenna
+        pygame.draw.line(surf, (88, 30, 120), (cx, cy - sc(19)), (cx, cy - sc(28)), sp(2))
+        tip3 = pygame.Surface((sp(8), sp(8)), pygame.SRCALPHA)
+        pygame.draw.circle(tip3, (200, 80, 200, int(pulse3*180+75)), (sp(4), sp(4)), sp(3))
+        surf.blit(tip3, (cx - sp(4), cy - sc(28) - sp(4)))
 
     elif unit_name == "Spotlight Tech":
         pygame.draw.circle(surf, C_SPOTLIGHT_DARK, (cx, cy), sc(27))
@@ -3858,7 +3992,7 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
     elif unit_name == "Double Accelerator":
         draw_accel_icon(surf, cx, cy, t, size=size)
 
-    elif unit_name == "RubberDuck":
+    elif unit_name == "Rubber Duck":
         # Duck: yellow circle with orange beak
         pygame.draw.circle(surf, C_DUCK_DARK, (cx, cy), sc(27))
         pygame.draw.circle(surf, C_DUCK, (cx, cy), sc(21))
@@ -3911,7 +4045,7 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
             by2 = cy + int(math.sin(a2) * sc(16) - math.sin(perp) * sc(3))
             pygame.draw.polygon(surf, (170, 240, 100), [(tip_x, tip_y), (bx1, by1), (bx2, by2)])
 
-    elif unit_name == "Felyne":
+    elif unit_name == "Korzhik":
         # ── Pulsing aura ─────────────────────────────────────────────────────
         aura_r = sc(30)
         aura_s = pygame.Surface((aura_r * 2, aura_r * 2), pygame.SRCALPHA)
@@ -4026,6 +4160,50 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
         pygame.draw.circle(surf, (80, 200, 255),  (cx, cy), sp(5))
         pygame.draw.circle(surf, (220, 240, 255), (cx, cy), sp(2))
 
+    elif unit_name == "Control Panel":
+        C_CP  = (40, 180, 220)
+        C_CPD = (10,  60,  90)
+        pulse = abs(math.sin(t * 1.8))
+        # outer glow
+        glow_r = sc(34)
+        glow_a = int(pulse * 40 + 15)
+        glow_s = pygame.Surface((glow_r * 2, glow_r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(glow_s, (*C_CP, glow_a), (glow_r, glow_r), glow_r)
+        surf.blit(glow_s, (cx - glow_r, cy - glow_r))
+        # body rectangle
+        bw, bh = sc(48), sc(44)
+        body_rect = pygame.Rect(cx - bw // 2, cy - bh // 2, bw, bh)
+        pygame.draw.rect(surf, C_CPD, body_rect, border_radius=max(2, sc(8)))
+        pygame.draw.rect(surf, C_CP,  body_rect, max(1, sp(2)), border_radius=max(2, sc(8)))
+        # screen
+        sw, sh = sc(36), sc(18)
+        screen_rect = pygame.Rect(cx - sw // 2, cy - bh // 2 + sc(6), sw, sh)
+        scr_col = (int(20 + pulse * 40), int(160 + pulse * 60), int(200 + pulse * 30))
+        pygame.draw.rect(surf, (10, 20, 35), screen_rect, border_radius=max(1, sc(3)))
+        pygame.draw.rect(surf, scr_col, screen_rect, sp(1), border_radius=max(1, sc(3)))
+        for row in range(3):
+            line_s = pygame.Surface((max(1, sw - sp(2)), max(1, sp(1))), pygame.SRCALPHA)
+            line_s.fill((*scr_col, int(80 + pulse * 60)))
+            surf.blit(line_s, (screen_rect.x + sp(1), screen_rect.y + sc(4) + row * sc(5)))
+        # animated dot on screen
+        dot_x = cx + int(math.sin(t * 3.0) * sc(12))
+        dot_s = pygame.Surface((sc(8), sc(8)), pygame.SRCALPHA)
+        pygame.draw.circle(dot_s, (*C_CP, 220), (sc(4), sc(4)), max(1, sc(3)))
+        surf.blit(dot_s, (dot_x - sc(4), cy - bh // 2 + sc(6) + sc(7) - sc(4)))
+        # two buttons below screen
+        btn_y = cy + bh // 2 - sc(14)
+        for bx_off in (-sc(8), sc(8)):
+            pygame.draw.circle(surf, (60, 180, 140), (cx + bx_off, btn_y), max(2, sc(5)))
+            pygame.draw.circle(surf, (100, 220, 180), (cx + bx_off, btn_y), max(2, sc(5)), sp(1))
+        # antenna
+        ant_base_y = cy - bh // 2
+        ant_tip_y  = ant_base_y - sc(16)
+        pygame.draw.line(surf, C_CP, (cx, ant_base_y), (cx, ant_tip_y), max(1, sp(2)))
+        blink_a = int(abs(math.sin(t * 4.0)) * 200 + 55)
+        tip_s = pygame.Surface((sc(10), sc(10)), pygame.SRCALPHA)
+        pygame.draw.circle(tip_s, (*C_CP, blink_a), (sc(5), sc(5)), max(1, sc(3)))
+        surf.blit(tip_s, (cx - sc(5), ant_tip_y - sc(5)))
+
     else:
         # Fallback: colored circle with unit's color
         _col_map = {
@@ -4045,19 +4223,87 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
         pygame.draw.circle(surf, tuple(min(255, c + 60) for c in unit_col), (cx, cy), sc(21), sp(2))
 
 
+def _render_gradient_text(text, font, colors):
+    """Render text with a horizontal gradient. colors = list of (r,g,b) left→right."""
+    s = font.render(text, True, (255, 255, 255))
+    w, h = s.get_size()
+    if w == 0:
+        return s
+    grad = pygame.Surface((w, h), pygame.SRCALPHA)
+    steps = len(colors) - 1
+    seg_w = max(1, w // steps)
+    for seg in range(steps):
+        c0, c1 = colors[seg], colors[seg + 1]
+        x0 = seg * seg_w
+        x1 = x0 + seg_w if seg < steps - 1 else w
+        for x in range(x0, x1):
+            frac = (x - x0) / max(1, x1 - x0)
+            r2 = int(c0[0] + (c1[0] - c0[0]) * frac)
+            g2 = int(c0[1] + (c1[1] - c0[1]) * frac)
+            b2 = int(c0[2] + (c1[2] - c0[2]) * frac)
+            pygame.draw.line(grad, (r2, g2, b2, 255), (x, 0), (x, h))
+    grad.blit(s, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+    return grad
+
+_APEX_GRAD_COLORS = [(220, 30, 10), (255, 130, 20), (255, 220, 40)]
+
+def _blit_apex_label(surf, text, font, pos, center=False):
+    """Blit apex rarity label with red→orange→yellow gradient."""
+    s = _render_gradient_text(text, font, _APEX_GRAD_COLORS)
+    r = s.get_rect()
+    if center:
+        r.center = pos
+    else:
+        r.topleft = pos
+    surf.blit(s, r)
+
+
 def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, selected=False):
     rd = RARITY_DATA.get(rarity_key, RARITY_DATA["starter"])
     bx, by = cx - w//2, cy - h//2
 
-    base_col = rd["color"]
     s_card = pygame.Surface((w, h), pygame.SRCALPHA)
-    pygame.draw.rect(s_card, (*base_col, 220), (0, 0, w, h), border_radius=18)
 
-    border_col = rd["border"]
-    if selected:
-        border_col = (255, 220, 50)
-        pygame.draw.rect(s_card, (255, 220, 50, 60), (0, 0, w, h), border_radius=18)
-    pygame.draw.rect(s_card, (*border_col, 255), (0, 0, w, h), 3, border_radius=18)
+    if rarity_key == "apex":
+        # Vertical gradient: red → orange → yellow
+        grad_colors = [(180, 20, 10), (220, 90, 10), (255, 200, 30)]
+        steps = len(grad_colors) - 1
+        seg_h = h // steps
+        for seg in range(steps):
+            c0 = grad_colors[seg]
+            c1 = grad_colors[seg + 1]
+            for row in range(seg_h + 1):
+                frac = row / seg_h
+                r2 = int(c0[0] + (c1[0] - c0[0]) * frac)
+                g2 = int(c0[1] + (c1[1] - c0[1]) * frac)
+                b2 = int(c0[2] + (c1[2] - c0[2]) * frac)
+                y_row = seg * seg_h + row
+                if y_row < h:
+                    pygame.draw.line(s_card, (r2, g2, b2, 210), (0, y_row), (w, y_row))
+        # Clip to rounded rect
+        mask = pygame.Surface((w, h), pygame.SRCALPHA)
+        pygame.draw.rect(mask, (255, 255, 255, 255), (0, 0, w, h), border_radius=18)
+        s_card.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        # Animated shimmer sweep
+        shimmer_x = int((math.sin(t * 1.8) * 0.5 + 0.5) * (w + 60)) - 30
+        sh = pygame.Surface((30, h), pygame.SRCALPHA)
+        for sx in range(30):
+            alpha = int(max(0, 80 - abs(sx - 15) * 6))
+            pygame.draw.line(sh, (255, 240, 180, alpha), (sx, 0), (sx, h))
+        s_card.blit(sh, (shimmer_x, 0))
+        border_col = (255, 120, 20) if not selected else (255, 220, 50)
+        if selected:
+            pygame.draw.rect(s_card, (255, 220, 50, 50), (0, 0, w, h), border_radius=18)
+        pygame.draw.rect(s_card, (*border_col, 255), (0, 0, w, h), 3, border_radius=18)
+    else:
+        base_col = rd["color"]
+        pygame.draw.rect(s_card, (*base_col, 220), (0, 0, w, h), border_radius=18)
+        border_col = rd["border"]
+        if selected:
+            border_col = (255, 220, 50)
+            pygame.draw.rect(s_card, (255, 220, 50, 60), (0, 0, w, h), border_radius=18)
+        pygame.draw.rect(s_card, (*border_col, 255), (0, 0, w, h), 3, border_radius=18)
+
     surf.blit(s_card, (bx, by))
 
     # Unit icon — detailed in-game appearance
@@ -5683,7 +5929,7 @@ ALL_SKIN_DEFS = [
         "id":        "archer_star",
         "unit_name": "Archer",
         "name":      "Star Archer",
-        "rarity":    "exclusive",
+        "rarity":    "early_access",
         "desc":      "Shoots stars instead of arrows. Unique look.",
         "free":      True,   # can be claimed for free in shop
     },
@@ -5847,7 +6093,7 @@ class SkinPickerScreen:
                 bg_col = (30, 38, 55)
                 brd_col = (255, 220, 50) if is_eq else (80, 100, 140)
             else:
-                rd2 = RARITY_DATA.get(opt.get("rarity", "exclusive"), RARITY_DATA["exclusive"])
+                rd2 = RARITY_DATA.get(opt.get("rarity", "early_access"), RARITY_DATA["early_access"])
                 bg_col = rd2["color"]
                 brd_col = (255, 220, 50) if is_eq else rd2["border"]
 
@@ -6022,7 +6268,7 @@ class ShopScreen:
             is_owned = own_skin(skin["id"])
             is_equipped = (get_equipped_skin(skin["unit_name"]) == skin["id"])
             rarity = skin["rarity"]
-            rd = RARITY_DATA.get(rarity, RARITY_DATA["exclusive"])
+            rd = RARITY_DATA.get(rarity, RARITY_DATA["early_access"])
 
             # Card background
             card_s = pygame.Surface((card_w, card_h), pygame.SRCALPHA)
@@ -6033,7 +6279,10 @@ class ShopScreen:
 
             # Rarity badge
             badge_f = pygame.font.SysFont("consolas", 14, bold=True)
-            bs2 = badge_f.render(rarity.upper(), True, rd["text_col"])
+            if rarity == "apex":
+                bs2 = _render_gradient_text(rarity.upper(), badge_f, _APEX_GRAD_COLORS)
+            else:
+                bs2 = badge_f.render(rarity.upper(), True, rd["text_col"])
             bsw2 = bs2.get_width() + 14
             badge_r2 = pygame.Rect(x + card_w - bsw2 - 8, y + 8, bsw2, 24)
             draw_rect_alpha(surf, rd["color"], (badge_r2.x, badge_r2.y, badge_r2.w, badge_r2.h), 220, 6)
@@ -6132,7 +6381,10 @@ class ShopScreen:
 
             # Unit label
             uf = pygame.font.SysFont("segoeui", 13)
-            us = uf.render(f"Unit: {skin['unit_name']}", True, rd["text_col"])
+            if rarity == "apex":
+                us = _render_gradient_text(f"Unit: {skin['unit_name']}", uf, _APEX_GRAD_COLORS)
+            else:
+                us = uf.render(f"Unit: {skin['unit_name']}", True, rd["text_col"])
             surf.blit(us, us.get_rect(center=(preview_cx, y + 336)))
 
             # Claim/Equip button
@@ -6794,19 +7046,19 @@ ALL_UNITS_POOL = [
     {"name": "Assassin",       "rarity": "starter"},
     {"name": "Militant",       "rarity": "starter"},
     {"name": "Twitgunner",     "rarity": "starter"},
-    {"name": "Felyne",        "rarity": "mythic"},
-    {"name": "Conduit",        "rarity": "early_access"},
+    {"name": "Korzhik",        "rarity": "apex"},
+    {"name": "Conduit",        "rarity": "rare"},
     {"name": "Accelerator",    "rarity": "epic"},
     {"name": "Frostcelerator", "rarity": "epic"},
     {"name": "Lifestealer",    "rarity": "starter"},
-    {"name": "Archer",         "rarity": "common"},
+    {"name": "Archer",         "rarity": "rare"},
     {"name": "Red Ball",       "rarity": "rare"},
-    {"name": "Farm",           "rarity": "common"},
+    {"name": "Farm",           "rarity": "starter"},
     {"name": "Swarmer",        "rarity": "common"},
-    {"name": "Freezer",        "rarity": "common"},
-    {"name": "Frost Blaster",  "rarity": "rare"},
-    {"name": "Sledger",        "rarity": "rare"},
-    {"name": "Gladiator",      "rarity": "rare"},
+    {"name": "Freezer",        "rarity": "starter"},
+    {"name": "Frost Blaster",  "rarity": "common"},
+    {"name": "Sledger",        "rarity": "common"},
+    {"name": "Gladiator",      "rarity": "starter"},
     {"name": "Toxic Gunner",   "rarity": "common"},
     {"name": "Slasher",        "rarity": "rare"},
     {"name": "Cowboy",         "rarity": "starter"},
@@ -6815,9 +7067,9 @@ ALL_UNITS_POOL = [
     {"name": "Snowballer",     "rarity": "rare"},
     {"name": "Commando",       "rarity": "starter"},
     {"name": "Warlock",      "rarity": "epic"},
-    {"name": "Caster",       "rarity": "mythic"},
-    {"name": "Jester",       "rarity": "mythic"},
-    {"name": "Rubber Duck",  "rarity": "exclusive"},
+    {"name": "Caster",       "rarity": "epic"},
+    {"name": "Jester",       "rarity": "apex"},
+    {"name": "Rubber Duck",  "rarity": "common"},
     {"name": "Harvester",   "rarity": "epic"},
     {"name": "Control Panel", "rarity": "early_access"},
 ]
@@ -6826,8 +7078,8 @@ ALL_UNITS_POOL = [
 UNIT_SHOP_PRICES = {
     "Assassin":       None,
     "Twitgunner":     None,
-    "Felyne":        None,   # Mythic — purchased with 1500 shards
-    "Conduit":        None,   # Early Access — free
+    "Korzhik":        None,   # Mythic — purchased with 1500 shards
+    "Conduit":        3000,   # Early Access — free
     "Militant":       300,
     "Archer":         1000,
     "Swarmer":        600,
@@ -6850,10 +7102,10 @@ UNIT_SHOP_PRICES = {
     "Commander":      500,
     "Commando":       400,
     "hacker_laser_effects_test": None,
-    "Caster": None,
+    "Caster": 7500,
     "Warlock": 3000,
     "Jester": None,
-    "Rubber Duck": None,
+    "Rubber Duck": 1300,
     "Harvester":   5000,
     "Control Panel": None,   # Early Access — free to unlock
 }
@@ -6886,9 +7138,9 @@ UNIT_BASE_STATS = {
     "Warlock":        {"cost": 4200, "limit": 3,  "damage": 250,  "firerate": 0.6,  "range": 8,  "income": None},
     "Caster":         {"cost": 7500, "limit": 2,  "damage": 400,  "firerate": 0.5,  "range": 9,  "income": None},
     "Jester":         {"cost": 650,  "limit": 4,  "damage": 100,  "firerate": 1.5,  "range": 7,  "income": None},
-    "Felyne":        {"cost": 600,  "limit": 6,  "damage": 350,  "firerate": 0.8,  "range": 7,  "income": None},
+    "Korzhik":        {"cost": 600,  "limit": 6,  "damage": 350,  "firerate": 0.8,  "range": 7,  "income": None},
     "Conduit":        {"cost": 1800, "limit": 3,  "damage": 60,   "firerate": 1.2,  "range": 5,  "income": None},
-    "Rubber Duck":    {"cost": 500,  "limit": 3,  "damage": 120,  "firerate": 1.0,  "range": 7,  "income": None},
+    "Rubber Duck":    {"cost": 500,  "limit": 3,  "damage": 70,   "firerate": 1.0,  "range": 5,  "income": None},
     "Harvester":      {"cost": 2000, "limit": 5,  "damage": 80,   "firerate": 1.0,  "range": 6,  "income": 80},
     "Control Panel":  {"cost": 5000, "limit": 1,  "damage": 0,    "firerate": 0.0,  "range": 6,  "income": None},
     "hacker_laser_effects_test": {"cost": 7500, "limit": 1, "damage": 9999, "firerate": 9.9, "range": 20, "income": None},
@@ -6920,7 +7172,7 @@ UNIT_DESCRIPTIONS = {
     "Warlock":        "A hybrid melee and ranged tower that fights with eldritch magic. Capable of knocking back enemies and applying bleed.",
     "Caster":         "A boss killer with good aoe ability",
     "Jester":         "I have a ton of tricks in my pockets! Cycle through and throw debuff bombs at enemies!",
-    "Felyne":        "Felyne. Catgirl",
+    "Korzhik":        "Zigres's friend. Catgirl.",
     "Conduit":        "Draws charge from nearby towers and unleashes chain lightning. The more allies, the stronger the mega-discharge!",
     "Rubber Duck":    "Exclusive squeaky menace. Don't underestimate it.",
     "Harvester":      "A haunted scarecrow that fires piercing bolts and can summon thorns to slow enemies.",
@@ -6938,14 +7190,13 @@ class LoadoutScreen:
       - No bottom strip outside the left zone — slots live inside the left area
     """
 
-    _RARITY_ORDER = ["starter", "common", "rare", "epic", "mythic", "exclusive", "early_access"]
+    _RARITY_ORDER = ["starter", "common", "rare", "epic", "apex", "early_access"]
     _RARITY_HDR_COL = {
         "starter":      (180, 180, 190),
         "common":       ( 80, 210,  80),
         "rare":         ( 80, 150, 255),
         "epic":         (200, 100, 255),
-        "exclusive":    (255,  60,  60),
-        "mythic":       (255, 210,  40),
+        "apex":         (255, 210,  40),
         "early_access": ( 60, 220, 180),
     }
     _RARITY_HDR_LINE = {
@@ -6953,8 +7204,7 @@ class LoadoutScreen:
         "common":       ( 40, 120,  40),
         "rare":         ( 40,  80, 180),
         "epic":         (120,  40, 180),
-        "exclusive":    (160,  20,  20),
-        "mythic":       (180, 140,   0),
+        "apex":         (180, 140,   0),
         "early_access": ( 20, 140, 110),
     }
 
@@ -7007,16 +7257,14 @@ class LoadoutScreen:
         # Migrate old Golden Cowboy save entries to Cowboy
         owned = ["Cowboy" if u == "Golden Cowboy" else u for u in owned]
 
-        # Rubber Duck — выдаётся только за прохождение ивента ПЕКЛО
+        # Rubber Duck — разблокирован по умолчанию
         # Harvester — требует покупки за 5000 монет
         # Twitgunner — стартер, всегда доступен
         if "Twitgunner" not in owned:
             owned = list(owned) + ["Twitgunner"]
-        if "Conduit" not in owned:
-            owned = list(owned) + ["Conduit"]
         if "Control Panel" not in owned:
             owned = list(owned) + ["Control Panel"]
-        # Felyne — Mythic, покупается за 1500 шардов
+        # Rubber Duck — покупается за 1300 монет
         return owned
 
     def _show_msg(self, text, dur=2.5):
@@ -7106,7 +7354,7 @@ class LoadoutScreen:
 
         for btn_r, u in self._shard_buy_hits:
             if btn_r.collidepoint(pos):
-                SHARD_PRICES = {"Caster": 1000, "Jester": 300, "Felyne": 1500}
+                SHARD_PRICES = {"Jester": 300, "Korzhik": 1500}
                 price = SHARD_PRICES.get(u["name"], 0)
                 shards = self.save_data.get("shards", 0)
                 if shards >= price:
@@ -7300,8 +7548,11 @@ class LoadoutScreen:
                 else:
                     _draw_tower_icon(surf, uname, icx, icy, self.t, size=20)
                 txt(surf, uname, (sr.centerx, sr.bottom - 20), C_WHITE, font_sm, center=True)
-                rs2 = font_sm.render(rd["label"], True, rd["text_col"])
-                surf.blit(rs2, rs2.get_rect(center=(sr.centerx, sr.bottom - 7)))
+                if rarity == "apex":
+                    _blit_apex_label(surf, rd["label"], font_sm, (sr.centerx, sr.bottom - 7), center=True)
+                else:
+                    rs2 = font_sm.render(rd["label"], True, rd["text_col"])
+                    surf.blit(rs2, rs2.get_rect(center=(sr.centerx, sr.bottom - 7)))
             else:
                 txt(surf, f"SLOT {si+1}", (sr.centerx, sr.centery), (60,70,100), font_sm, center=True)
 
@@ -7336,7 +7587,7 @@ class LoadoutScreen:
                 "Warlock": Warlock, "Jester": Jester,
                 "Soul Weaver": SoulWeaver, "Rubber Duck": RubberDuck,
                 "Harvester": Harvester, "Twitgunner": Twitgunner,
-                "Felyne": Felyne, "Conduit": Conduit,
+                "Korzhik": Felyne, "Conduit": Conduit,
             }
             _cls_ld = _name_to_cls_ld.get(uname)
             _static = UNIT_BASE_STATS.get(uname, {})
@@ -7379,7 +7630,10 @@ class LoadoutScreen:
             name_f = pygame.font.SysFont("segoeui", 26, bold=True)
             rar_f  = pygame.font.SysFont("segoeui", 17, bold=True)
             name_s = name_f.render(uname, True, C_WHITE)
-            rar_s  = rar_f.render(rd["label"].upper(), True, rd["text_col"])
+            if rarity == "apex":
+                rar_s = _render_gradient_text(rd["label"].upper(), rar_f, _APEX_GRAD_COLORS)
+            else:
+                rar_s  = rar_f.render(rd["label"].upper(), True, rd["text_col"])
             surf.blit(name_s, (TEXT_X, PANEL_Y + 10))
             surf.blit(rar_s,  (TEXT_X, PANEL_Y + 10 + name_s.get_height() + 3))
 
@@ -7551,7 +7805,13 @@ class LoadoutScreen:
 
             hdr_y = sec_y + 5
             if CONTENT_TOP - 36 < hdr_y < CONTENT_BOT + 10:
-                ls2 = label_f.render(rarity.capitalize(), True, hdr_col)
+                _rarity_label = rarity.replace("_", " ").title() if "_" in rarity else rarity.capitalize()
+                if rarity in RARITY_DATA and "label" in RARITY_DATA[rarity] and "_" in rarity:
+                    _rarity_label = RARITY_DATA[rarity]["label"]
+                if rarity == "apex":
+                    ls2 = _render_gradient_text(_rarity_label, label_f, _APEX_GRAD_COLORS)
+                else:
+                    ls2 = label_f.render(_rarity_label, True, hdr_col)
                 surf.blit(ls2, (panel_x + 16, hdr_y))
                 ul_y = hdr_y + ls2.get_height() + 2
                 pygame.draw.line(surf, hdr_line,
@@ -7587,11 +7847,8 @@ class LoadoutScreen:
                     dim.blit(mask, (0,0), special_flags=pygame.BLEND_RGBA_MIN)
                     surf.blit(dim, card_r.topleft)
 
-                    if rarity == "exclusive":
-                        es  = excl_f.render("EXCLUSIVE", True, (220,65,65))
-                        surf.blit(es, es.get_rect(center=(cx2, cy2 + 8)))
-                    elif rarity == "mythic":
-                        SHARD_PRICES = {"Caster": 1000, "Jester": 300, "Felyne": 1500}
+                    if rarity == "apex":
+                        SHARD_PRICES = {"Jester": 300, "Korzhik": 1500}
                         shard_price = SHARD_PRICES.get(u["name"])
                         if shard_price is not None:
                             shards_have = self.save_data.get("shards", 0)
@@ -8061,8 +8318,11 @@ class Game:
                         "Rubber Duck": RubberDuck,
                         "Harvester": Harvester,
                         "Twitgunner": Twitgunner,
-                        "Felyne": Felyne,
-                        "Conduit": Conduit}
+                        "Korzhik": Felyne,
+                        "Conduit": Conduit,
+                        "Control Panel": ControlPanel,
+                        "ControlPanel": ControlPanel,
+                        "CtrlPanel": ControlPanel}
         _loadout = self.save_data.get("loadout", ["Assassin", "Accelerator", None, None, None])
         while len(_loadout) < 5: _loadout.append(None)
         self.ui.SLOT_TYPES = [_name_to_cls.get(n) if n else None for n in _loadout]
@@ -8656,14 +8916,6 @@ class Game:
                                 slider_w = sl.w - 20
                                 frac = max(0.0, min(1.0, (ev.pos[0] - slider_x) / slider_w))
                                 self.ui._rc_duration = max(5, min(120, int(5 + frac * 115)))
-                            sstr = getattr(self.ui, '_rc_str_slider_rect', None)
-                            if sstr and sstr.collidepoint(ev.pos):
-                                sstr_x = sstr.x + 10
-                                sstr_w = sstr.w - 20
-                                frac = max(0.0, min(1.0, (ev.pos[0] - sstr_x) / sstr_w))
-                                raw = 0.25 + frac * 1.75
-                                snapped = round(round(raw / 0.25) * 0.25, 4)
-                                self.ui._rc_strength = max(0.25, min(2.0, snapped))
 
             if not self.game_over and not self.win:
                 self._elapsed += raw_dt
@@ -9348,6 +9600,10 @@ class Game:
                         u.update(dt,self.enemies,self.effects,self.money)
                     if _x5k:
                         u.damage = _orig_dmg
+                    # Tick ControlPanel ability cooldown manually
+                    if isinstance(u, ControlPanel) and u.ability is not None:
+                        if u.ability.cd_left > 0:
+                            u.ability.cd_left = max(0.0, u.ability.cd_left - dt)
                 # Collect Lifestealer blood money
                 for u in self.units:
                     if isinstance(u,Lifestealer):
