@@ -9132,7 +9132,7 @@ class Felyne(Unit):
     """Cat-eared tower — balanced reroll. 7 levels (lv0–lv6). Fires bullets + orbital sentries."""
     PLACE_COST = 600
     COLOR      = C_FELYNE
-    NAME       = "Korzhik"
+    NAME       = "Felyne"
 
     def __init__(self, px, py):
         super().__init__(px, py)
@@ -9693,8 +9693,8 @@ CASTBOUND_LEVELS = [
     (8,   0.6,  6.6,   750, 1, False, False, False, False),   # lv2
     (16,  0.6,  7.3,  1750, 2, True,  False, False, False),   # lv3  terra+2 blades
     (25,  0.5,  7.3,  3450, 2, True,  False, False, True),    # lv4  hidden det
-    (20,  0.4,  8.0,  5500, 2, True,  True,  False, True),    # lv5  starfury
-    (75,  0.3, 10.0, 10000, 0, True,  True,  True,  True),    # lv6  zenith
+    (40,  0.4,  8.0,  5500, 2, True,  True,  False, True),    # lv5  starfury  ← 20→40
+    (100, 0.3, 10.0, 10000, 0, True,  True,  True,  True),    # lv6  zenith    ← 75→100
 ]
 
 # ── параметры дебаффов по уровню ──────────────────────────────────────────────
