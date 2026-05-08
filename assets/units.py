@@ -9132,7 +9132,7 @@ class Felyne(Unit):
     """Cat-eared tower — balanced reroll. 7 levels (lv0–lv6). Fires bullets + orbital sentries."""
     PLACE_COST = 600
     COLOR      = C_FELYNE
-    NAME       = "Felyne"
+    NAME       = "Korzhik"
 
     def __init__(self, px, py):
         super().__init__(px, py)
@@ -9658,3 +9658,950 @@ class ControlPanel(Unit):
             info["Buff left"] = f"{ab._active_buff_dur:.1f}s"
         info["AbilCD"] = "READY" if ab.cd_left <= 0 else f"{ab.cd_left:.1f}s"
         return info
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Castbound — меченосный юнит с выбором клинков
+# Цена размещения: 400  |  Лимит: 5 (задаётся в game.py)
+# Уровень 6 (Zenith) выдаётся за убийство Moon Lord
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── цвета ─────────────────────────────────────────────────────────────────────
+C_CASTBOUND      = (110, 60, 180)
+C_CASTBOUND_DARK = (50,  20,  80)
+C_CB_ICE    = (140, 220, 255)
+C_CB_FIRE   = (255, 130,  30)
+C_CB_TERRA  = ( 80, 210,  80)
+C_CB_STAR   = (255, 240,  90)
+C_CB_ZENITH = (220, 180, 255)   # переливается радугой в draw()
+
+# ── определения клинков ───────────────────────────────────────────────────────
+# id -> (display_name, colour, icon_filename)
+CB_BLADE_DEFS = {
+    "ice":    ("Ice Blade",        C_CB_ICE,    "iceblade.png"),
+    "fire":   ("Fiery Greatsword", C_CB_FIRE,   "fierygreatsword.png"),
+    "terra":  ("Terra Blade",      C_CB_TERRA,  "terrablade.png"),
+    "star":   ("Starfury",         C_CB_STAR,   "starfury.png"),
+    "zenith": ("Zenith",           C_CB_ZENITH, "zenith.png"),
+}
+
+# ── таблица уровней ───────────────────────────────────────────────────────────
+# (damage, firerate, range_tiles, upgrade_cost,
+#  max_blades, terra_unlocked, star_unlocked, zenith_mode, hidden_detection)
+CASTBOUND_LEVELS = [
+    (4,   0.8,  6.2,  None, 1, False, False, False, False),   # lv0
+    (6,   0.6,  6.4,   350, 1, False, False, False, False),   # lv1
+    (8,   0.6,  6.6,   750, 1, False, False, False, False),   # lv2
+    (16,  0.6,  7.3,  1750, 2, True,  False, False, False),   # lv3  terra+2 blades
+    (25,  0.5,  7.3,  3450, 2, True,  False, False, True),    # lv4  hidden det
+    (20,  0.4,  8.0,  5500, 2, True,  True,  False, True),    # lv5  starfury
+    (75,  0.3, 10.0, 10000, 0, True,  True,  True,  True),    # lv6  zenith
+]
+
+# ── параметры дебаффов по уровню ──────────────────────────────────────────────
+# ice: (slow_pct, duration_sec)
+_CB_ICE_PARAMS = [
+    (0.20, 3), (0.30, 3), (0.35, 5),
+    (0.40, 5), (0.40, 5), (0.40, 5), (0.40, 5),
+]
+# fire: (burn_dmg_per_tick, total_duration_sec, tick_interval_sec)
+_CB_FIRE_PARAMS = [
+    (1, 3, 1), (2, 3, 1), (3, 3, 1),
+    (5, 5, 1), (5, 5, 1), (5, 5, 1), (5, 5, 1),
+]
+# terra: (knockback_px, hits_needed)
+_CB_TERRA_PARAMS = [
+    (0,   5), (0,   5), (0,   5),
+    (8,   5), (10,  4), (10,  4), (6,   8),  # lv6 zenith: слабый kb, каждые 8 хитов
+]
+
+_CB_STAR_SPLASH_R = 80   # px радиус звёздного взрыва
+
+# ── иконки клинков ────────────────────────────────────────────────────────────
+_CB_ICON_CACHE: dict = {}
+def _cb_load_icon(filename, size=32):
+    key = (filename, size)
+    if key not in _CB_ICON_CACHE:
+        try:
+            p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             "assets", "image", filename)
+            img = pygame.image.load(p).convert_alpha()
+            _CB_ICON_CACHE[key] = pygame.transform.smoothscale(img, (size, size))
+        except Exception:
+            _CB_ICON_CACHE[key] = None
+    return _CB_ICON_CACHE[key]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Starfury — звезда падает с неба (как в оригинальной Terraria)
+# ═══════════════════════════════════════════════════════════════════════════════
+class _CB_StarfuryProj:
+    """Starfury: звезда появляется выше экрана и падает строго вниз на врага.
+    При приближении к цели — взрыв со сплешем, как в Terraria."""
+    SPEED      = 1100.0  # px/s вертикальная скорость падения
+    TRAIL_LEN  = 8       # длина хвоста (оптимизировано)
+    STAR_SIZE  = 34      # размер PNG иконки (px)
+
+    # смещение по X от цели (небольшой разброс, как в Terraria)
+    SPAWN_X_SPREAD = 20
+
+    def __init__(self, tx, ty, damage, burn_dmg, burn_dur, burn_tick, blade_col=None):
+        # цель — позиция врага
+        self.tx = float(tx)
+        self.ty = float(ty)
+        # старт — прямо над целью, за экраном
+        spread = random.uniform(-self.SPAWN_X_SPREAD, self.SPAWN_X_SPREAD)
+        self.x  = float(tx) + spread
+        self.y  = float(-60)          # за верхним краем экрана
+        self.damage    = damage
+        self.burn_dmg  = burn_dmg
+        self.burn_dur  = burn_dur
+        self.burn_tick = burn_tick
+        self.blade_col = blade_col or (255, 230, 80)
+        self.alive     = True
+        self._exploded = False
+        self._exp_t    = 0.0
+        self._trail: list[tuple[float, float]] = []
+        # угол всегда 90° (вниз) + небольшой наклон к цели
+        self._angle    = 90.0   # degrees, используется для вращения PNG
+
+        # кешируем PNG один раз
+        self._icon = _cb_load_icon("starfury.png", self.STAR_SIZE)
+
+    def update(self, dt, enemies, effects):
+        if self._exploded:
+            self._exp_t += dt
+            if self._exp_t > 0.45:
+                self.alive = False
+            return
+
+        step = self.SPEED * dt
+        dist_left = math.hypot(self.tx - self.x, self.ty - self.y)
+
+        self._trail.append((self.x, self.y))
+        if len(self._trail) > self.TRAIL_LEN:
+            self._trail.pop(0)
+
+        if dist_left <= step:
+            # попали в цель
+            self.x = self.tx; self.y = self.ty
+            self._exploded = True
+            # AoE урон
+            for e in enemies:
+                if not e.alive: continue
+                if math.hypot(e.x - self.tx, e.y - self.ty) <= _CB_STAR_SPLASH_R:
+                    e.take_damage(self.damage)
+                    _cb_apply_burn(e, self.burn_dmg, self.burn_dur, self.burn_tick)
+        else:
+            # движемся к цели
+            dx = self.tx - self.x; dy = self.ty - self.y
+            d  = math.hypot(dx, dy) or 1.0
+            self.x += dx / d * step
+            self.y += dy / d * step
+            self._angle = math.degrees(math.atan2(dy, dx))
+
+    def draw(self, surf):
+        bc = self.blade_col
+
+        if self._exploded:
+            # ── взрыв: расширяющееся кольцо + вспышка ────────────────────────
+            prog  = self._exp_t / 0.45
+            alpha = int(255 * (1.0 - prog))
+
+            # внешнее кольцо
+            r = int(_CB_STAR_SPLASH_R * prog) + 6
+            if r >= 3:
+                s = pygame.Surface((r*2+4, r*2+4), pygame.SRCALPHA)
+                pygame.draw.circle(s, (*bc, alpha // 3),  (r+2, r+2), r)
+                pygame.draw.circle(s, (*bc, alpha),        (r+2, r+2), r, 3)
+                surf.blit(s, (int(self.tx)-r-2, int(self.ty)-r-2))
+
+            # внутренняя вспышка
+            r2 = max(2, int(22 * (1.0 - prog)))
+            s2 = pygame.Surface((r2*2+4, r2*2+4), pygame.SRCALPHA)
+            pygame.draw.circle(s2, (255, 255, 200, alpha), (r2+2, r2+2), r2)
+            surf.blit(s2, (int(self.tx)-r2-2, int(self.ty)-r2-2))
+
+            # 6 лучей-осколков разлетаются в стороны
+            for i in range(6):
+                ang  = math.radians(i * 60 + prog * 120)
+                dist_r = int((_CB_STAR_SPLASH_R * 0.6) * prog)
+                sx   = int(self.tx) + int(math.cos(ang) * dist_r)
+                sy   = int(self.ty) + int(math.sin(ang) * dist_r)
+                sr   = max(1, int(6 * (1.0 - prog)))
+                ss   = pygame.Surface((sr*2+2, sr*2+2), pygame.SRCALPHA)
+                pygame.draw.circle(ss, (*bc, alpha), (sr+1, sr+1), sr)
+                surf.blit(ss, (sx - sr - 1, sy - sr - 1))
+        else:
+            # ── хвост из угасающих звёздочек ──────────────────────────────────
+            n = len(self._trail)
+            for i, (tx_, ty_) in enumerate(self._trail):
+                frac  = i / max(1, n - 1)
+                rad   = max(1, int(7 * frac))
+                # рисуем напрямую без SRCALPHA Surface
+                col_dim = tuple(int(c * frac * 0.85) for c in bc)
+                pygame.draw.circle(surf, col_dim, (int(tx_), int(ty_)), rad)
+
+            # ── звезда (PNG или fallback) ──────────────────────────────────────
+            cx, cy = int(self.x), int(self.y)
+            if self._icon:
+                # вращаем PNG по направлению движения
+                rotated = pygame.transform.rotate(self._icon, -(self._angle - 90))
+                r2 = rotated.get_rect(center=(cx, cy))
+                surf.blit(rotated, r2)
+            else:
+                # fallback — нарисованная 4-конечная звезда
+                pts_outer = []
+                pts_inner = []
+                for i in range(4):
+                    ao = math.radians(i * 90 + self._angle)
+                    ai = math.radians(i * 90 + 45 + self._angle)
+                    pts_outer.append((cx + math.cos(ao)*16, cy + math.sin(ao)*16))
+                    pts_inner.append((cx + math.cos(ai)*7,  cy + math.sin(ai)*7))
+                star_pts = []
+                for o, inn in zip(pts_outer, pts_inner):
+                    star_pts.append(o); star_pts.append(inn)
+                bs = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+                pygame.draw.polygon(bs, (*bc, 230),
+                                    [(int(p[0]), int(p[1])) for p in star_pts])
+                pygame.draw.polygon(bs, (255, 255, 255, 120),
+                                    [(int(p[0]), int(p[1])) for p in star_pts], 1)
+                surf.blit(bs, (0, 0))
+
+            # маленькое свечение вокруг звезды
+            gr = 24
+            gs = pygame.Surface((gr*2, gr*2), pygame.SRCALPHA)
+            pygame.draw.circle(gs, (*bc, 55), (gr, gr), gr)
+            surf.blit(gs, (cx - gr, cy - gr))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# _CB_StarProj — универсальный снаряд (летит от башни к врагу)
+# Используется для Ice, Fire, Terra, Zenith клинков
+# ═══════════════════════════════════════════════════════════════════════════════
+class _CB_StarProj:
+    """Снаряд-клинок: летит от башни к врагу."""
+    SPEED = 900.0   # px/s
+
+    def __init__(self, ox, oy, tx, ty, damage, burn_dmg, burn_dur, burn_tick,
+                 blade_col=None, has_splash=False):
+        self.x  = float(ox); self.y  = float(oy)
+        self.tx = float(tx); self.ty = float(ty)
+        d = math.hypot(tx - ox, ty - oy)
+        self._dx = (tx - ox) / d if d > 0 else 0.0
+        self._dy = (ty - oy) / d if d > 0 else 1.0
+        self._angle = math.degrees(math.atan2(ty - oy, tx - ox))
+        self.damage    = damage
+        self.burn_dmg  = burn_dmg
+        self.burn_dur  = burn_dur
+        self.burn_tick = burn_tick
+        self.blade_col = blade_col or (255, 230, 80)
+        self.has_splash = has_splash
+        self.alive     = True
+        self._exploded = False
+        self._exp_t    = 0.0
+        self._trail: list = []
+
+    def update(self, dt, enemies, effects):
+        if self._exploded:
+            self._exp_t += dt
+            if self._exp_t > (0.35 if self.has_splash else 0.15):
+                self.alive = False
+            return
+        step = self.SPEED * dt
+        dist_left = math.hypot(self.tx - self.x, self.ty - self.y)
+        self._trail.append((self.x, self.y))
+        if len(self._trail) > 8:
+            self._trail.pop(0)
+        if dist_left <= step:
+            self.x = self.tx; self.y = self.ty
+            self._exploded = True
+            if self.has_splash:
+                for e in enemies:
+                    if not e.alive: continue
+                    if math.hypot(e.x - self.tx, e.y - self.ty) <= _CB_STAR_SPLASH_R:
+                        e.take_damage(self.damage)
+                        _cb_apply_burn(e, self.burn_dmg, self.burn_dur, self.burn_tick)
+        else:
+            self.x += self._dx * step
+            self.y += self._dy * step
+
+    def draw(self, surf):
+        bc = self.blade_col
+        if self._exploded:
+            if not self.has_splash:
+                # небольшая вспышка при попадании без сплеша
+                prog  = self._exp_t / 0.15
+                alpha = int(200 * (1 - prog))
+                r     = int(18 * prog) + 4
+                s = pygame.Surface((r*2+4, r*2+4), pygame.SRCALPHA)
+                pygame.draw.circle(s, (*bc, alpha//2), (r+2, r+2), r)
+                pygame.draw.circle(s, (255,255,255, alpha), (r+2, r+2), max(1,r//3), 2)
+                surf.blit(s, (int(self.tx)-r-2, int(self.ty)-r-2))
+            else:
+                prog  = self._exp_t / 0.35
+                alpha = int(255 * (1 - prog))
+                r     = int(_CB_STAR_SPLASH_R * prog) + 5
+                if r < 3: return
+                s = pygame.Surface((r*2+4, r*2+4), pygame.SRCALPHA)
+                pygame.draw.circle(s, (*bc, alpha//3), (r+2, r+2), r)
+                pygame.draw.circle(s, (*bc, alpha),    (r+2, r+2), r, 3)
+                surf.blit(s, (int(self.tx)-r-2, int(self.ty)-r-2))
+        else:
+            for i, (tx_, ty_) in enumerate(self._trail):
+                a = max(0, int(180 * (i / max(1, len(self._trail)))))
+                ts = pygame.Surface((10, 10), pygame.SRCALPHA)
+                rad = max(1, 4 - (len(self._trail)-i)//2)
+                pygame.draw.circle(ts, (*bc, a), (5, 5), rad)
+                surf.blit(ts, (int(tx_)-5, int(ty_)-5))
+            cx, cy = int(self.x), int(self.y)
+            # Ищем PNG для снаряда по цвету (blade_col определяет тип меча)
+            _proj_png = None
+            for bid, bdef in CB_BLADE_DEFS.items():
+                if bdef[1] == self.blade_col:
+                    _proj_png = _cb_load_icon(bdef[2], 36)
+                    break
+            if _proj_png:
+                rotated = pygame.transform.rotate(_proj_png, -self._angle - 45)
+                r2 = rotated.get_rect(center=(cx, cy))
+                surf.blit(rotated, r2)
+            else:
+                # fallback — нарисованный ромб
+                angle_rad = math.radians(self._angle)
+                length, width = 28, 5
+                cos_a = math.cos(angle_rad); sin_a = math.sin(angle_rad)
+                perp_cos = math.cos(angle_rad + math.pi/2)
+                perp_sin = math.sin(angle_rad + math.pi/2)
+                tip  = (cx + cos_a*length/2,  cy + sin_a*length/2)
+                base = (cx - cos_a*length/2,  cy - sin_a*length/2)
+                pts = [
+                    (tip[0] + perp_cos*1,    tip[1] + perp_sin*1),
+                    (base[0] + perp_cos*width/2, base[1] + perp_sin*width/2),
+                    (base[0] - perp_cos*width/2, base[1] - perp_sin*width/2),
+                    (tip[0] - perp_cos*1,    tip[1] - perp_sin*1),
+                ]
+                blade_s = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+                pygame.draw.polygon(blade_s, (*bc, 230), [(int(p[0]), int(p[1])) for p in pts])
+                pygame.draw.line(blade_s, (255,255,255,180),
+                                 (int(tip[0]),int(tip[1])), (int(base[0]),int(base[1])), 1)
+                pygame.draw.circle(blade_s, (255,255,255,200), (int(tip[0]),int(tip[1])), 2)
+                surf.blit(blade_s, (0, 0))
+
+
+# ── дебаффы ───────────────────────────────────────────────────────────────────
+def _cb_apply_slow(enemy, slow_pct, duration):
+    """Замедление. Не стакается — только обновляет длительность."""
+    if getattr(enemy, 'SLOW_RESISTANCE', 0.0) >= 1.0:
+        return
+    eff = slow_pct * (1.0 - getattr(enemy, 'SLOW_RESISTANCE', 0.0))
+    if getattr(enemy, '_cb_slowed', False):
+        enemy._cb_slow_dur = max(getattr(enemy, '_cb_slow_dur', 0.0), float(duration))
+        return
+    enemy._cb_slowed     = True
+    enemy._cb_slow_pct   = eff
+    enemy._cb_slow_dur   = float(duration)
+    enemy._cb_orig_speed = enemy.speed
+    enemy.speed          = enemy.speed * (1.0 - eff)
+
+def _cb_apply_burn(enemy, burn_dmg, burn_dur, burn_tick):
+    """Поджог. Не стакается — только обновляет длительность."""
+    if getattr(enemy, '_cb_burning', False):
+        enemy._cb_burn_dur = max(getattr(enemy, '_cb_burn_dur', 0.0), float(burn_dur))
+        return
+    enemy._cb_burning    = True
+    enemy._cb_burn_dmg   = float(burn_dmg)
+    enemy._cb_burn_dur   = float(burn_dur)
+    enemy._cb_burn_tick  = float(burn_tick)
+    enemy._cb_burn_timer = 0.0
+
+def _cb_apply_knockback(enemy, px_amount):
+    """Откидывание назад по пути — против текущего направления движения врага.
+    Кнокбек имеет кулдаун 1.2с на врага, чтобы не стакаться бесконечно."""
+    # кулдаун: не чаще 1.2 сек на одного врага
+    now = pygame.time.get_ticks() * 0.001
+    last_kb = getattr(enemy, '_cb_kb_time', -999.0)
+    if now - last_kb < 1.2:
+        return
+    enemy._cb_kb_time = now
+
+    # смещаем против направления движения
+    vx = getattr(enemy, 'vx', None)
+    vy = getattr(enemy, 'vy', None)
+    if vx is not None and vy is not None:
+        d = math.hypot(vx, vy) or 1.0
+        enemy.x -= (vx / d) * px_amount
+        enemy.y -= (vy / d) * px_amount
+    else:
+        a = getattr(enemy, '_angle', 0.0)
+        enemy.x -= math.cos(a) * px_amount
+        enemy.y -= math.sin(a) * px_amount
+
+def _cb_tick_debuffs(enemy, dt):
+    """Тикает дебаффы на враге. Вызывается каждый кадр из Castbound.update()."""
+    # Burn
+    if getattr(enemy, '_cb_burning', False):
+        enemy._cb_burn_timer += dt
+        enemy._cb_burn_dur   -= dt
+        if enemy._cb_burn_timer >= enemy._cb_burn_tick:
+            enemy._cb_burn_timer -= enemy._cb_burn_tick
+            enemy.take_damage(enemy._cb_burn_dmg)
+        if enemy._cb_burn_dur <= 0:
+            enemy._cb_burning = False
+    # Slow
+    if getattr(enemy, '_cb_slowed', False):
+        enemy._cb_slow_dur -= dt
+        if enemy._cb_slow_dur <= 0:
+            enemy._cb_slowed = False
+            if hasattr(enemy, '_cb_orig_speed'):
+                enemy.speed = enemy._cb_orig_speed
+
+
+def _cb_draw_debuff_fx(surf, enemies):
+    """Рисует визуальные эффекты поджога и замедления поверх врагов."""
+    t = pygame.time.get_ticks()
+    for e in enemies:
+        if not e.alive: continue
+        ex, ey = int(e.x), int(e.y)
+
+        # ── Огонь (burn) ──────────────────────────────────────────────────────
+        if getattr(e, '_cb_burning', False):
+            # 3 случайных язычка пламени, анимированных по времени
+            for i in range(3):
+                phase = (t * 0.008 + i * 2.1) % (math.pi * 2)
+                ox2 = int(math.cos(phase + i) * 7)
+                oy2 = int(math.sin(phase * 0.7) * 4) - 10
+                flicker = int(abs(math.sin(phase)) * 6) + 4
+                fs = pygame.Surface((flicker*2+2, flicker*2+2), pygame.SRCALPHA)
+                # оранжево-красный огонь
+                pygame.draw.circle(fs, (255, 130, 20, 180), (flicker+1, flicker+1), flicker)
+                pygame.draw.circle(fs, (255, 220, 60, 120), (flicker+1, flicker+1), max(1, flicker//2))
+                surf.blit(fs, (ex + ox2 - flicker - 1, ey + oy2 - flicker - 1))
+
+        # ── Замедление (slow) ─────────────────────────────────────────────────
+        if getattr(e, '_cb_slowed', False):
+            # вращающиеся ледяные осколки вокруг врага
+            for i in range(4):
+                angle = (t * 0.002 + i * math.pi / 2) % (math.pi * 2)
+                r_orbit = 13
+                ox2 = int(math.cos(angle) * r_orbit)
+                oy2 = int(math.sin(angle) * r_orbit)
+                cs = pygame.Surface((8, 8), pygame.SRCALPHA)
+                pygame.draw.circle(cs, (140, 220, 255, 200), (4, 4), 3)
+                pygame.draw.circle(cs, (220, 245, 255, 120), (4, 4), 3, 1)
+                surf.blit(cs, (ex + ox2 - 4, ey + oy2 - 4))
+
+
+# ── HSV helper ────────────────────────────────────────────────────────────────
+def _cb_hsv(h, s=1.0, v=1.0):
+    h = h % 360
+    c = v * s; x = c * (1 - abs((h/60) % 2 - 1)); m = v - c
+    if   h <  60: r,g,b = c, x, 0
+    elif h < 120: r,g,b = x, c, 0
+    elif h < 180: r,g,b = 0, c, x
+    elif h < 240: r,g,b = 0, x, c
+    elif h < 300: r,g,b = x, 0, c
+    else:          r,g,b = c, 0, x
+    return (int((r+m)*255), int((g+m)*255), int((b+m)*255))
+
+def _dim_surface(surf, alpha):
+    """Возвращает копию Surface с уменьшенной прозрачностью (alpha 0-255)."""
+    out = surf.copy()
+    out.set_alpha(alpha)
+    return out
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Castbound  —  основной класс юнита
+# ═══════════════════════════════════════════════════════════════════════════════
+class Castbound(Unit):
+    PLACE_COST = 400
+    COLOR      = C_CASTBOUND
+    NAME       = "Castbound"
+    hidden_detection = False
+
+    SWING_DUR  = 0.20   # длительность анимации замаха (сек)
+    SWING_ARC  = 90     # полудуга замаха (градусы)
+    BLADE_LEN  = 38     # длина лезвия от центра (px)
+    BLADE_W    = 5      # ширина линии лезвия
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        # выбранные клинки (список id, например ["ice"] или ["ice","fire"])
+        self.selected_blades: list = ["ice"]
+        self._blade_idx  = 0          # следующий клинок в ротации
+        self._hit_counts = {}         # id(enemy) -> int, для Terra kb
+        self._star_projs = []         # активные _CB_StarProj
+
+        # анимация замаха
+        self._swing_t     = -1.0
+        self._swing_angle = 0.0
+        self._zenith_hue  = 0.0      # радужный цикл для Zenith
+
+        self._apply_level()
+
+    # ── уровневые данные ──────────────────────────────────────────────────────
+    def _apply_level(self):
+        row = CASTBOUND_LEVELS[self.level]
+        (self.damage, self.firerate, self.range_tiles, _,
+         self._max_blades, self._terra_unlocked, self._star_unlocked,
+         self._zenith_mode, self.hidden_detection) = row
+
+        if self._zenith_mode:
+            self.selected_blades = ["zenith"]
+        else:
+            allowed = {"ice", "fire"}
+            if self._terra_unlocked: allowed.add("terra")
+            if self._star_unlocked:  allowed.add("star")
+            self.selected_blades = [b for b in self.selected_blades if b in allowed]
+            if not self.selected_blades:
+                self.selected_blades = ["ice"]
+            while len(self.selected_blades) > self._max_blades:
+                self.selected_blades.pop()
+        self._blade_idx = 0
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(CASTBOUND_LEVELS): return None
+        return CASTBOUND_LEVELS[nxt][3]
+
+    def upgrade(self):
+        if self.level < len(CASTBOUND_LEVELS) - 1:
+            self.level += 1
+            self._apply_level()
+
+    def grant_zenith(self):
+        """Вызывается при победе над Moon Lord."""
+        self.level = 6
+        self._apply_level()
+
+    # ── выбор клинков (публичный API для UI) ──────────────────────────────────
+    def available_blades(self):
+        if self._zenith_mode: return ["zenith"]
+        avail = ["ice"]
+        if self.level >= 1: avail.append("fire")  # fire открывается с lv1
+        if self._terra_unlocked: avail.append("terra")
+        if self._star_unlocked:  avail.append("star")
+        return avail
+
+    def set_blades(self, blade_ids: list):
+        if self._zenith_mode: return
+        avail = set(self.available_blades())
+        cleaned = [b for b in blade_ids if b in avail]
+        if not cleaned: cleaned = ["ice"]
+        self.selected_blades = cleaned[:max(1, self._max_blades)]
+        self._blade_idx = 0
+
+    def toggle_blade(self, blade_id: str):
+        """Переключает один клинок. При лимите 1 — заменяет текущий.
+        При лимите 2+ — добавляет/убирает из набора."""
+        if self._zenith_mode: return
+        avail = set(self.available_blades())
+        if blade_id not in avail: return
+        if self._max_blades == 1:
+            # просто переключаемся на этот клинок
+            self.selected_blades = [blade_id]
+        else:
+            if blade_id in self.selected_blades:
+                # убираем (но оставляем хотя бы 1)
+                new = [b for b in self.selected_blades if b != blade_id]
+                self.selected_blades = new if new else [blade_id]
+            else:
+                # добавляем, соблюдая лимит (убираем первый если переполнено)
+                new = self.selected_blades + [blade_id]
+                self.selected_blades = new[-self._max_blades:]
+        self._blade_idx = 0
+
+    # ── апдейт ───────────────────────────────────────────────────────────────
+    def update(self, dt, enemies, effects, money):
+        # анимация
+        if self._swing_t >= 0:
+            self._swing_t += dt
+            if self._swing_t > self.SWING_DUR:
+                self._swing_t = -1.0
+        self._zenith_hue = (self._zenith_hue + dt * 110) % 360
+
+        # звёзды
+        for sp in self._star_projs:
+            sp.update(dt, enemies, effects)
+        self._star_projs = [sp for sp in self._star_projs if sp.alive]
+
+        # дебаффы на всех врагах
+        for e in enemies:
+            if e.alive:
+                _cb_tick_debuffs(e, dt)
+
+        # кулдаун
+        if self.cd_left > 0:
+            self.cd_left -= dt
+
+        self._try_attack(enemies, effects)
+
+    def _try_attack(self, enemies, effects):
+        if self.cd_left > 0: return
+        targets = self._get_targets(enemies, 1)
+        if not targets: return
+
+        self.cd_left = self.firerate
+        target = targets[0]
+
+        blades = self.selected_blades
+        if not blades: return
+        blade = blades[self._blade_idx % len(blades)]
+        self._blade_idx = (self._blade_idx + 1) % len(blades)
+
+        # анимация замаха
+        self._swing_angle = math.degrees(
+            math.atan2(target.y - self.py, target.x - self.px))
+        self._swing_t = 0.0
+
+        # урон
+        target.take_damage(self.damage)
+        self.total_damage += self.damage
+
+        lv = self.level
+
+        # ── цвет клинка для снаряда ────────────────────────────────────────
+        if self._zenith_mode:
+            _blade_col = _cb_hsv(self._zenith_hue)
+        else:
+            _blade_col = CB_BLADE_DEFS.get(blade, ("", C_CB_ICE, ""))[1]
+
+        # ── применяем эффект клинка ────────────────────────────────────────
+        if blade == "zenith":
+            _cb_apply_slow(target, 0.40, 5)
+            _cb_apply_burn(target, 5, 5, 1)
+            self._terra_hit(target, lv)
+            bdmg, bdur, btick = _CB_FIRE_PARAMS[lv]
+            self._star_projs.append(
+                _CB_StarProj(self.px, self.py, target.x, target.y,
+                             self.damage, bdmg, bdur, btick, _blade_col, has_splash=True))
+
+        elif blade == "ice":
+            slow_pct, slow_dur = _CB_ICE_PARAMS[lv]
+            _cb_apply_slow(target, slow_pct, slow_dur)
+            self._star_projs.append(
+                _CB_StarProj(self.px, self.py, target.x, target.y,
+                             0, 0, 0, 1, _blade_col, has_splash=False))
+
+        elif blade == "fire":
+            bdmg, bdur, btick = _CB_FIRE_PARAMS[lv]
+            _cb_apply_burn(target, bdmg, bdur, btick)
+            self._star_projs.append(
+                _CB_StarProj(self.px, self.py, target.x, target.y,
+                             0, 0, 0, 1, _blade_col, has_splash=False))
+
+        elif blade == "terra":
+            self._terra_hit(target, lv)
+            self._star_projs.append(
+                _CB_StarProj(self.px, self.py, target.x, target.y,
+                             0, 0, 0, 1, _blade_col, has_splash=False))
+
+        elif blade == "star":
+            bdmg, bdur, btick = _CB_FIRE_PARAMS[lv]
+            # Starfury: звезда падает с неба, как в оригинальной Terraria
+            self._star_projs.append(
+                _CB_StarfuryProj(target.x, target.y,
+                                 self.damage, bdmg, bdur, btick, _blade_col))
+
+    def _terra_hit(self, enemy, lv):
+        kb_px, kb_every = _CB_TERRA_PARAMS[lv]
+        if kb_px <= 0: return
+        eid = id(enemy)
+        self._hit_counts[eid] = self._hit_counts.get(eid, 0) + 1
+        if self._hit_counts[eid] >= kb_every:
+            self._hit_counts[eid] = 0
+            _cb_apply_knockback(enemy, kb_px)
+
+    # ── отрисовка ────────────────────────────────────────────────────────────
+    def draw(self, surf):
+        cx, cy = int(self.px), int(self.py)
+
+        t_ms  = pygame.time.get_ticks()
+        pulse = abs(math.sin(t_ms * 0.002))   # 0..1 медленный пульс
+
+        # ── цвета зависят от режима ───────────────────────────────────────────
+        if self._zenith_mode:
+            rune_col   = _cb_hsv(self._zenith_hue)
+            rune_dim   = _cb_hsv((self._zenith_hue + 40) % 360, 0.6, 0.5)
+            horn_col   = _cb_hsv((self._zenith_hue + 180) % 360, 0.7, 0.8)
+        else:
+            # цвет руны по выбранному клинку
+            blade0     = self.selected_blades[0] if self.selected_blades else "ice"
+            rune_col   = CB_BLADE_DEFS.get(blade0, ("", C_CB_ICE, ""))[1]
+            r_,g_,b_   = rune_col
+            rune_dim   = (r_//3, g_//3, b_//3)
+            horn_col   = (160, 80, 200)   # фиолетовые рога
+
+        # анимация пульса руны
+        rpulse = tuple(min(255, int(c * (0.7 + 0.3*pulse))) for c in rune_col)
+
+        P = 4  # 1 пиксель = 4×4 экранных
+        def px(dx, dy, col):
+            pygame.draw.rect(surf, col, (cx + dx*P - P//2, cy + dy*P - P//2, P, P))
+
+        # ── камень (stone colours) ────────────────────────────────────────────
+        ST  = (80,  72,  90)   # основной камень
+        SD  = (48,  42,  58)   # тёмная грань / тень
+        SL  = (110, 100, 125)  # светлая грань
+        SM  = (62,  55,  72)   # средний камень
+
+        # ══ DEMON ALTAR — пьедестал ══
+        #
+        #  Форма (вид сверху, P=4):
+        #
+        #       row -5:   рога (2 пикселя)
+        #       row -4:   рога шире
+        #       row -3:   верхняя полка
+        #       row -2:   тело + руна
+        #       row -1:   тело + руна центр
+        #       row  0:   тело
+        #       row  1:   основание широкое
+        #       row  2:   подножие
+        #
+
+        # Левый рог
+        horn_pixels_l = [
+            (-4, -5, horn_col), (-5, -6, horn_col), (-5, -7, horn_col),
+            (-4, -6, SD),
+        ]
+        # Правый рог (зеркально)
+        horn_pixels_r = [
+            ( 4, -5, horn_col), ( 5, -6, horn_col), ( 5, -7, horn_col),
+            ( 4, -6, SD),
+        ]
+        for dx2, dy2, col in horn_pixels_l + horn_pixels_r:
+            px(dx2, dy2, col)
+
+        # Верхняя полка алтаря
+        shelf = [
+            (-3,-4,SL),(-2,-4,SL),(-1,-4,SL),(0,-4,SL),(1,-4,SL),(2,-4,SL),(3,-4,SL),
+            (-3,-3,SL),(-2,-3,SM),(-1,-3,SM),(0,-3,SM),(1,-3,SM),(2,-3,SM),(3,-3,SD),
+        ]
+        for dx2, dy2, col in shelf:
+            px(dx2, dy2, col)
+
+        # Тело алтаря (3 строки высотой)
+        body_rows = [
+            # row -2
+            [(-3,SD),(-2,ST),(-1,ST),(0,ST),(1,ST),(2,ST),(3,SD)],
+            # row -1
+            [(-3,SD),(-2,ST),(-1,SM),(0,SM),(1,SM),(2,ST),(3,SD)],
+            # row 0
+            [(-3,SD),(-2,ST),(-1,ST),(0,ST),(1,ST),(2,ST),(3,SD)],
+        ]
+        for row_i, row in enumerate(body_rows):
+            dy = -2 + row_i
+            for dx2, col in row:
+                px(dx2, dy, col)
+
+        # Широкое основание
+        base = [
+            (-4,1,SD),(-3,1,SL),(-2,1,SL),(-1,1,SL),(0,1,SL),(1,1,SL),(2,1,SL),(3,1,SL),(4,1,SD),
+            (-4,2,SD),(-3,2,SM),(-2,2,SM),(-1,2,SD),(0,2,SD),(1,2,SD),(2,2,SM),(3,2,SM),(4,2,SD),
+        ]
+        for dx2, dy2, col in base:
+            px(dx2, dy2, col)
+
+        # ── Рунические символы на теле (пульсируют) ──────────────────────────
+        # Левая руна — вертикальная линия + засечки (как I-руна)
+        rune_l = [(-2,-2),(-2,-1),(-2,0),(-1,-2),(-1,0)]
+        # Правая руна — диагональ (как X-руна)
+        rune_r = [(1,-2),(2,-1),(1,0),(2,-2),(1,-1)]
+        # Центральная руна (только row -1, центр) — глаз
+        rune_c = [(0,-2),(0,-1),(0,0)]
+
+        for dx2, dy2 in rune_l + rune_r + rune_c:
+            px(dx2, dy2, rpulse)
+
+        # тёмная "дырка" под рунами для контраста
+        for dx2, dy2 in [(-2,-1),(1,-1)]:
+            px(dx2, dy2, rune_dim)
+
+        # ── Трещины на камне (статичные тёмные пиксели) ───────────────────────
+        cracks = [(-1,-3),(1,-3),(0,1),(-2,2),(2,2)]
+        for dx2, dy2 in cracks:
+            px(dx2, dy2, (35, 30, 42))
+
+        # ── Маленькое свечение руны (просто цветная точка, без Surface) ───────
+        glow_r = int(5 + 3 * pulse)
+        glow_col = tuple(min(255, int(c * 0.5)) for c in rune_col)
+        pygame.draw.circle(surf, glow_col, (cx, cy - P), glow_r)
+
+        # ── мечи (PNG спрайты) ────────────────────────────────────────────────
+        blades_draw = self.selected_blades if self.selected_blades else ["ice"]
+        n = len(blades_draw)
+        for bi, bid in enumerate(blades_draw):
+            if self._zenith_mode:
+                blade_col = _cb_hsv((self._zenith_hue + bi*50) % 360)
+            else:
+                blade_col = CB_BLADE_DEFS.get(bid, ("", C_CB_ICE, ""))[1]
+
+            arc_offset = (bi - (n-1)*0.5) * 22
+
+            if self._swing_t >= 0:
+                prog  = min(self._swing_t / self.SWING_DUR, 1.0)
+                eased = math.sin(prog * math.pi)
+                swing_deg = -self.SWING_ARC + prog * self.SWING_ARC * 2
+                angle = math.radians(self._swing_angle + swing_deg + arc_offset)
+
+                # motion blur — 3 призрачных лезвия (оптимизировано, без SRCALPHA Surface)
+                for gi in range(3):
+                    gfrac = prog - gi * 0.1
+                    if gfrac < 0: continue
+                    ga2 = math.radians(self._swing_angle +
+                                       (-self.SWING_ARC + gfrac*self.SWING_ARC*2) + arc_offset)
+                    gx0 = int(cx + math.cos(ga2)*10)
+                    gy0 = int(cy + math.sin(ga2)*10)
+                    gx_tip = int(cx + math.cos(ga2)*self.BLADE_LEN)
+                    gy_tip = int(cy + math.sin(ga2)*self.BLADE_LEN)
+                    # рисуем полупрозрачную линию через blend_line если доступно
+                    ghost_alpha = max(0, int(60*(1-gi*0.3)*eased))
+                    if ghost_alpha > 10:
+                        ghost_col = tuple(min(255, int(c * ghost_alpha/60)) for c in blade_col)
+                        pygame.draw.line(surf, ghost_col, (gx0, gy0), (gx_tip, gy_tip),
+                                         max(1, self.BLADE_W - gi))
+
+                tip_x  = cx + math.cos(angle)*self.BLADE_LEN
+                tip_y  = cy + math.sin(angle)*self.BLADE_LEN
+                base_x = cx + math.cos(angle)*10
+                base_y = cy + math.sin(angle)*10
+                draw_angle_deg = math.degrees(angle)
+            else:
+                idle_a = math.radians(-55 + bi*20)
+                tip_x  = cx + math.cos(idle_a)*self.BLADE_LEN
+                tip_y  = cy + math.sin(idle_a)*self.BLADE_LEN
+                base_x = cx + math.cos(idle_a)*10
+                base_y = cy + math.sin(idle_a)*10
+                draw_angle_deg = math.degrees(idle_a)
+
+            # PNG меч — рисуем спрайт если доступен, иначе линия
+            blade_filename = CB_BLADE_DEFS.get(bid, ("", None, ""))[2]
+            blade_png = _cb_load_icon(blade_filename, 48) if blade_filename else None
+            if blade_png:
+                # Поворачиваем PNG на нужный угол
+                # PNG мечей обычно смотрят вправо (0°) — поворачиваем против часовой
+                rotated = pygame.transform.rotate(blade_png, -draw_angle_deg - 45)
+                mid_x = int((tip_x + base_x) / 2)
+                mid_y = int((tip_y + base_y) / 2)
+                r2 = rotated.get_rect(center=(mid_x, mid_y))
+                surf.blit(rotated, r2)
+                # лёгкий блик на конце
+                pygame.draw.circle(surf, (255,255,255), (int(tip_x), int(tip_y)), 2)
+            else:
+                # fallback — линия
+                pygame.draw.line(surf, blade_col,
+                                 (int(base_x),int(base_y)),
+                                 (int(tip_x), int(tip_y)), self.BLADE_W)
+                a_rad = math.atan2(tip_y-base_y, tip_x-base_x)
+                ex2 = math.cos(a_rad+math.pi/2)*1.5
+                ey2 = math.sin(a_rad+math.pi/2)*1.5
+                pygame.draw.line(surf, (255,255,255),
+                                 (int(base_x+ex2),int(base_y+ey2)),
+                                 (int(tip_x+ex2), int(tip_y+ey2)), 1)
+                pygame.draw.circle(surf, (255,255,255), (int(tip_x),int(tip_y)), 2)
+                ga_r = math.atan2(tip_y-base_y, tip_x-base_x) + math.pi/2
+                for sign in (-1, 1):
+                    gx_ = base_x + math.cos(ga_r)*sign*7
+                    gy_ = base_y + math.sin(ga_r)*sign*7
+                    pygame.draw.line(surf, (160,120,60),
+                                     (int(base_x),int(base_y)),
+                                     (int(gx_),int(gy_)), 3)
+
+        # ── пипсы уровня ──────────────────────────────────────────────────────
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_GOLD, (cx-12+i*7, cy+34), 3)
+
+        # ── звёздные снаряды ──────────────────────────────────────────────────
+        for sp in self._star_projs:
+            sp.draw(surf)
+
+    def draw_debuffs(self, surf, enemies):
+        """Рисует визуальные эффекты дебаффов поверх врагов. Вызывается из game.py."""
+        _cb_draw_debuff_fx(surf, enemies)
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r*2, r*2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (255,255,255,22), (r,r), r)
+        pygame.draw.circle(s, (255,255,255,60), (r,r), r, 2)
+        surf.blit(s, (int(self.px)-r, int(self.py)-r))
+
+    def get_info(self):
+        if self._zenith_mode:
+            blades_str = "Zenith (ALL)"
+        else:
+            blades_str = " + ".join(
+                CB_BLADE_DEFS[b][0] for b in self.selected_blades)
+        info = {
+            "Damage":   self.damage,
+            "Range":    self.range_tiles,
+            "Firerate": f"{self.firerate:.2f}",
+            "Blades":   blades_str,
+        }
+        if self.hidden_detection:
+            info["HidDet"] = "Hidden Detection"
+        return info
+
+    # ── UI выбора клинков ─────────────────────────────────────────────────────
+    def draw_blade_ui(self, surf, rx, ry, fnt):
+        """Рисует кнопки выбора клинков.
+        rx, ry — левый верхний угол панели.
+        Возвращает list[(pygame.Rect, blade_id)] для обработки кликов."""
+        # Все доступные клинки + заблокированные с подписью "Unlocks X"
+        sz, pad = 40, 5
+        header = fnt.render("Клинки:", True, (200, 180, 255))
+        surf.blit(header, (rx, ry - 18))
+
+        # Полный список в нужном порядке — показываем всегда
+        all_blades = ["ice", "fire", "terra", "star"]
+        if self._zenith_mode:
+            all_blades = ["zenith"]
+        avail_set = set(self.available_blades())
+
+        # Разблокируются на каком уровне
+        _unlock_lv = {"fire": 1, "terra": 3, "star": 5, "zenith": 6}
+
+        rects = []
+        for i, bid in enumerate(all_blades):
+            r = pygame.Rect(rx + i*(sz+pad), ry, sz, sz)
+            is_avail = bid in avail_set
+            is_sel   = bid in self.selected_blades
+            col      = CB_BLADE_DEFS[bid][1]
+
+            if is_avail:
+                bg  = (60, 30, 100) if is_sel else (30, 15, 50)
+                brd = col if is_sel else (70, 50, 90)
+            else:
+                bg  = (18, 12, 28)
+                brd = (45, 35, 55)
+
+            pygame.draw.rect(surf, bg,  r, border_radius=6)
+            pygame.draw.rect(surf, brd, r, 2, border_radius=6)
+
+            ico = _cb_load_icon(CB_BLADE_DEFS[bid][2], sz-8)
+            if ico:
+                ico_draw = ico if is_avail else _dim_surface(ico, 80)
+                surf.blit(ico_draw, (r.x+4, r.y+4))
+            else:
+                lbl_col = col if is_avail else (60, 50, 70)
+                s3 = fnt.render(bid[:3].upper(), True, lbl_col)
+                surf.blit(s3, s3.get_rect(center=r.center))
+
+            if is_sel:
+                pygame.draw.circle(surf, (255,220,80), (r.right-7, r.top+7), 4)
+
+            if not is_avail and bid in _unlock_lv:
+                # подпись "Unlocks Fiery Greatsword" под кнопкой
+                name = CB_BLADE_DEFS[bid][0]
+                tiny = pygame.font.SysFont("segoeui", 9)
+                ul1 = tiny.render(f"Unlocks lv{_unlock_lv[bid]}", True, (110, 90, 130))
+                ul2 = tiny.render(name, True, (110, 90, 130))
+                surf.blit(ul1, (r.x, r.bottom + 2))
+                surf.blit(ul2, (r.x, r.bottom + 12))
+
+            if is_avail:
+                rects.append((r, bid))
+        return rects
+
+    def on_blade_click(self, blade_id: str):
+        """Вызывается при клике на кнопку клинка в UI. Используй вместо set_blades."""
+        self.toggle_blade(blade_id)

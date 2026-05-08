@@ -43,6 +43,7 @@ UNIT_LIMITS["Korzhik"]     = 6
 UNIT_LIMITS["Conduit"]    = 3
 
 UNIT_LIMITS["ControlPanel"] = 1
+UNIT_LIMITS["Castbound"]   = 5
 
 # ── Patch early_access rarity into RARITY_DATA (from game_core) ───────────────
 RARITY_DATA.setdefault("early_access", {
@@ -274,6 +275,9 @@ from units import (
     Felyne, FELYNE_LEVELS, C_FELYNE, C_FELYNE_DARK,
     Conduit, CONDUIT_LEVELS, C_CONDUIT, C_CONDUIT_DARK,
     ControlPanel, C_CTRLPANEL, C_CTRLPANEL_DARK, RemoteControlAbility, _CP_BUFF_DEFS, _CP_ABILITY_CD,
+    Castbound, CASTBOUND_LEVELS, C_CASTBOUND, C_CASTBOUND_DARK,
+    CB_BLADE_DEFS, _cb_load_icon,
+    C_CB_ZENITH, C_CB_ICE,
 )
 
 # ── Archer level 3 upgrade cost → 750 ────────────────────────────────────────
@@ -644,6 +648,7 @@ class AdminPanel:
                 ("Korzhik",Felyne,C_FELYNE),
                 ("Conduit",Conduit,C_CONDUIT),
                 ("CtrlPanel",ControlPanel,C_CTRLPANEL),
+                ("Castbound",Castbound,C_CASTBOUND),
             ]
             cols=8; cw=(pw-28)//cols; ch=100; gap=6
             start_x=px+10; start_y=content_top+6
@@ -1006,6 +1011,8 @@ class UI:
                         self.show_msg(f"Limit: {limit} {UType.NAME}!")
                         return 0
                 u=UType(mx,my); units.append(u)
+                if isinstance(u, Castbound) and (self.save_data or {}).get("castbound_zenith_unlocked"):
+                    u.grant_zenith()
                 if UType is ControlPanel and u.ability is not None:
                     u.ability.cd_left = 60.0  # starting cooldown on placement
                 _sk_rng = getattr(self, '_sk_range_bonus', 0)
@@ -1129,6 +1136,24 @@ class UI:
                     if u.level>=4: u.bomb_mode2="confusion"
                     else: self.show_msg("Unlock at level 4!")
                     return 0
+            # Castbound blade selection buttons
+            if isinstance(self.open_unit, Castbound):
+                u = self.open_unit
+                if not u._zenith_mode:
+                    for key, val in btns.items():
+                        if key.startswith("cb_blade_") and val.collidepoint(pos):
+                            bid = key[len("cb_blade_"):]
+                            if bid in u.available_blades():
+                                if u._max_blades == 1:
+                                    # лимит 1 — просто заменяем текущий клинок
+                                    u.set_blades([bid])
+                                elif bid in u.selected_blades:
+                                    if len(u.selected_blades) > 1:
+                                        new_sel = [b for b in u.selected_blades if b != bid]
+                                        u.set_blades(new_sel)
+                                else:
+                                    u.set_blades(u.selected_blades + [bid])
+                            return 0
             if btns.get("ability_sq") and btns["ability_sq"].collidepoint(pos):
                 if self.open_unit and self.open_unit.ability and self.open_unit.ability.ready():
                     if isinstance(self.open_unit, Harvester):
@@ -1533,6 +1558,10 @@ class UI:
             ts2 = pygame.Surface((8, 8), pygame.SRCALPHA)
             pygame.draw.circle(ts2, (*C_CP2, blink_a2), (4, 4), 3)
             surf.blit(ts2, (cx - 4, cy - 36))
+        elif isinstance(u, Felyne):
+            _draw_tower_icon(surf, "Korzhik", cx, cy, pygame.time.get_ticks()*0.001, size=30)
+        elif isinstance(u, Castbound):
+            _draw_tower_icon(surf, "Castbound", cx, cy, pygame.time.get_ticks()*0.001, size=30)
         else:
             pygame.draw.circle(surf,(70,40,100),(cx,cy),28)
             pygame.draw.circle(surf,u.COLOR,(cx,cy),22)
@@ -2162,7 +2191,7 @@ class UI:
 
             cls=type(u)
             nxt=self._get_next_stats(u)
-            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,ArcherOld:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,HackerLaserTest:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS,Farm:FARM_LEVELS,Harvester:HARVESTER_LEVELS,Twitgunner:TWITGUN_LEVELS,Felyne:FELYNE_LEVELS,Conduit:CONDUIT_LEVELS}
+            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Xw5ytUnit:XW5YT_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,ArcherOld:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commander:COMMANDER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,HackerLaserTest:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS,Farm:FARM_LEVELS,Harvester:HARVESTER_LEVELS,Twitgunner:TWITGUN_LEVELS,Felyne:FELYNE_LEVELS,Conduit:CONDUIT_LEVELS,Castbound:CASTBOUND_LEVELS}
             lvl_list=levels_map.get(cls,[])
             if cls==Jester: lvl_list=JESTER_LEVELS
             total_lvls=len(lvl_list)
@@ -2640,6 +2669,29 @@ class UI:
                 if p_sw:
                     stats.append(("Surge DMG", f"x{_SW_SURGE_PARAMS[u.level][0]:.1f}", f"x{p_sw[0]:.1f}"))
                     stats.append(("Surge FR",  f"x{_SW_SURGE_PARAMS[u.level][1]:.2f}", f"x{p_sw[1]:.2f}"))
+            elif cls==Castbound:
+                nxt_cb = CASTBOUND_LEVELS[u.level+1] if u.level+1 < len(CASTBOUND_LEVELS) else None
+                hd_now  = u.hidden_detection
+                hd_next = bool(nxt_cb and nxt_cb[8] and not hd_now)
+                stats = []
+                if hd_now: stats.append(("HidDet","Hidden Detection",None))
+                stats += [
+                    ("Damage",   u.damage,             nxt_cb[0] if nxt_cb else None),
+                    ("Firerate", f"{u.firerate:.2f}",  f"{nxt_cb[1]:.2f}" if nxt_cb else None),
+                    ("Range",    u.range_tiles,         nxt_cb[2] if nxt_cb else None),
+                ]
+                if nxt_cb:
+                    if u.level == 0:
+                        stats.append(("fire_unlock", None, "Unlocks Fiery Greatsword"))
+                    if nxt_cb[5] and not u._terra_unlocked:
+                        stats.append(("terra_unlock", None, "Unlocks Terra Blade"))
+                    if nxt_cb[6] and not u._star_unlocked:
+                        stats.append(("star_unlock",  None, "Unlocks Starfury"))
+                    if nxt_cb[4] > u._max_blades:
+                        stats.append(("dual_unlock",  None, f"+{nxt_cb[4]-u._max_blades} blade slot"))
+                    if nxt_cb[7] and not u._zenith_mode:
+                        stats.append(("Blades", None, "→ Zenith"))
+                if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
             else:
                 stats=[(k,v,None) for k,v in u.get_info().items()]
 
@@ -2662,7 +2714,9 @@ class UI:
                          "Burn":(255,130,30),"Knockback":(200,160,255),"Splash":(220,100,220),
                          "BeamCircle":(255,240,80),"Expose":(100,255,200),"Confuse":(200,100,255),
                          "IceSlow":(100,200,255),"IceDef":(140,200,255),"Dual":(200,120,255),
-                         "IceBomb_unlock":(80,200,255),"PoisonBomb_unlock":(80,220,60),"ConfBomb_unlock":(200,80,255),}
+                         "IceBomb_unlock":(80,200,255),"PoisonBomb_unlock":(80,220,60),"ConfBomb_unlock":(200,80,255),
+                         "terra_unlock":(100,220,80),"star_unlock":(255,200,60),"dual_unlock":(200,160,255),
+                         "Blades":(180,140,255),}
 
             # === TOP HALF: portrait left + STATS right ===
             # For Frostcelerator: stun bar at very top of card
@@ -2777,6 +2831,16 @@ class UI:
                     btns["upgrade"]=pygame.Rect(mx_m+6,strip_y_actual+54+(btn_h+6)*2+16,mw-12,44)
                 else:
                     btns["upgrade"]=pygame.Rect(mx_m+6,strip_y_actual+54+btn_h+6,mw-12,44)
+            if cls==Castbound and not u._zenith_mode:
+                _cb_avail = u.available_blades()
+                _cb_btn_h = 28; _cb_btn_w = (mw-20) // max(1, len(_cb_avail))
+                _cb_blade_y = strip_y_actual + 56
+                for _cb_i, _cb_bid in enumerate(_cb_avail):
+                    _cb_r = pygame.Rect(mx_m+10+_cb_i*(_cb_btn_w+2), _cb_blade_y, _cb_btn_w-2, _cb_btn_h)
+                    btns[f"cb_blade_{_cb_bid}"] = _cb_r
+                btns["upgrade"] = pygame.Rect(mx_m+6, strip_y_actual+54+_cb_btn_h+8, mw-12, 44)
+            elif cls==Castbound and u._zenith_mode:
+                btns["upgrade"] = pygame.Rect(mx_m+6, strip_y_actual+54+28, mw-12, 44)
             up_rect=btns["upgrade"]
             can_up=bool(cost and money>=cost)
             if can_up:
@@ -2808,6 +2872,9 @@ class UI:
                     surf.blit(price_s,(px_start+ico_m.get_width(), py_mid))
                 else:
                     surf.blit(price_s,(px_start, py_mid))
+            elif cls==Castbound and u.level==5 and not u._zenith_mode:
+                # Zenith is an award — show special button (always pressable)
+                txt(surf,"⚔ Zenith (Award)",up_rect.center,C_CB_ZENITH,font_lg,center=True)
             else:
                 txt(surf,"✓ MAX LEVEL",up_rect.center,(100,160,100),font_lg,center=True)
 
@@ -2923,6 +2990,62 @@ class UI:
                             lock_s2=pygame.font.SysFont("consolas",9).render(f"Lv{req_lv}",True,(90,80,120))
                             surf.blit(lock_s2,(br2.right-lock_s2.get_width()-2, br2.y+2))
 
+            # === CASTBOUND BLADE SELECTOR ===
+            if cls == Castbound:
+                if u._zenith_mode:
+                    # одна кнопка Zenith с иконкой (неактивная, просто визуал)
+                    _zr = pygame.Rect(mx_m+10, strip_y_actual+56, mw-20, 28)
+                    pygame.draw.rect(surf, tuple(max(0,c//2) for c in C_CB_ZENITH), _zr, border_radius=4)
+                    pygame.draw.rect(surf, C_CB_ZENITH, _zr, 2, border_radius=4)
+                    _z_ico = _cb_load_icon("zenith.png", 18)
+                    _z_lbl = font_sm.render("Zenith", True, C_CB_ZENITH)
+                    _z_tw = (18+3+_z_lbl.get_width()) if _z_ico else _z_lbl.get_width()
+                    _z_cx = _zr.x + (_zr.w - _z_tw)//2
+                    _z_cy = _zr.y + (_zr.h - 18)//2
+                    if _z_ico:
+                        surf.blit(_z_ico, (_z_cx, _z_cy))
+                        surf.blit(_z_lbl, (_z_cx+21, _zr.y+(_zr.h-_z_lbl.get_height())//2))
+                    else:
+                        surf.blit(_z_lbl, _z_lbl.get_rect(center=_zr.center))
+                    # selected indicator
+                    pygame.draw.circle(surf, (255,220,80), (_zr.right-8, _zr.top+8), 4)
+                else:
+                    _cb_avail = u.available_blades()
+                    _cb_btn_h = 28
+                    _cb_btn_w = (mw-20) // max(1, len(_cb_avail))
+                    _cb_blade_y = strip_y_actual + 56
+                    _ico_sz = 18
+                    for _cb_i, _cb_bid in enumerate(_cb_avail):
+                        _cb_r = btns.get(f"cb_blade_{_cb_bid}")
+                        if _cb_r is None:
+                            _cb_r = pygame.Rect(mx_m+10+_cb_i*(_cb_btn_w+2), _cb_blade_y, _cb_btn_w-2, _cb_btn_h)
+                        _cb_is_sel = _cb_bid in u.selected_blades
+                        _cb_col    = CB_BLADE_DEFS[_cb_bid][1]
+                        if _cb_is_sel:
+                            _cb_bg  = tuple(max(0,c//2) for c in _cb_col)
+                            _cb_brd = _cb_col
+                            _cb_tcol = _cb_col
+                        else:
+                            _cb_bg  = (22, 14, 38)
+                            _cb_brd = (62, 48, 85)
+                            _cb_tcol = (110, 100, 140)
+                        pygame.draw.rect(surf, _cb_bg,  _cb_r, border_radius=4)
+                        pygame.draw.rect(surf, _cb_brd, _cb_r, 2 if _cb_is_sel else 1, border_radius=4)
+                        # Icon + short name side by side
+                        _cb_ico = _cb_load_icon(CB_BLADE_DEFS[_cb_bid][2], _ico_sz)
+                        _cb_short = {"ice":"Ice","fire":"Fire","terra":"Terra","star":"Star","zenith":"Zenith"}
+                        _lbl_s = font_sm.render(_cb_short.get(_cb_bid, _cb_bid[:4].title()), True, _cb_tcol)
+                        _total_w = (_ico_sz + 3 + _lbl_s.get_width()) if _cb_ico else _lbl_s.get_width()
+                        _cx = _cb_r.x + (_cb_r.w - _total_w) // 2
+                        _cy = _cb_r.y + (_cb_r.h - _ico_sz) // 2
+                        if _cb_ico:
+                            surf.blit(_cb_ico, (_cx, _cy))
+                            surf.blit(_lbl_s, (_cx + _ico_sz + 3, _cb_r.y + (_cb_r.h - _lbl_s.get_height()) // 2))
+                        else:
+                            surf.blit(_lbl_s, _lbl_s.get_rect(center=_cb_r.center))
+                    # blade buttons rendered above
+                    pass
+
             if changing:
                 pygame.draw.line(surf,(48,44,70),(mx_m+8,ch_y-5),(mx_m+mw-8,ch_y-5),1)
             ARR_SZ=14
@@ -2977,6 +3100,33 @@ class UI:
                     _jinfo_y += 16
                 surf.set_clip(old_clip)
 
+
+            # === CASTBOUND EXTRA INFO — серый текст под changing stats ===
+            if cls==Castbound and not u._zenith_mode:
+                _cb_info_f = pygame.font.SysFont("segoeui", 13)
+                _cb_info_lines = []
+                lv = u.level
+                from units import _CB_ICE_PARAMS, _CB_FIRE_PARAMS, _CB_TERRA_PARAMS
+                slow_pct, slow_dur = _CB_ICE_PARAMS[lv]
+                _cb_info_lines.append(f"Ice Blade: slow {int(slow_pct*100)}%  {slow_dur}s")
+                if lv >= 1:
+                    bdmg, bdur, btick = _CB_FIRE_PARAMS[lv]
+                    _cb_info_lines.append(f"Fiery GS: {bdmg}/tick  {bdur}s")
+                if u._terra_unlocked:
+                    kb_px, kb_hits = _CB_TERRA_PARAMS[lv]
+                    _cb_info_lines.append(f"Terra: knockback {kb_px}px  (every {kb_hits} hits)")
+                if u._star_unlocked:
+                    _cb_info_lines.append(f"Starfury: splash proj")
+                _cbinfo_y = ch_y + 4
+                _card_clip = pygame.Rect(mx_m+2, my_m+2, mw-4, menu.h-4)
+                old_clip = surf.get_clip()
+                surf.set_clip(_card_clip)
+                for _cbl in _cb_info_lines:
+                    if _cbinfo_y + 15 > my_m + menu.h - 48: break
+                    _cbs = _cb_info_f.render(_cbl, True, (155, 150, 180))
+                    surf.blit(_cbs, (mx_m+10, _cbinfo_y))
+                    _cbinfo_y += 16
+                surf.set_clip(old_clip)
 
             # === HARVESTER EXTRA INFO — серый текст под changing stats ===
             if cls==Harvester:
@@ -4203,6 +4353,56 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
         tip_s = pygame.Surface((sc(10), sc(10)), pygame.SRCALPHA)
         pygame.draw.circle(tip_s, (*C_CP, blink_a), (sc(5), sc(5)), max(1, sc(3)))
         surf.blit(tip_s, (cx - sc(5), ant_tip_y - sc(5)))
+
+    elif unit_name == "Castbound":
+        # Аура
+        aura_r = sc(32)
+        aura_s = pygame.Surface((aura_r * 2, aura_r * 2), pygame.SRCALPHA)
+        aura_a = int(abs(math.sin(t * 2.5)) * 40 + 20)
+        pygame.draw.circle(aura_s, (60, 140, 220, aura_a), (aura_r, aura_r), aura_r)
+        surf.blit(aura_s, (cx - aura_r, cy - aura_r))
+        # Пиксельный спрайт — синяя броня с оранжевыми акцентами
+        _cb_main   = (60, 140, 220)
+        _cb_dark   = (20, 60, 120)
+        _cb_accent = (255, 140, 30)
+        P2 = max(2, int(3 * s))
+        def _cbpx(dx, dy, col):
+            sx2 = pygame.Surface((P2, P2), pygame.SRCALPHA)
+            sx2.fill((*col, 255))
+            surf.blit(sx2, (cx + dx*P2 - P2//2, cy + dy*P2 - P2//2))
+        for dx2, col in [(0, _cb_main), (1, _cb_main), (-1, _cb_main)]:
+            _cbpx(dx2, -4, col)
+        for dx2, col in [(-2, _cb_dark), (-1, _cb_main), (0, _cb_accent), (1, _cb_main), (2, _cb_dark)]:
+            _cbpx(dx2, -3, col)
+        for dx2, col in [(-2, _cb_main), (-1, _cb_dark), (0, _cb_dark), (1, _cb_dark), (2, _cb_main)]:
+            _cbpx(dx2, -2, col)
+        for dx2, col in [(-2, _cb_main), (-1, _cb_accent), (0, _cb_accent), (1, _cb_accent), (2, _cb_main)]:
+            _cbpx(dx2, -1, col)
+        for dx2, col in [(-3, _cb_accent), (-2, _cb_main), (-1, _cb_main), (0, _cb_main),
+                          (1, _cb_main), (2, _cb_main), (3, _cb_accent)]:
+            _cbpx(dx2, 0, col)
+        for dx2, col in [(-2, _cb_main), (-1, _cb_dark), (0, _cb_accent), (1, _cb_dark), (2, _cb_main)]:
+            _cbpx(dx2, 1, col)
+        for dx2, col in [(-2, _cb_main), (-1, _cb_main), (0, _cb_dark), (1, _cb_main), (2, _cb_main)]:
+            _cbpx(dx2, 2, col)
+        for dx2, col in [(-2, _cb_dark), (-1, _cb_accent), (0, _cb_accent), (1, _cb_accent), (2, _cb_dark)]:
+            _cbpx(dx2, 3, col)
+        for dx2, dy2, col in [(-2, 4, _cb_main), (-1, 4, _cb_dark), (1, 4, _cb_dark), (2, 4, _cb_main),
+                                (-2, 5, _cb_dark), (-1, 5, _cb_main), (1, 5, _cb_main), (2, 5, _cb_dark)]:
+            _cbpx(dx2, dy2, col)
+        # Глаза (мигающие)
+        eye_pulse = int(abs(math.sin(t * 3)) * 40) + 180
+        pygame.draw.rect(surf, (eye_pulse, 220, 255), (cx - 2*P2 - P2//2, cy - 2*P2 - P2//2, P2, P2))
+        pygame.draw.rect(surf, (eye_pulse, 220, 255), (cx + 1*P2 - P2//2, cy - 2*P2 - P2//2, P2, P2))
+        # Меч — вращается
+        sword_a = math.radians(t * 120 - 55)
+        blade_len = sc(22)
+        stx = cx + int(math.cos(sword_a) * blade_len)
+        sty = cy + int(math.sin(sword_a) * blade_len)
+        sbx = cx + int(math.cos(sword_a) * sc(8))
+        sby = cy + int(math.sin(sword_a) * sc(8))
+        pygame.draw.line(surf, C_CB_ICE, (sbx, sby), (stx, sty), max(1, sp(3)))
+        pygame.draw.circle(surf, (255, 255, 255), (stx, sty), max(1, sp(2)))
 
     else:
         # Fallback: colored circle with unit's color
@@ -6740,6 +6940,10 @@ class MainMenu:
         for i, (attr, _label, _acc) in enumerate(self._BTN_DEFS):
             setattr(self, attr, pygame.Rect(cx - btn_w//2, y0 + i*(btn_h+gap), btn_w, btn_h))
 
+        # ── Castbound corner button (bottom-right above version) ─────────────
+        cb_w, cb_h = 130, 32
+        self.btn_castbound = pygame.Rect(SCREEN_W - cb_w - 14, SCREEN_H - cb_h - 36, cb_w, cb_h)
+
         # Void particles: black/dark drifting dots, glowing motes, void wisps
         self._particles  = [_VoidDot()    for _ in range(90)]
         self._embers     = [_VoidMote()   for _ in range(60)]
@@ -6906,6 +7110,7 @@ class MainMenu:
                     if self.btn_achievements.collidepoint(pos): self.action = "achievements"
                     if self.btn_settings.collidepoint(pos):     self.action = "settings"
                     if self.btn_quit.collidepoint(pos):         self.action = "quit"
+                    if self.btn_castbound.collidepoint(pos):    self.action = "castbound"
             self._draw()
             pygame.display.flip()
         return self.action
@@ -7032,6 +7237,26 @@ class MainMenu:
         ver_s.set_alpha(110)
         surf.blit(ver_s, (SCREEN_W - ver_s.get_width() - 14, SCREEN_H - ver_s.get_height() - 14))
 
+        # ── Castbound corner button ───────────────────────────────────────────
+        cb     = self.btn_castbound
+        cb_hov = cb.collidepoint(mx, my)
+        cb_pulse = 0.5 + 0.5 * math.sin(t * 3.0)
+        cb_brd = (
+            int(100 + 80 * cb_pulse),
+            int(40  + 20 * cb_pulse),
+            int(180 + 60 * cb_pulse),
+        )
+        cb_s = pygame.Surface((cb.w, cb.h), pygame.SRCALPHA)
+        cb_bg = (30, 10, 60, 210) if cb_hov else (16, 6, 36, 190)
+        pygame.draw.rect(cb_s, cb_bg, (0, 0, cb.w, cb.h), border_radius=7)
+        pygame.draw.rect(cb_s, (*cb_brd, 255), (0, 0, cb.w, cb.h), 2, border_radius=7)
+        surf.blit(cb_s, (cb.x, cb.y))
+        cb_f   = pygame.font.SysFont("segoeui", 16, bold=True)
+        cb_col = (200, 140, 255) if cb_hov else (140, 80, 200)
+        cb_lbl = cb_f.render("castbound", True, cb_col)
+        surf.blit(cb_lbl, (cb.centerx - cb_lbl.get_width() // 2,
+                           cb.centery - cb_lbl.get_height() // 2))
+
         # ── Fade-in overlay ───────────────────────────────────────────────────
         if self._fade_alpha > 0:
             fade = pygame.Surface((SCREEN_W, SCREEN_H))
@@ -7039,6 +7264,404 @@ class MainMenu:
             fade.set_alpha(int(self._fade_alpha))
             surf.blit(fade, (0, 0))
             self._fade_alpha = max(0, self._fade_alpha - 5)
+
+
+# ── Castbound Dialog ───────────────────────────────────────────────────────────
+class CastboundDialog:
+    """Mysterious corner NPC dialog with typewriter text and choice buttons."""
+
+    _COST = 10000
+
+    # Quest stages stored in save_data["castbound_quest"]:
+    #   None / missing   → not started (show pay prompt)
+    #   "beat_fallen"    → quest 1 given, not yet completed
+    #   "kill_abnormal"  → quest 2 given (fallen beaten), not yet completed
+    #   "obtain_towers"  → quest 3 given (abnormals killed), not yet completed
+    #   "moon_lord"      → quest 3 complete — Moon Lord reveal shown
+    #   "done"           → all quests completed (legacy / future)
+
+    def __init__(self, screen, save_data):
+        self.screen    = screen
+        self.save_data = save_data
+        self._t        = 0.0
+        self._done     = False
+        self._result   = "menu"
+
+        # Dialog box dimensions
+        dw, dh   = 640, 320
+        self._rect = pygame.Rect(
+            SCREEN_W // 2 - dw // 2,
+            SCREEN_H // 2 - dh // 2,
+            dw, dh
+        )
+
+        # ── Determine opening state based on quest progress ────────────────────
+        quest_stage = self.save_data.get("castbound_quest", None)
+
+        # Check if fallen was beaten (mode "fallen" appears in _gs_chain)
+        fallen_beaten = "fallen" in self.save_data.get("_gs_chain", [])
+
+        # Check if abnormal kill quest is complete
+        abnormal_kills = self.save_data.get("castbound_abnormal_kills", 0)
+        abnormal_done  = abnormal_kills >= 100
+
+        # Check if player owns every tower in the game
+        # Mirror the same logic as LoadoutScreen._owned_units()
+        _owned_raw = list(self.save_data.get("owned_units", ["Assassin"]))
+        if self.save_data.get("frostcelerator_unlocked") and "Frostcelerator" not in _owned_raw:
+            _owned_raw.append("Frostcelerator")
+        if "hacker_laser_effects_test" not in _owned_raw:
+            _owned_raw.append("hacker_laser_effects_test")
+        _owned_raw = ["Cowboy" if u == "Golden Cowboy" else u for u in _owned_raw]
+        if "Cowboy" not in _owned_raw:
+            _owned_raw.append("Cowboy")
+        if "Twitgunner" not in _owned_raw:
+            _owned_raw.append("Twitgunner")
+        if "Control Panel" not in _owned_raw:
+            _owned_raw.append("Control Panel")
+        unlocked = set(_owned_raw)
+        # Only check towers that are actually in ALL_UNITS_POOL (skip internal test units)
+        _all_towers = {u["name"] for u in ALL_UNITS_POOL}
+        all_towers_owned = _all_towers.issubset(unlocked)
+
+        # Typewriter state  — phase: "typing" | "choice" | "reply" | "quest" | "nag" | "moon_lord"
+        self._phase        = "typing"
+        self._full_text    = "Pay me 10000"   # coin icon appended separately
+        self._visible_chars = 0
+        self._char_timer    = 0.0
+        self._char_delay    = 0.045           # seconds per character
+
+        self._reply_text   = ""
+        self._reply_chars  = 0
+        self._reply_timer  = 0.0
+
+        self._quest_pause  = 5.0              # pause before "beat fallen"
+        self._quest_paused = False
+        self._quest_timer  = 0.0
+
+        # Moon Lord reveal state
+        self._ml_phase     = 0      # 0=wait, 1=typing "Good job. Now fight the..", 2=pause, 3=typing "Moon Lord"
+        self._ml_text1     = "Good job. Now fight the.."
+        self._ml_text2     = "Moon Lord"
+        self._ml_chars1    = 0
+        self._ml_chars2    = 0
+        self._ml_timer     = 0.0
+        self._ml_char_delay = 0.12  # slow typing for Moon Lord (~10 sec for ~83 chars total)
+        self._ml_shake_t   = 0.0
+
+        # ── Decide what to show on open ───────────────────────────────────────
+        if quest_stage == "beat_fallen":
+            if fallen_beaten:
+                # Quest 1 complete → advance to quest 2
+                self.save_data["castbound_quest"] = "kill_abnormal"
+                write_save(self.save_data)
+                self._start_nag("Well done. Now kill abnormal 100 times.")
+            else:
+                # Still not done
+                self._start_nag("I already told u. Beat fallen)")
+
+        elif quest_stage == "kill_abnormal":
+            if abnormal_done:
+                # Quest 2 complete → advance to quest 3
+                self.save_data["castbound_quest"] = "obtain_towers"
+                write_save(self.save_data)
+                if all_towers_owned:
+                    self._start_nag("You already have every tower in game..")
+                else:
+                    self._start_nag("Now obtain every tower in game.")
+            else:
+                self._start_nag(f"I already told u. Kill abnormal 100 times")
+
+        elif quest_stage == "obtain_towers":
+            if all_towers_owned:
+                # Quest 3 complete → Moon Lord reveal
+                self.save_data["castbound_quest"] = "moon_lord"
+                write_save(self.save_data)
+                self._start_moon_lord()
+            else:
+                self._start_nag("I already told u. Obtain every tower in game.")
+
+        elif quest_stage == "moon_lord":
+            # Moon Lord revealed — launch the fight immediately
+            self._done = True
+            self._result = "moon_lord_fight"
+
+        elif quest_stage == "done":
+            # Разблокируем Castbound сразу при открытии диалога
+            _owned_cb = list(self.save_data.get("owned_units", []))
+            if "Castbound" not in _owned_cb:
+                _owned_cb.append("Castbound")
+                self.save_data["owned_units"] = _owned_cb
+                write_save(self.save_data)
+            self._start_nag("You've proven yourself.\nYou deserve this.\nUnlocked castbound tower.")
+
+        # else: quest_stage is None → show normal pay prompt (default state above)
+
+        # Fonts
+        self._f_main = pygame.font.SysFont("segoeui", 26, bold=True)
+        self._f_sub  = pygame.font.SysFont("segoeui", 20, bold=False)
+        self._f_btn  = pygame.font.SysFont("segoeui", 22, bold=True)
+
+        # Coin icon (small)
+        self._coin_ico = load_icon("coin_ico", 26)
+
+        # Button rects (set when phase == "choice")
+        bw, bh = 160, 44
+        cx = self._rect.centerx
+        by = self._rect.bottom - 64
+        self._btn_pay = pygame.Rect(cx - bw - 10, by, bw, bh)
+        self._btn_no  = pygame.Rect(cx + 10,       by, bw, bh)
+
+    def _start_nag(self, text):
+        """Start the dialog in 'nag' phase — just show a message then exit."""
+        self._phase       = "nag"
+        self._reply_text  = text
+        self._reply_chars = 0
+        self._reply_timer = 0.0
+        self._quest_timer = 0.0
+
+    def _start_moon_lord(self):
+        """Start the Moon Lord reveal sequence."""
+        self._phase    = "moon_lord"
+        self._ml_phase = 0       # 0 = pre-pause (2 sec), 1 = type text1, 2 = Moon Lord slow type
+        self._ml_chars1 = 0
+        self._ml_chars2 = 0
+        self._ml_timer  = 0.0
+        self._ml_shake_t = 0.0
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+    def _draw_panel(self):
+        surf = self.screen
+        r    = self._rect
+
+        # Dark semi-transparent background
+        panel = pygame.Surface((r.w, r.h), pygame.SRCALPHA)
+        pygame.draw.rect(panel, (8, 6, 18, 230), (0, 0, r.w, r.h), border_radius=14)
+        pygame.draw.rect(panel, (180, 140, 255, 180), (0, 0, r.w, r.h), 2, border_radius=14)
+        surf.blit(panel, (r.x, r.y))
+
+        # Title bar "CASTBOUND"
+        title_s = self._f_main.render("CASTBOUND", True, (160, 100, 255))
+        surf.blit(title_s, (r.centerx - title_s.get_width() // 2, r.y + 14))
+
+        # Divider
+        pygame.draw.line(surf, (100, 70, 180),
+                         (r.x + 20, r.y + 50), (r.right - 20, r.y + 50), 1)
+
+    def _draw_typewriter(self, text_visible):
+        surf = self.screen
+        r    = self._rect
+        base_x = r.x + 30
+        base_y = r.y + 68
+
+        # Render the text portion char by char
+        x_cur = base_x
+        for ch in text_visible:
+            char_s = self._f_main.render(ch, True, (230, 220, 255))
+            surf.blit(char_s, (x_cur, base_y))
+            x_cur += char_s.get_width()
+
+        # If we've finished typing the text, draw coin icon right after
+        if len(text_visible) == len(self._full_text):
+            if self._coin_ico:
+                surf.blit(self._coin_ico,
+                          (x_cur + 6, base_y + (self._f_main.get_height() - self._coin_ico.get_height()) // 2))
+
+    def _draw_reply(self):
+        surf    = self.screen
+        r       = self._rect
+        visible = self._reply_text[:self._reply_chars]
+        lines   = visible.split("\n")
+        line_h  = self._f_main.get_height() + 8
+        base_y  = r.y + 68
+        for i, line in enumerate(lines):
+            col = (220, 180, 255) if i == 2 else (255, 200, 80)
+            lbl = self._f_main.render(line, True, col)
+            surf.blit(lbl, (r.centerx - lbl.get_width() // 2, base_y + i * line_h))
+
+    def _draw_buttons(self, mx, my):
+        surf = self.screen
+        for btn, label, ac in [
+            (self._btn_pay, "Pay",  (60, 200, 80)),
+            (self._btn_no,  "No",   (200, 60, 60)),
+        ]:
+            hov = btn.collidepoint(mx, my)
+            bg  = (*ac, 200) if hov else (20, 16, 36, 210)
+            brd = ac if hov else (130, 100, 200)
+            bs  = pygame.Surface((btn.w, btn.h), pygame.SRCALPHA)
+            pygame.draw.rect(bs, bg,  (0, 0, btn.w, btn.h), border_radius=8)
+            pygame.draw.rect(bs, brd, (0, 0, btn.w, btn.h), 2, border_radius=8)
+            surf.blit(bs, (btn.x, btn.y))
+            lbl = self._f_btn.render(label, True, (255, 255, 255))
+            surf.blit(lbl, (btn.centerx - lbl.get_width() // 2,
+                            btn.centery - lbl.get_height() // 2))
+
+    def _draw_moon_lord(self):
+        """Draw the Moon Lord reveal: 'Good job. Now fight the..' then shaking red 'Moon Lord'."""
+        surf = self.screen
+        r    = self._rect
+        cx   = r.centerx
+        base_y = r.y + 68
+
+        # Phase 0: just blank (pre-pause)
+        if self._ml_phase == 0:
+            return
+
+        # Phase 1+: draw "Good job. Now fight the.."
+        visible1 = self._ml_text1[:self._ml_chars1]
+        lbl1 = self._f_main.render(visible1, True, (255, 200, 80))
+        surf.blit(lbl1, (cx - lbl1.get_width() // 2, base_y))
+
+        # Phase 2: draw shaking red "Moon Lord" below
+        if self._ml_phase >= 2 and self._ml_chars2 > 0:
+            visible2 = self._ml_text2[:self._ml_chars2]
+            ml_font  = pygame.font.SysFont("segoeui", 38, bold=True)
+            ml_surf  = ml_font.render(visible2, True, (220, 30, 30))
+
+            # Shake: random offset that grows with time
+            shake_mag = min(6, int(self._ml_shake_t * 2))
+            shake_x   = random.randint(-shake_mag, shake_mag)
+            shake_y   = random.randint(-shake_mag, shake_mag)
+
+            dest_x = cx - ml_surf.get_width() // 2 + shake_x
+            dest_y = base_y + self._f_main.get_height() + 18 + shake_y
+            surf.blit(ml_surf, (dest_x, dest_y))
+
+    # ── Main loop ─────────────────────────────────────────────────────────────
+    def run(self):
+        clock = pygame.time.Clock()
+        while not self._done:
+            dt   = clock.tick(60) / 1000.0
+            self._t += dt
+            mx, my = pygame.mouse.get_pos()
+
+            for ev in pygame.event.get():
+                if ev.type == pygame.QUIT:
+                    pygame.quit(); sys.exit()
+
+                if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                    if self._phase == "choice":
+                        if self._btn_no.collidepoint(ev.pos):
+                            # "bye" then back to menu
+                            self._phase       = "reply"
+                            self._reply_text  = "bye"
+                            self._reply_chars = 0
+                            self._reply_timer = 0.0
+
+                        elif self._btn_pay.collidepoint(ev.pos):
+                            coins = self.save_data.get("coins", 0)
+                            if coins < self._COST:
+                                self._phase       = "reply"
+                                self._reply_text  = "you are poor"
+                                self._reply_chars = 0
+                                self._reply_timer = 0.0
+                            else:
+                                # Deduct coins and give quest 1
+                                self.save_data["coins"] = coins - self._COST
+                                self.save_data["castbound_quest"] = "beat_fallen"
+                                write_save(self.save_data)
+                                self._phase       = "quest"
+                                self._reply_text  = "Ur first quest is..."
+                                self._reply_chars = 0
+                                self._reply_timer = 0.0
+                                self._quest_paused = False
+                                self._quest_timer  = 0.0
+
+            # ── Update typewriter ──────────────────────────────────────────────
+            if self._phase == "typing":
+                self._char_timer += dt
+                while self._char_timer >= self._char_delay and self._visible_chars < len(self._full_text):
+                    self._char_timer -= self._char_delay
+                    self._visible_chars += 1
+                if self._visible_chars >= len(self._full_text):
+                    self._phase = "choice"
+
+            elif self._phase in ("reply", "quest", "nag"):
+                self._reply_timer += dt
+                while self._reply_timer >= self._char_delay and self._reply_chars < len(self._reply_text):
+                    self._reply_timer -= self._char_delay
+                    self._reply_chars += 1
+
+                if self._reply_chars >= len(self._reply_text):
+                    if self._phase in ("reply", "nag"):
+                        # small pause then back to menu
+                        self._quest_timer += dt
+                        pause = 3.0 if "\n" in self._reply_text else 1.5
+                        if self._quest_timer > pause:
+                            self._done = True
+
+                    elif self._phase == "quest":
+                        if not self._quest_paused:
+                            # wait 5 seconds then show "beat fallen"
+                            self._quest_timer += dt
+                            if self._quest_timer >= self._quest_pause:
+                                self._quest_paused = True
+                                self._reply_text   = "Ur first quest is... beat fallen"
+                                # don't reset _reply_chars — append to existing display
+                        else:
+                            # finished — wait a moment then exit
+                            self._quest_timer += dt   # reuse timer
+                            if self._quest_timer >= self._quest_pause + 2.5:
+                                self._done = True
+
+            elif self._phase == "moon_lord":
+                self._ml_timer   += dt
+                self._ml_shake_t += dt
+
+                if self._ml_phase == 0:
+                    # 2-second pre-pause
+                    if self._ml_timer >= 2.0:
+                        self._ml_phase = 1
+                        self._ml_timer = 0.0
+
+                elif self._ml_phase == 1:
+                    # Typewrite "Good job. Now fight the.."
+                    while self._ml_timer >= self._char_delay and self._ml_chars1 < len(self._ml_text1):
+                        self._ml_timer -= self._char_delay
+                        self._ml_chars1 += 1
+                    if self._ml_chars1 >= len(self._ml_text1):
+                        self._ml_phase = 2
+                        self._ml_timer = 0.0
+                        self._ml_shake_t = 0.0
+
+                elif self._ml_phase == 2:
+                    # Slowly type "Moon Lord" (~10 sec total → delay ≈ 0.12s * 9 chars = 1.08s,
+                    # but we pad with a longer per-char delay)
+                    while self._ml_timer >= self._ml_char_delay and self._ml_chars2 < len(self._ml_text2):
+                        self._ml_timer -= self._ml_char_delay
+                        self._ml_chars2 += 1
+                    if self._ml_chars2 >= len(self._ml_text2):
+                        self._ml_phase = 3
+
+                elif self._ml_phase == 3:
+                    # Hold for 3 seconds then exit
+                    if self._ml_timer >= 3.0:
+                        self._done = True
+
+            # ── Draw ──────────────────────────────────────────────────────────
+            # Dim background
+            dim = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            dim.fill((0, 0, 0, 140))
+            self.screen.blit(dim, (0, 0))
+
+            self._draw_panel()
+
+            if self._phase == "typing":
+                self._draw_typewriter(self._full_text[:self._visible_chars])
+
+            elif self._phase == "choice":
+                self._draw_typewriter(self._full_text)   # full text stays
+                self._draw_buttons(mx, my)
+
+            elif self._phase in ("reply", "quest", "nag"):
+                self._draw_reply()
+
+            elif self._phase == "moon_lord":
+                self._draw_moon_lord()
+
+            pygame.display.flip()
+
+        return self._result
 
 
 # ── Loadout Screen ──────────────────────────────────────────────────────────────
@@ -7072,6 +7695,7 @@ ALL_UNITS_POOL = [
     {"name": "Rubber Duck",  "rarity": "common"},
     {"name": "Harvester",   "rarity": "epic"},
     {"name": "Control Panel", "rarity": "early_access"},
+    {"name": "Castbound",    "rarity": "apex"},
 ]
 
 # Coin cost to unlock units (None = not purchasable / exclusive)
@@ -7108,6 +7732,7 @@ UNIT_SHOP_PRICES = {
     "Rubber Duck": 1300,
     "Harvester":   5000,
     "Control Panel": None,   # Early Access — free to unlock
+    "Castbound":     None,   # не продаётся — открывается за убийство Moon Lord
 }
 
 # ── Base stats for detail panel ───────────────────────────────────────────────
@@ -7144,6 +7769,7 @@ UNIT_BASE_STATS = {
     "Harvester":      {"cost": 2000, "limit": 5,  "damage": 80,   "firerate": 1.0,  "range": 6,  "income": 80},
     "Control Panel":  {"cost": 5000, "limit": 1,  "damage": 0,    "firerate": 0.0,  "range": 6,  "income": None},
     "hacker_laser_effects_test": {"cost": 7500, "limit": 1, "damage": 9999, "firerate": 9.9, "range": 20, "income": None},
+    "Castbound":      {"cost": 400,  "limit": 5,  "damage": 4,    "firerate": 0.8,  "range": 6.2,"income": None},
 }
 
 # ── Tower descriptions — fill in your own later ───────────────────────────────
@@ -7178,6 +7804,7 @@ UNIT_DESCRIPTIONS = {
     "Harvester":      "A haunted scarecrow that fires piercing bolts and can summon thorns to slow enemies.",
     "Control Panel":  "A remote support station. Use 'Remote Control' to buff a nearby tower with boosted Range, Damage, or Firerate for a chosen duration.",
     "hacker_laser_effects_test": "??? ERROR 404 UNIT NOT FOUND ???",
+    "Castbound":      "A warrior bound to celestial blades. Choose your swords — Ice Blade slows, Fiery Greatsword burns, Terra Blade knocks back. Ascends to wield the all-powerful Zenith upon defeating the Moon Lord. Unlocked by killing the Moon Lord.",
 }
 
 class LoadoutScreen:
@@ -7588,6 +8215,8 @@ class LoadoutScreen:
                 "Soul Weaver": SoulWeaver, "Rubber Duck": RubberDuck,
                 "Harvester": Harvester, "Twitgunner": Twitgunner,
                 "Korzhik": Felyne, "Conduit": Conduit,
+                "Control Panel": ControlPanel, "ControlPanel": ControlPanel,
+                "Castbound": Castbound,
             }
             _cls_ld = _name_to_cls_ld.get(uname)
             _static = UNIT_BASE_STATS.get(uname, {})
@@ -8322,7 +8951,8 @@ class Game:
                         "Conduit": Conduit,
                         "Control Panel": ControlPanel,
                         "ControlPanel": ControlPanel,
-                        "CtrlPanel": ControlPanel}
+                        "CtrlPanel": ControlPanel,
+                        "Castbound": Castbound}
         _loadout = self.save_data.get("loadout", ["Assassin", "Accelerator", None, None, None])
         while len(_loadout) < 5: _loadout.append(None)
         self.ui.SLOT_TYPES = [_name_to_cls.get(n) if n else None for n in _loadout]
@@ -8764,20 +9394,54 @@ class Game:
                             self.ui.drag_unit = None; self.ui.selected_slot = None
                         elif not self.paused: self.paused = True
                     if ev.key == pygame.K_F1: self.console.toggle()
+                    # ── F9: skip castbound quest stage (debug) ─────────────────
+                    if ev.key == pygame.K_F9:
+                        _cq = self.save_data.get("castbound_quest", None)
+                        if _cq is None:
+                            # Skip paying — give quest 1 directly
+                            self.save_data["castbound_quest"] = "beat_fallen"
+                            write_save(self.save_data)
+                            self.ui.show_msg("[DEBUG] Castbound: quest 1 given (beat fallen)", 3.0)
+                        elif _cq == "beat_fallen":
+                            # Mark fallen as beaten + advance to quest 2
+                            _chain = self.save_data.get("_gs_chain", [])
+                            if "fallen" not in _chain:
+                                _chain.append("fallen")
+                                self.save_data["_gs_chain"] = _chain
+                            self.save_data["castbound_quest"] = "kill_abnormal"
+                            self.save_data["castbound_abnormal_kills"] = 0
+                            write_save(self.save_data)
+                            self.ui.show_msg("[DEBUG] Castbound: quest 2 given (kill abnormal x100)", 3.0)
+                        elif _cq == "kill_abnormal":
+                            # Complete kill quest → give quest 3
+                            self.save_data["castbound_quest"] = "obtain_towers"
+                            self.save_data["castbound_abnormal_kills"] = 100
+                            write_save(self.save_data)
+                            self.ui.show_msg("[DEBUG] Castbound: quest 3 given (obtain every tower)", 3.0)
+                        elif _cq == "obtain_towers":
+                            # Complete tower quest → Moon Lord stage
+                            self.save_data["castbound_quest"] = "moon_lord"
+                            write_save(self.save_data)
+                            self.ui.show_msg("[DEBUG] Castbound: Moon Lord revealed!", 3.0)
+                        elif _cq == "moon_lord":
+                            self.ui.show_msg("[DEBUG] Castbound: no more quests to skip", 2.0)
+                        else:
+                            self.ui.show_msg("[DEBUG] Castbound: no more quests to skip", 2.0)
                     if ev.key == pygame.K_e and self.ui.open_unit:
                         u = self.ui.open_unit; cost = u.upgrade_cost()
                         if cost is not None:
                             cost = int(cost * getattr(self.ui, 'cost_mult', 1.0))
-                        if cost and self.money >= cost:
-                            # Strip Enhanced Optics bonus before upgrade so it doesn't stack
-                            if getattr(self, '_sk_range_bonus', 0) > 0:
-                                u.range_tiles = getattr(u, '_base_range_tiles', u.range_tiles)
-                            u.upgrade(); self.money -= cost
-                            # Re-apply Enhanced Optics range bonus on the fresh post-upgrade range
-                            if getattr(self, '_sk_range_bonus', 0) > 0:
-                                u._base_range_tiles = u.range_tiles
-                                u.range_tiles = round(u.range_tiles * (1.0 + self._sk_range_bonus), 4)
-                        elif cost: self.ui.show_msg("Not enough money!")
+                            if cost and self.money >= cost:
+                                # Strip Enhanced Optics bonus before upgrade so it doesn't stack
+                                if getattr(self, '_sk_range_bonus', 0) > 0:
+                                    u.range_tiles = getattr(u, '_base_range_tiles', u.range_tiles)
+                                u.upgrade(); self.money -= cost
+                                # Re-apply Enhanced Optics range bonus on the fresh post-upgrade range
+                                if getattr(self, '_sk_range_bonus', 0) > 0:
+                                    u._base_range_tiles = u.range_tiles
+                                    u.range_tiles = round(u.range_tiles * (1.0 + self._sk_range_bonus), 4)
+                            elif cost: self.ui.show_msg("Not enough money!")
+                            else: self.ui.show_msg("Max level!")
                         else: self.ui.show_msg("Max level!")
                     if ev.key == pygame.K_x and self.ui.open_unit:
                         u = self.ui.open_unit
@@ -9661,6 +10325,11 @@ class Game:
                             self._cowboy_only_run = False  # Gold Rush: kill reward voids cowboy-only run
                             if SETTINGS.get("show_damage", True):
                                 self.effects.append(FloatingText(e.x, e.y-e.radius-10, f"+{reward}"))
+                        # ── Castbound quest: track abnormal kills ──────────────
+                        if isinstance(e, AbnormalEnemy) and self.save_data.get("castbound_quest") == "kill_abnormal":
+                            cur = self.save_data.get("castbound_abnormal_kills", 0) + 1
+                            self.save_data["castbound_abnormal_kills"] = cur
+                            write_save(self.save_data)
     
                 new_enemies=[]
                 for e in self.enemies:
@@ -10316,6 +10985,11 @@ class Game:
         for u in self.units:
             if isinstance(u, Frostcelerator):
                 u.draw_enemy_frost(self.screen, self.enemies)
+
+        # Draw Castbound burn/slow debuff effects
+        for u in self.units:
+            if isinstance(u, Castbound):
+                u.draw_debuffs(self.screen, self.enemies)
 
         # Draw ice arrow slow overlay + timer bar
         _t_now = pygame.time.get_ticks() * 0.001
@@ -11168,6 +11842,35 @@ if __name__ == "__main__":
         elif action == "settings":
             SettingsScreen(screen, save_data).run()
             save_data = load_save()
+
+        elif action == "castbound":
+            cb_result = CastboundDialog(screen, save_data).run()
+            save_data = load_save()
+            if cb_result == "moon_lord_fight":
+                # Launch Moon Lord fight immediately after dialog closes
+                try:
+                    _ml_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                            "moon_lord_fight.py")
+                    import importlib.util as _ml_ilu
+                    _ml_spec = _ml_ilu.spec_from_file_location("moon_lord_fight", _ml_path)
+                    _ml_mod = _ml_ilu.module_from_spec(_ml_spec)
+                    _ml_spec.loader.exec_module(_ml_mod)
+                    _ml_mod.run_moon_lord_fight(screen, save_data)
+                    save_data = load_save()
+                    # Grant Zenith unlock if Moon Lord was defeated
+                    if save_data.get("moon_lord_defeated"):
+                        save_data["castbound_zenith_unlocked"] = True
+                        save_data["castbound_quest"] = "done"  # переводим квест в done
+                        # Разблокируем Castbound как юнит (если ещё не разблокирован)
+                        _owned = save_data.get("owned_units", [])
+                        if "Castbound" not in _owned:
+                            _owned = list(_owned) + ["Castbound"]
+                            save_data["owned_units"] = _owned
+                        from game_core import write_save as _ws
+                        _ws(save_data)
+                except Exception as _ml_e:
+                    import traceback; traceback.print_exc()
+                    input("Moon Lord fight error — press Enter to continue...")
 
         elif action == "loadout":
             ls = LoadoutScreen(screen, save_data)
