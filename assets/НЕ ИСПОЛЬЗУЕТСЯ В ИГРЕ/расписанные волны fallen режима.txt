@@ -1,0 +1,303 @@
+wave 1:
+5 abnormal
+
+lmoney 204
+bmoney 40
+
+wave 2:
+8 abnormal
+
+lmoney 250
+bmoney 50
+
+wave 3:
+4 quick
+6 normal
+
+lmoney 298
+bmoney 59
+
+wave 4:
+8 quick
+8 abnormal
+
+lmoney 347
+bmoney 69
+
+wave 5:
+3 skeleton
+6 quick
+5 normal
+lmoney 400
+bmoney 80
+
+wave 6:
+6 skeleton
+lmoney 446
+bmoney 94
+ 
+wave 7:
+1 fallen dreg
+7 normal
+lmoney 496
+bmoney 99
+
+wave 8:
+3 fallen dreg
+4 skeleton
+lmoney 546
+bmoney 109
+
+wave 9:
+1 fallen squire
+5 normal
+4 skeleton
+lmoney 596
+bmoney 119
+
+wave 10:
+3 fallen dreg
+4 breaker
+2 skeleton
+lmoney 647
+bmoney 129
+
+wave 11:
+fallen squire
+3 fallen dreg
+3 skeleton
+3 breaker
+lmoney 698
+bmoney 139
+
+wave 12:
+7 fallen soul
+lmoney 759
+bmoney 156
+
+wave 13:
+3 fallen dreg
+1 fallen squire
+lmoney 800
+bmoney 160
+
+wave 14:
+6 breaker
+6 fallen soul
+4 fallen
+lmoney 851
+bmoney 170
+
+wave 15:
+8 skeleton
+4 breaker
+2 fallen squire
+lmoney 874
+bmoney 180
+
+wave 16:
+4 fallen dreg
+6 fallen soul
+2 fallen squire
+fallen giant
+lmoney 954
+bmoney 190
+
+wave 17:
+5 fallen hazmat
+2 fallen
+lmoney 978
+bmoney 200
+
+wave 18:
+fallen giant
+5 fallen hazmat
+lmoney 995
+bmoney 205
+
+wave 19:
+lmoney 1057
+bmoney 211
+
+wave 20:
+3 fallen squire
+10 fallen dreg
+8 fallen soul
+1 possessed armor
+lmoney 1109
+bmoney 221
+
+wave 21:
+5 fallen
+5 fallen hazmat
+5 skeleton
+3 fallen squire
+1 fallen necromancer
+lmoney 1161
+bmoney 232
+
+wave 22:
+6 breaker
+3 fallen squire
+2 possesed armor
+5 breaker
+lmoney 1213
+bmoney 242
+
+wave 23:
+4 corupted fallen
+5 fallen squire
+
+lmoney 1265
+bmoney 253
+
+wave 24:
+7 fallen squire
+1 fallen necromancer
+lmoney 1317
+bmoney 273
+
+wave 25:
+possesed armor
+6 fallen hazmat
+3 corupted falen
+3 fallen giant
+1 fallen jester
+lmoney 1421
+bmoney 286
+
+wave 26:
+necrotic skeleton
+3 fallen giant 
+3 fallen breaker
+lmoney 1467
+bmoney 297
+
+wave 27:
+3 necrotic skeleton
+3 fallen giant
+1 fallen necromancer
+5 fallen breaker
+lmoney 1526
+bmoney 305
+
+wave 28:
+10 fallen rusher
+lmoney 1579
+bmoney 315
+
+wave 29:
+10 fallen hazmat
+10 fallen breaker
+lmoney 1634
+bmoney 334
+
+wave 30:
+5 fallen giant
+5 necrotic skeleton
+1 fallen shield
+lmoney 1684
+bmoney 336
+
+wave 31:
+3 fallen giant
+10 fallen hazmat
+1 fallen necromancer
+5 fallen hero
+lmoney 1734
+bmoney 341
+
+wave 32:
+10 fallen breaker
+5 fallen breaker
+1 fallen jester
+lmoney 1795
+bmoney 349
+
+wave 33:
+7 corrupted fallen
+3 fallen giant 
+3 fallen necromancer
+1 necrotic skeleton
+lmoney 1813
+bmoney 359
+
+wave 34:
+1 fallen shield
+1 necrotic skeleton
+2 fallen hero
+3 fallen rusher
+1 fallen necromancer
+lmoney 1875
+bmoney 364
+
+wave 35:
+2 fallen necromancer
+3 fallen giant
+9 breaker
+1 necrotic skeleton
+1 fallen honor guard
+lmoney 2000
+bmoney 380
+
+wave 36:
+4 fallen giant
+8 corrupted fallen 
+10 fallen hero 
+lmoney 2100 
+bmoney 400
+
+wave 37:
+10 corrupted fallen
+5 fallen hero 
+3 fallen necromancer
+5 possessed armor
+4 fallen giant
+3 fallen breaker
+20 skeleton
+lmoney 2200
+bmoney 450
+
+wave 38:
+1 fallen shield
+3 necrotic skeleton
+8 possesed armor
+3 fallen rusher
+5 fallen hero
+10 faller breaker
+lmoney 2300
+bmoney 500
+
+wave 39:
+fallen honor guard
+5 fallen hero
+5 fallen giant
+6 fallen rusher
+lmoney 5000
+bmoney -
+
+wave 40:
+fallen king
+lmoney -
+bmoney -
+
+
+выпадение денег с энеми
+
+
+abnormal - 8
+quick - 8
+skeleton - 60
+fallen dreg - 120
+fallen squire - 656
+fallen soul - 180
+fallen - 360
+fallen giant - 5000
+fallen hazmat - 480
+possesed armor - 1650
+fallen necromancer - 3000
+corrupted fallen - 1200
+fallen jester - 100
+necrotic skeleton - 1400
+fallen breaker - 50
+fallen rusher - 1500
