@@ -9417,6 +9417,44 @@ def _cb_load_icon(filename, size=32):
     return _CB_ICON_CACHE[key]
 
 
+# ── Castbound PNG sprite animation loader ─────────────────────────────────────
+# 26 кадров: assets/image/castbound/1.png … 26.png
+# Задержка между кадрами: 80 мс → FPS ≈ 12.5
+_CB_WEBM_FRAMES: list = []          # list of pygame.Surface (RGBA)
+_CB_WEBM_LOADED: bool = False
+_CB_WEBM_FPS:    float = 1000.0 / 80.0   # 12.5 fps (80 мс на кадр)
+_CB_FRAME_DELAY: float = 80.0 / 1000.0   # секунды на кадр
+_CB_FRAME_COUNT: int   = 26
+
+def _cb_load_webm_frames():
+    """Загружает 26 PNG-кадров из assets/image/castbound/ (1.png … 26.png).
+    Хранит их в _CB_WEBM_FRAMES как pygame Surface (converted_alpha).
+    При отсутствии файлов — тихо оставляет список пустым (запасной пиксельный рисунок)."""
+    global _CB_WEBM_FRAMES, _CB_WEBM_LOADED, _CB_WEBM_FPS
+    if _CB_WEBM_LOADED:
+        return
+    _CB_WEBM_LOADED = True
+
+    frames_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "assets", "image", "castbound"
+    )
+    if not os.path.isdir(frames_dir):
+        return
+
+    try:
+        loaded = []
+        for i in range(1, _CB_FRAME_COUNT + 1):
+            path = os.path.join(frames_dir, f"{i}.png")
+            if not os.path.exists(path):
+                break
+            surf = pygame.image.load(path).convert_alpha()
+            loaded.append(surf)
+        _CB_WEBM_FRAMES = loaded
+    except Exception:
+        _CB_WEBM_FRAMES = []
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Starfury — звезда падает с неба (как в оригинальной Terraria)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -10002,113 +10040,100 @@ class Castbound(Unit):
         cx, cy = int(self.px), int(self.py)
         t = pygame.time.get_ticks() * 0.001
 
-        # ── Пиксельная сетка (1 пиксель = 4×4 экранных пикселя) ──────────────
-        P = 4
+        # ── Загружаем webm-кадры при первом вызове ────────────────────────────
+        if not _CB_WEBM_LOADED:
+            _cb_load_webm_frames()
 
-        def px_put(dx, dy, col, alpha=255):
-            """Рисует один «пиксель» (4×4) со смещением от центра."""
-            if alpha >= 255:
-                pygame.draw.rect(surf, col,
-                                 (cx + dx * P - P // 2,
-                                  cy + dy * P - P // 2, P, P))
+        if _CB_WEBM_FRAMES:
+            # ── Воспроизводим анимацию из PNG-кадров ─────────────────────────
+            fps = max(1.0, _CB_WEBM_FPS)
+            frame_idx = int(t * fps) % len(_CB_WEBM_FRAMES)
+            frame = _CB_WEBM_FRAMES[frame_idx]
+            # Масштабируем кадр с сохранением пропорций (110 px по большей стороне)
+            _UNIT_DRAW_SIZE = 110
+            fw, fh = frame.get_size()
+            if fw == 0 or fh == 0:
+                scaled = frame
+                scale_w, scale_h = fw, fh
+            elif fw >= fh:
+                scale_w = _UNIT_DRAW_SIZE
+                scale_h = max(1, int(fh * _UNIT_DRAW_SIZE / fw))
             else:
-                s = pygame.Surface((P, P), pygame.SRCALPHA)
-                s.fill((*col, alpha))
-                surf.blit(s, (cx + dx * P - P // 2, cy + dy * P - P // 2))
+                scale_h = _UNIT_DRAW_SIZE
+                scale_w = max(1, int(fw * _UNIT_DRAW_SIZE / fh))
+            scaled = pygame.transform.smoothscale(frame, (scale_w, scale_h))
+            _visual_offset_y = -20  # сдвиг вверх чтобы центр визуала совпал с хитбоксом
+            surf.blit(scaled, (cx - scale_w // 2, cy - scale_h // 2 + _visual_offset_y))
+        else:
+            # ── Fallback: пиксельный спрайт Stardust Guardian ─────────────────
+            pulse = abs(math.sin(t * 2.5))
+            P = 4
 
-        # Цвета Stardust Guardian (звёздно-синяя палитра Terraria)
-        SB   = (30,  80, 200)   # тёмно-синий — корпус
-        SL   = (60, 140, 255)   # светло-синий — грудь / лицо
-        SW   = (140, 200, 255)  # очень светлый — белки глаз / блики
-        SG   = (80, 180, 255)   # голубой — детали
-        SBK  = (10,  20,  60)   # почти чёрный — контур / тени
-        SA   = (180, 220, 255)  # почти белый — светлейшие блики
-        SGLD = (255, 220,  50)  # золотой — звёздный акцент
-        ST   = (0, 230, 255)    # бирюзовый — глаза / кристаллы
+            def px_put(dx, dy, col, alpha=255):
+                if alpha >= 255:
+                    pygame.draw.rect(surf, col,
+                                     (cx + dx * P - P // 2,
+                                      cy + dy * P - P // 2, P, P))
+                else:
+                    s = pygame.Surface((P, P), pygame.SRCALPHA)
+                    s.fill((*col, alpha))
+                    surf.blit(s, (cx + dx * P - P // 2, cy + dy * P - P // 2))
 
-        # Анимация: слабое мерцание тела
-        pulse = abs(math.sin(t * 2.5))
-        flicker_col = (
-            int(SL[0] + pulse * 30),
-            int(SL[1] + pulse * 20),
-            min(255, int(SL[2] + pulse * 30)),
-        )
+            SB   = (30,  80, 200)
+            SL   = (60, 140, 255)
+            SW   = (140, 200, 255)
+            SG   = (80, 180, 255)
+            SBK  = (10,  20,  60)
+            SA   = (180, 220, 255)
+            SGLD = (255, 220,  50)
+            ST   = (0, 230, 255)
+            flicker_col = (
+                int(SL[0] + pulse * 30),
+                int(SL[1] + pulse * 20),
+                min(255, int(SL[2] + pulse * 30)),
+            )
 
-        # ── Свечение вокруг (аура) ────────────────────────────────────────────
-        aura_r = 32
-        aura_s = pygame.Surface((aura_r * 2 + 4, aura_r * 2 + 4), pygame.SRCALPHA)
-        aura_a = int(30 + pulse * 50)
-        pygame.draw.circle(aura_s, (40, 120, 255, aura_a), (aura_r + 2, aura_r + 2), aura_r)
-        surf.blit(aura_s, (cx - aura_r - 2, cy - aura_r - 2))
+            aura_r = 32
+            aura_s = pygame.Surface((aura_r * 2 + 4, aura_r * 2 + 4), pygame.SRCALPHA)
+            aura_a = int(30 + pulse * 50)
+            pygame.draw.circle(aura_s, (40, 120, 255, aura_a), (aura_r + 2, aura_r + 2), aura_r)
+            surf.blit(aura_s, (cx - aura_r - 2, cy - aura_r - 2))
 
-        # ════════════════════════════════════════════════════════════════════
-        # ПИКСЕЛЬНЫЙ СПРАЙТ — Stardust Guardian (вид спереди, 15×20 пикселей)
-        # Координаты [col, row] от центра (0,0), Y вверх = отрицательный
-        # ════════════════════════════════════════════════════════════════════
+            head = [
+                [(-2,-8,SBK),(-1,-8,SB),(0,-8,SB),(1,-8,SB),(2,-8,SBK)],
+                [(-2,-7,SB),(-1,-7,SL),(0,-7,SL),(1,-7,SL),(2,-7,SB)],
+                [(-2,-6,SB),(-1,-6,ST),(0,-6,SL),(1,-6,ST),(2,-6,SB)],
+                [(-2,-5,SB),(-1,-5,SL),(0,-5,SW),(1,-5,SL),(2,-5,SB)],
+                [(-2,-4,SBK),(-1,-4,SG),(0,-4,SG),(1,-4,SG),(2,-4,SBK)],
+            ]
+            shoulders = [
+                [(-4,-3,SBK),(-3,-3,SB),(-2,-3,SL),(-1,-3,SL),(0,-3,SL),(1,-3,SL),(2,-3,SL),(3,-3,SB),(4,-3,SBK)],
+                [(-4,-2,SB),(-3,-2,SG),(-2,-2,flicker_col),(-1,-2,flicker_col),(0,-2,flicker_col),(1,-2,flicker_col),(2,-2,flicker_col),(3,-2,SG),(4,-2,SB)],
+            ]
+            torso = [
+                [(-3,-1,SBK),(-2,-1,SB),(-1,-1,SL),(0,-1,SA),(1,-1,SL),(2,-1,SB),(3,-1,SBK)],
+                [(-3, 0,SB), (-2, 0,SL),(-1, 0,SGLD),(0, 0,SA),(1, 0,SGLD),(2, 0,SL),(3, 0,SB)],
+                [(-3, 1,SBK),(-2, 1,SB),(-1, 1,SL),(0, 1,SL),(1, 1,SL),(2, 1,SB),(3, 1,SBK)],
+            ]
+            belt = [
+                [(-2, 2,SBK),(-1, 2,SGLD),(0, 2,SGLD),(1, 2,SGLD),(2, 2,SBK)],
+            ]
+            legs = [
+                [(-2, 3,SB),(-1, 3,SL),(0, 3,SBK),(1, 3,SL),(2, 3,SB)],
+                [(-2, 4,SB),(-1, 4,SG),(0, 4,SBK),(1, 4,SG),(2, 4,SB)],
+                [(-2, 5,SBK),(-1, 5,SL),(0, 5,SBK),(1, 5,SL),(2, 5,SBK)],
+            ]
+            for layer in (head, shoulders, torso, belt, legs):
+                for row_pixels in layer:
+                    for pdata in row_pixels:
+                        px_put(pdata[0], pdata[1], pdata[2])
 
-        # Голова (5×5 вверху)
-        head = [
-            # row -8
-            [(-2,-8,SBK),(-1,-8,SB),(0,-8,SB),(1,-8,SB),(2,-8,SBK)],
-            # row -7
-            [(-2,-7,SB),(-1,-7,SL),(0,-7,SL),(1,-7,SL),(2,-7,SB)],
-            # row -6  (глаза)
-            [(-2,-6,SB),(-1,-6,ST),(0,-6,SL),(1,-6,ST),(2,-6,SB)],
-            # row -5
-            [(-2,-5,SB),(-1,-5,SL),(0,-5,SW),(1,-5,SL),(2,-5,SB)],
-            # row -4 (подбородок)
-            [(-2,-4,SBK),(-1,-4,SG),(0,-4,SG),(1,-4,SG),(2,-4,SBK)],
-        ]
-        # Плечи / руки
-        shoulders = [
-            # row -3
-            [(-4,-3,SBK),(-3,-3,SB),(-2,-3,SL),(-1,-3,SL),(0,-3,SL),(1,-3,SL),(2,-3,SL),(3,-3,SB),(4,-3,SBK)],
-            # row -2 (бицепсы)
-            [(-4,-2,SB),(-3,-2,SG),(-2,-2,flicker_col),(-1,-2,flicker_col),(0,-2,flicker_col),(1,-2,flicker_col),(2,-2,flicker_col),(3,-2,SG),(4,-2,SB)],
-        ]
-        # Туловище
-        torso = [
-            # row -1
-            [(-3,-1,SBK),(-2,-1,SB),(-1,-1,SL),(0,-1,SA),(1,-1,SL),(2,-1,SB),(3,-1,SBK)],
-            # row 0  (середина с кристаллом)
-            [(-3, 0,SB), (-2, 0,SL),(-1, 0,SGLD),(0, 0,SA),(1, 0,SGLD),(2, 0,SL),(3, 0,SB)],
-            # row 1
-            [(-3, 1,SBK),(-2, 1,SB),(-1, 1,SL),(0, 1,SL),(1, 1,SL),(2, 1,SB),(3, 1,SBK)],
-        ]
-        # Пояс
-        belt = [
-            [(-2, 2,SBK),(-1, 2,SGLD),(0, 2,SGLD),(1, 2,SGLD),(2, 2,SBK)],
-        ]
-        # Ноги
-        legs = [
-            # row 3
-            [(-2, 3,SB),(-1, 3,SL),(0, 3,SBK),(1, 3,SL),(2, 3,SB)],
-            # row 4
-            [(-2, 4,SB),(-1, 4,SG),(0, 4,SBK),(1, 4,SG),(2, 4,SB)],
-            # row 5  (стопы)
-            [(-2, 5,SBK),(-1, 5,SL),(0, 5,SBK),(1, 5,SL),(2, 5,SBK)],
-        ]
-
-        # Нарисовать все слои
-        for layer in (head, shoulders, torso, belt, legs):
-            for row_pixels in layer:
-                for pdata in row_pixels:
-                    px_put(pdata[0], pdata[1], pdata[2])
-
-        # ── Звёздный пылевой хвост (частицы летят вниз) ──────────────────────
-        if SETTINGS.get("particles", True) and not SETTINGS.get("low_quality", False):
-            random.seed(int(t * 12))
-            for _ in range(5):
-                tx2 = cx + random.randint(-12, 12)
-                ty2 = cy + random.randint(20, 44)
-                tr2 = random.randint(2, 4)
-                ta  = random.randint(80, 180)
-                ts2 = pygame.Surface((tr2 * 2, tr2 * 2), pygame.SRCALPHA)
-                pygame.draw.circle(ts2, (80, 160, 255, ta), (tr2, tr2), tr2)
-                surf.blit(ts2, (tx2 - tr2, ty2 - tr2))
-            random.seed()
+        # (частицы убраны)
 
         # ── Мечи / клинки (PNG или пиксельный fallback) ───────────────────────
+        # Смещение: меч рисуется из точки правой руки персонажа
+        _blade_ox = cx + 4
+        _blade_oy = cy - 8
         blades_draw = self.selected_blades if self.selected_blades else ["ice"]
         n = len(blades_draw)
         for bi, bid in enumerate(blades_draw):
@@ -10129,10 +10154,10 @@ class Castbound(Unit):
                     if gfrac < 0: continue
                     ga2 = math.radians(self._swing_angle +
                                        (-self.SWING_ARC + gfrac * self.SWING_ARC * 2) + arc_offset)
-                    gx0 = int(cx + math.cos(ga2) * 10)
-                    gy0 = int(cy + math.sin(ga2) * 10)
-                    gx_tip = int(cx + math.cos(ga2) * self.BLADE_LEN)
-                    gy_tip = int(cy + math.sin(ga2) * self.BLADE_LEN)
+                    gx0 = int(_blade_ox + math.cos(ga2) * 10)
+                    gy0 = int(_blade_oy + math.sin(ga2) * 10)
+                    gx_tip = int(_blade_ox + math.cos(ga2) * self.BLADE_LEN)
+                    gy_tip = int(_blade_oy + math.sin(ga2) * self.BLADE_LEN)
                     ghost_a = max(0, int(55 * (1 - gi * 0.32)))
                     ghost_col = tuple(min(255, int(c * ghost_a / 55)) for c in blade_col)
                     pygame.draw.line(surf, ghost_col,
@@ -10144,29 +10169,53 @@ class Castbound(Unit):
                 angle         = idle_a
                 draw_angle_deg = math.degrees(idle_a)
 
-            tip_x  = cx + math.cos(angle) * self.BLADE_LEN
-            tip_y  = cy + math.sin(angle) * self.BLADE_LEN
+            tip_x  = _blade_ox + math.cos(angle) * self.BLADE_LEN
+            tip_y  = _blade_oy + math.sin(angle) * self.BLADE_LEN
 
             blade_filename = CB_BLADE_DEFS.get(bid, ("", None, ""))[2]
             blade_png = _cb_load_icon(blade_filename, 48) if blade_filename else None
             if blade_png:
                 rotated = pygame.transform.rotate(blade_png, -draw_angle_deg - 45)
-                mid_x   = int((tip_x + cx) / 2)
-                mid_y   = int((tip_y + cy) / 2)
+                mid_x   = int((tip_x + _blade_ox) / 2)
+                mid_y   = int((tip_y + _blade_oy) / 2)
                 r2 = rotated.get_rect(center=(mid_x, mid_y))
                 surf.blit(rotated, r2)
                 pygame.draw.circle(surf, (255, 255, 255), (int(tip_x), int(tip_y)), 2)
             else:
-                base_x = cx + math.cos(angle) * 10
-                base_y = cy + math.sin(angle) * 10
+                base_x = _blade_ox + math.cos(angle) * 10
+                base_y = _blade_oy + math.sin(angle) * 10
                 pygame.draw.line(surf, blade_col,
                                  (int(base_x), int(base_y)),
                                  (int(tip_x), int(tip_y)), self.BLADE_W)
                 pygame.draw.circle(surf, (255, 255, 255), (int(tip_x), int(tip_y)), 2)
 
-        # ── Пипсы уровня ──────────────────────────────────────────────────────
-        for i in range(self.level):
-            pygame.draw.circle(surf, C_GOLD, (cx - 12 + i * 7, cy + 34), 3)
+        # ── Пипсы уровня (кастомные, с glow) ────────────────────────────────
+        _pip_cols = [
+            (80,  160, 255),   # lv1 — ice blue
+            (255, 120,  30),   # lv2 — fire orange
+            (180, 100, 255),   # lv3 — dual purple
+            (60,  200,  80),   # lv4 — terra green
+            (255, 220,  60),   # lv5 — star gold
+            (120, 200, 255),   # lv6 — zenith cyan
+        ]
+        total_pips = self.level
+        pip_r = 5
+        pip_spacing = 12
+        pip_start_x = cx - (total_pips - 1) * pip_spacing // 2
+        pip_y = cy + 40
+        for i in range(total_pips):
+            col = _pip_cols[i] if i < len(_pip_cols) else C_GOLD
+            px_p = pip_start_x + i * pip_spacing
+            # glow halo
+            glow_s = pygame.Surface((pip_r * 4, pip_r * 4), pygame.SRCALPHA)
+            pygame.draw.circle(glow_s, (*col, 60), (pip_r * 2, pip_r * 2), pip_r * 2)
+            surf.blit(glow_s, (px_p - pip_r * 2, pip_y - pip_r * 2))
+            # outer ring
+            pygame.draw.circle(surf, tuple(max(0, c - 40) for c in col), (px_p, pip_y), pip_r)
+            # inner bright fill
+            pygame.draw.circle(surf, col, (px_p, pip_y), pip_r - 1)
+            # specular dot
+            pygame.draw.circle(surf, tuple(min(255, c + 100) for c in col), (px_p - 1, pip_y - 1), max(1, pip_r // 3))
 
         # ── Снаряды ───────────────────────────────────────────────────────────
         for sp in self._star_projs:

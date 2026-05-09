@@ -2931,7 +2931,28 @@ class UI:
             dot_y=up_rect.bottom+8
             bar_total_w=mw-20
             bar_h=10
-            if total_lvls>1:
+            if cls == Castbound:
+                # Кастомный level bar: 7 сегментов, без подписей
+                _cb_lvl_cols  = [
+                    (80, 160, 255),   # 0 — ice blue
+                    (255, 120, 30),   # 1 — fire orange
+                    (180, 100, 255),  # 2 — dual purple
+                    (60,  200, 80),   # 3 — terra green
+                    (255, 220, 60),   # 4 — star gold
+                    (120, 200, 255),  # 5 — zenith seal cyan
+                    (255, 120, 255),  # 6 — zenith
+                ]
+                _cb_total = len(_cb_lvl_cols)
+                _cb_seg_w = (bar_total_w - (_cb_total - 1) * 2) // _cb_total
+                for _cbi in range(_cb_total):
+                    _cbx = mx_m + 10 + _cbi * (_cb_seg_w + 2)
+                    _filled = _cbi <= u.level
+                    _col = _cb_lvl_cols[_cbi] if _filled else (38, 35, 58)
+                    _brd = tuple(min(255, c + 60) for c in _cb_lvl_cols[_cbi]) if _filled else (60, 58, 80)
+                    pygame.draw.rect(surf, _col, (_cbx, dot_y, _cb_seg_w, bar_h), border_radius=3)
+                    pygame.draw.rect(surf, _brd, (_cbx, dot_y, _cb_seg_w, bar_h), 1, border_radius=3)
+                dot_y += bar_h + 6
+            elif total_lvls>1:
                 seg_w=(bar_total_w-(total_lvls-1)*3)//total_lvls
                 for i in range(total_lvls):
                     bx_seg=mx_m+10+i*(seg_w+3)
@@ -2958,7 +2979,7 @@ class UI:
             def _norm(x):
                 return int(x) if isinstance(x, float) and x == int(x) else x
             changing=[(s,v,n) for s,v,n in stats if n is not None and (v is None or str(_norm(n))!=str(_norm(v)))]
-            ch_y=dot_y+20
+            ch_y=dot_y+(8 if cls==Castbound else 20)
 
             # === ARCHER ARROW MODE SELECTOR ===
             if cls==Archer:
@@ -4527,89 +4548,111 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
         surf.blit(tip_s, (cx - sc(5), ant_tip_y - sc(5)))
 
     elif unit_name == "Castbound":
-        P2 = max(2, int(3 * s))
-        pulse_cb = abs(math.sin(t * 2.5))
+        # ── Используем webm-анимацию (первый/текущий кадр) ───────────────────
+        from units import _CB_WEBM_FRAMES, _CB_WEBM_LOADED, _CB_WEBM_FPS, _cb_load_webm_frames
+        if not _CB_WEBM_LOADED:
+            _cb_load_webm_frames()
+        if _CB_WEBM_FRAMES:
+            fps = max(1.0, _CB_WEBM_FPS)
+            frame_idx = int(t * fps) % len(_CB_WEBM_FRAMES)
+            frame = _CB_WEBM_FRAMES[frame_idx]
+            target_size = max(1, size * 2)
+            fw, fh = frame.get_size()
+            if fw == 0 or fh == 0:
+                scaled = frame
+                scale_w, scale_h = fw, fh
+            elif fw >= fh:
+                scale_w = target_size
+                scale_h = max(1, int(fh * target_size / fw))
+            else:
+                scale_h = target_size
+                scale_w = max(1, int(fw * target_size / fh))
+            scaled = pygame.transform.smoothscale(frame, (scale_w, scale_h))
+            surf.blit(scaled, (cx - scale_w // 2, cy - scale_h // 2))
+        else:
+            P2 = max(2, int(3 * s))
+            pulse_cb = abs(math.sin(t * 2.5))
 
-        # Аура
-        aura_r = sc(30)
-        aura_s = pygame.Surface((aura_r * 2, aura_r * 2), pygame.SRCALPHA)
-        aura_a = int(pulse_cb * 50 + 20)
-        pygame.draw.circle(aura_s, (40, 120, 255, aura_a), (aura_r, aura_r), aura_r)
-        surf.blit(aura_s, (cx - aura_r, cy - aura_r))
+            # Аура
+            aura_r = sc(30)
+            aura_s = pygame.Surface((aura_r * 2, aura_r * 2), pygame.SRCALPHA)
+            aura_a = int(pulse_cb * 50 + 20)
+            pygame.draw.circle(aura_s, (40, 120, 255, aura_a), (aura_r, aura_r), aura_r)
+            surf.blit(aura_s, (cx - aura_r, cy - aura_r))
 
-        # Цвета Stardust Guardian
-        _SB  = (30,  80, 200)
-        _SL  = (60, 140, 255)
-        _SW  = (140, 200, 255)
-        _ST  = (0, 230, 255)
-        _SBK = (10,  20,  60)
-        _SG  = (80, 180, 255)
-        _SA  = (180, 220, 255)
-        _SGD = (255, 220,  50)
-        _FL  = (
-            int(_SL[0] + pulse_cb * 30),
-            int(_SL[1] + pulse_cb * 20),
-            min(255, int(_SL[2] + pulse_cb * 30)),
-        )
+            # Цвета Stardust Guardian
+            _SB  = (30,  80, 200)
+            _SL  = (60, 140, 255)
+            _SW  = (140, 200, 255)
+            _ST  = (0, 230, 255)
+            _SBK = (10,  20,  60)
+            _SG  = (80, 180, 255)
+            _SA  = (180, 220, 255)
+            _SGD = (255, 220,  50)
+            _FL  = (
+                int(_SL[0] + pulse_cb * 30),
+                int(_SL[1] + pulse_cb * 20),
+                min(255, int(_SL[2] + pulse_cb * 30)),
+            )
 
-        def _cbpx2(dx, dy, col):
-            pygame.draw.rect(surf, col,
-                             (cx + dx * P2 - P2 // 2,
-                              cy + dy * P2 - P2 // 2, P2, P2))
+            def _cbpx2(dx, dy, col):
+                pygame.draw.rect(surf, col,
+                                 (cx + dx * P2 - P2 // 2,
+                                  cy + dy * P2 - P2 // 2, P2, P2))
 
-        # Голова
-        for dx, dy, col in [
-            (-2,-8,_SBK),(-1,-8,_SB),(0,-8,_SB),(1,-8,_SB),(2,-8,_SBK),
-            (-2,-7,_SB),(-1,-7,_SL),(0,-7,_SL),(1,-7,_SL),(2,-7,_SB),
-            (-2,-6,_SB),(-1,-6,_ST),(0,-6,_SL),(1,-6,_ST),(2,-6,_SB),
-            (-2,-5,_SB),(-1,-5,_SL),(0,-5,_SW),(1,-5,_SL),(2,-5,_SB),
-            (-2,-4,_SBK),(-1,-4,_SG),(0,-4,_SG),(1,-4,_SG),(2,-4,_SBK),
-        ]: _cbpx2(dx, dy, col)
+            # Голова
+            for dx, dy, col in [
+                (-2,-8,_SBK),(-1,-8,_SB),(0,-8,_SB),(1,-8,_SB),(2,-8,_SBK),
+                (-2,-7,_SB),(-1,-7,_SL),(0,-7,_SL),(1,-7,_SL),(2,-7,_SB),
+                (-2,-6,_SB),(-1,-6,_ST),(0,-6,_SL),(1,-6,_ST),(2,-6,_SB),
+                (-2,-5,_SB),(-1,-5,_SL),(0,-5,_SW),(1,-5,_SL),(2,-5,_SB),
+                (-2,-4,_SBK),(-1,-4,_SG),(0,-4,_SG),(1,-4,_SG),(2,-4,_SBK),
+            ]: _cbpx2(dx, dy, col)
 
-        # Плечи
-        for dx, dy, col in [
-            (-4,-3,_SBK),(-3,-3,_SB),(-2,-3,_SL),(-1,-3,_SL),(0,-3,_SL),(1,-3,_SL),(2,-3,_SL),(3,-3,_SB),(4,-3,_SBK),
-            (-4,-2,_SB),(-3,-2,_SG),(-2,-2,_FL),(-1,-2,_FL),(0,-2,_FL),(1,-2,_FL),(2,-2,_FL),(3,-2,_SG),(4,-2,_SB),
-        ]: _cbpx2(dx, dy, col)
+            # Плечи
+            for dx, dy, col in [
+                (-4,-3,_SBK),(-3,-3,_SB),(-2,-3,_SL),(-1,-3,_SL),(0,-3,_SL),(1,-3,_SL),(2,-3,_SL),(3,-3,_SB),(4,-3,_SBK),
+                (-4,-2,_SB),(-3,-2,_SG),(-2,-2,_FL),(-1,-2,_FL),(0,-2,_FL),(1,-2,_FL),(2,-2,_FL),(3,-2,_SG),(4,-2,_SB),
+            ]: _cbpx2(dx, dy, col)
 
-        # Туловище
-        for dx, dy, col in [
-            (-3,-1,_SBK),(-2,-1,_SB),(-1,-1,_SL),(0,-1,_SA),(1,-1,_SL),(2,-1,_SB),(3,-1,_SBK),
-            (-3, 0,_SB),(-2, 0,_SL),(-1, 0,_SGD),(0, 0,_SA),(1, 0,_SGD),(2, 0,_SL),(3, 0,_SB),
-            (-3, 1,_SBK),(-2, 1,_SB),(-1, 1,_SL),(0, 1,_SL),(1, 1,_SL),(2, 1,_SB),(3, 1,_SBK),
-        ]: _cbpx2(dx, dy, col)
+            # Туловище
+            for dx, dy, col in [
+                (-3,-1,_SBK),(-2,-1,_SB),(-1,-1,_SL),(0,-1,_SA),(1,-1,_SL),(2,-1,_SB),(3,-1,_SBK),
+                (-3, 0,_SB),(-2, 0,_SL),(-1, 0,_SGD),(0, 0,_SA),(1, 0,_SGD),(2, 0,_SL),(3, 0,_SB),
+                (-3, 1,_SBK),(-2, 1,_SB),(-1, 1,_SL),(0, 1,_SL),(1, 1,_SL),(2, 1,_SB),(3, 1,_SBK),
+            ]: _cbpx2(dx, dy, col)
 
-        # Пояс
-        for dx, dy, col in [
-            (-2, 2,_SBK),(-1, 2,_SGD),(0, 2,_SGD),(1, 2,_SGD),(2, 2,_SBK),
-        ]: _cbpx2(dx, dy, col)
+            # Пояс
+            for dx, dy, col in [
+                (-2, 2,_SBK),(-1, 2,_SGD),(0, 2,_SGD),(1, 2,_SGD),(2, 2,_SBK),
+            ]: _cbpx2(dx, dy, col)
 
-        # Ноги
-        for dx, dy, col in [
-            (-2, 3,_SB),(-1, 3,_SL),(0, 3,_SBK),(1, 3,_SL),(2, 3,_SB),
-            (-2, 4,_SB),(-1, 4,_SG),(0, 4,_SBK),(1, 4,_SG),(2, 4,_SB),
-            (-2, 5,_SBK),(-1, 5,_SL),(0, 5,_SBK),(1, 5,_SL),(2, 5,_SBK),
-        ]: _cbpx2(dx, dy, col)
+            # Ноги
+            for dx, dy, col in [
+                (-2, 3,_SB),(-1, 3,_SL),(0, 3,_SBK),(1, 3,_SL),(2, 3,_SB),
+                (-2, 4,_SB),(-1, 4,_SG),(0, 4,_SBK),(1, 4,_SG),(2, 4,_SB),
+                (-2, 5,_SBK),(-1, 5,_SL),(0, 5,_SBK),(1, 5,_SL),(2, 5,_SBK),
+            ]: _cbpx2(dx, dy, col)
 
-        # Мигающие глаза
-        eye_pulse = int(abs(math.sin(t * 3.0)) * 200 + 55)
-        eye_pulse = max(0, min(255, int(eye_pulse)))
-        pygame.draw.rect(surf, (eye_pulse, 240, 255), 
-                        (cx - 2 * P2 - P2 // 2, cy - 6 * P2 - P2 // 2, P2, P2))
-        pygame.draw.rect(surf, (eye_pulse, 240, 255),
-                         (cx + 1 * P2 - P2 // 2, cy - 6 * P2 - P2 // 2, P2, P2))
+            # Мигающие глаза
+            eye_pulse = int(abs(math.sin(t * 3.0)) * 200 + 55)
+            eye_pulse = max(0, min(255, int(eye_pulse)))
+            pygame.draw.rect(surf, (eye_pulse, 240, 255),
+                            (cx - 2 * P2 - P2 // 2, cy - 6 * P2 - P2 // 2, P2, P2))
+            pygame.draw.rect(surf, (eye_pulse, 240, 255),
+                             (cx + 1 * P2 - P2 // 2, cy - 6 * P2 - P2 // 2, P2, P2))
 
-        # Звёздный пылевой хвост
-        random.seed(int(t * 12))
-        for _ in range(3):
-            tx2 = cx + random.randint(-10, 10)
-            ty2 = cy + random.randint(22, 40)
-            tr2 = random.randint(1, 3)
-            ta  = random.randint(60, 140)
-            ts2 = pygame.Surface((tr2 * 2, tr2 * 2), pygame.SRCALPHA)
-            pygame.draw.circle(ts2, (80, 160, 255, ta), (tr2, tr2), tr2)
-            surf.blit(ts2, (tx2 - tr2, ty2 - tr2))
-        random.seed()
+            # Звёздный пылевой хвост
+            random.seed(int(t * 12))
+            for _ in range(3):
+                tx2 = cx + random.randint(-10, 10)
+                ty2 = cy + random.randint(22, 40)
+                tr2 = random.randint(1, 3)
+                ta  = random.randint(60, 140)
+                ts2 = pygame.Surface((tr2 * 2, tr2 * 2), pygame.SRCALPHA)
+                pygame.draw.circle(ts2, (80, 160, 255, ta), (tr2, tr2), tr2)
+                surf.blit(ts2, (tx2 - tr2, ty2 - tr2))
+            random.seed()
 
     else:
         # Fallback: colored circle with unit's color
@@ -5710,6 +5753,20 @@ _ALL_UNIT_CLASSES = [
 for _ucls in _ALL_UNIT_CLASSES:
     if "draw_range" in _ucls.__dict__:  # only patch classes that explicitly define it
         _ucls.draw_range = _wrap_draw_range_clip(_ucls.__dict__["draw_range"])
+
+# ── Castbound: кастомный draw_range с клипом к игровой зоне ──────────────────
+def _castbound_draw_range(self, surf):
+    r = int(self.range_tiles * TILE)
+    if r <= 0: return
+    col = C_CASTBOUND if SETTINGS.get("colored_range", False) else (255, 255, 255)
+    s = pygame.Surface((r*2, r*2), pygame.SRCALPHA)
+    pygame.draw.circle(s, (*col, 22), (r, r), r)
+    pygame.draw.circle(s, (*col, 60), (r, r), r, 2)
+    old_clip = surf.get_clip()
+    surf.set_clip(pygame.Rect(0, 0, SCREEN_W, SLOT_AREA_Y))
+    surf.blit(s, (int(self.px) - r, int(self.py) - r))
+    surf.set_clip(old_clip)
+Castbound.draw_range = _castbound_draw_range
 
 
 class InterfaceSettingsScreen:
@@ -8005,7 +8062,7 @@ UNIT_DESCRIPTIONS = {
     "Harvester":      "A haunted scarecrow that fires piercing bolts and can summon thorns to slow enemies.",
     "Control Panel":  "A remote support station. Use 'Remote Control' to buff a nearby tower with boosted Range, Damage, or Firerate for a chosen duration.",
     "hacker_laser_effects_test": "??? ERROR 404 UNIT NOT FOUND ???",
-    "Castbound":      "A warrior bound to celestial blades. Choose your swords — Ice Blade slows, Fiery Greatsword burns, Terra Blade knocks back. Ascends to wield the all-powerful Zenith upon defeating the Moon Lord. Unlocked by killing the Moon Lord.",
+    "Castbound":      "The culmination of a journey forged into the ultimate tower.",
 }
 
 class LoadoutScreen:
@@ -8505,7 +8562,7 @@ class LoadoutScreen:
             # ── Tower visual — centered horizontally in the panel ─────────────
             VIS_CX = PANEL_X + PANEL_W // 2
             VIS_CY = PANEL_Y + (PANEL_H - 90) // 2 + 10   # above description strip
-            _draw_tower_icon(surf, uname, VIS_CX, VIS_CY, self.t, size=72)
+            _draw_tower_icon(surf, uname, VIS_CX, VIS_CY, self.t, size=110 if uname == "Castbound" else 72)
 
             # ── SKINS button — left side, above description ───────────────────
             has_skins = any(s["unit_name"] == uname and own_skin(s["id"]) for s in ALL_SKIN_DEFS)
