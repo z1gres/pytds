@@ -9363,24 +9363,25 @@ C_CB_ZENITH = (220, 180, 255)   # переливается радугой в dra
 # ── определения клинков ───────────────────────────────────────────────────────
 # id -> (display_name, colour, icon_filename)
 CB_BLADE_DEFS = {
-    "ice":    ("Ice Blade",        C_CB_ICE,    "iceblade.png"),
-    "fire":   ("Fiery Greatsword", C_CB_FIRE,   "fierygreatsword.png"),
-    "terra":  ("Terra Blade",      C_CB_TERRA,  "terrablade.png"),
-    "star":   ("Starfury",         C_CB_STAR,   "starfury.png"),
-    "zenith": ("Zenith",           C_CB_ZENITH, "zenith.png"),
+    "ice":       ("Ice Blade",        C_CB_ICE,       "iceblade.png"),
+    "fire":      ("Fiery Greatsword", C_CB_FIRE,      "fierygreatsword.png"),
+    "terra":     ("Terra Blade",      C_CB_TERRA,     "terrablade.png"),
+    "star":      ("Starfury",         C_CB_STAR,      "starfury.png"),
+    "starwrath": ("Star Wrath",       (180, 80, 255), "starwrath.png"),
+    "zenith":    ("Zenith",           C_CB_ZENITH,    "zenith.png"),
 }
 
 # ── таблица уровней ───────────────────────────────────────────────────────────
 # (damage, firerate, range_tiles, upgrade_cost,
 #  max_blades, terra_unlocked, star_unlocked, zenith_mode, hidden_detection)
 CASTBOUND_LEVELS = [
-    (4,   0.8,  6.2,  None, 1, False, False, False, False),   # lv0
-    (6,   0.6,  6.4,   350, 1, False, False, False, False),   # lv1
-    (8,   0.6,  6.6,   750, 1, False, False, False, False),   # lv2
-    (16,  0.6,  7.3,  1750, 2, True,  False, False, False),   # lv3  terra+2 blades
-    (25,  0.5,  7.3,  3450, 2, True,  False, False, True),    # lv4  hidden det
-    (40,  0.4,  8.0,  5500, 2, True,  True,  False, True),    # lv5  starfury  ← 20→40
-    (100, 0.3, 10.0, 10000, 0, True,  True,  True,  True),    # lv6  zenith    ← 75→100
+    (4,   0.8,  6.2,  None,  1, False, False, False, False),   # lv0
+    (6,   0.6,  6.4,   600,  1, False, False, False, False),   # lv1  +Fire GS
+    (8,   0.6,  6.6,  1200,  1, False, False, False, False),   # lv2
+    (16,  0.6,  7.3,  2800,  2, True,  False, False, False),   # lv3  terra+2 blades
+    (25,  0.5,  7.3,  5500,  2, True,  False, False, True),    # lv4  hidden det
+    (40,  0.4,  8.0,  8500,  2, True,  True,  False, True),    # lv5  starfury
+    (100, 0.3, 10.0, 15000, 99, True,  True,  True,  True),    # lv6  zenith+all blades
 ]
 
 # ── параметры дебаффов по уровню ──────────────────────────────────────────────
@@ -9607,7 +9608,7 @@ class _CB_StarProj:
     SPEED = 900.0   # px/s
 
     def __init__(self, ox, oy, tx, ty, damage, burn_dmg, burn_dur, burn_tick,
-                 blade_col=None, has_splash=False):
+                 blade_col=None, has_splash=False, blade_id=None):
         self.x  = float(ox); self.y  = float(oy)
         self.tx = float(tx); self.ty = float(ty)
         d = math.hypot(tx - ox, ty - oy)
@@ -9620,6 +9621,7 @@ class _CB_StarProj:
         self.burn_tick = burn_tick
         self.blade_col = blade_col or (255, 230, 80)
         self.has_splash = has_splash
+        self.blade_id  = blade_id   # явный id клинка для PNG
         self.alive     = True
         self._exploded = False
         self._exp_t    = 0.0
@@ -9678,12 +9680,16 @@ class _CB_StarProj:
                 pygame.draw.circle(ts, (*bc, a), (5, 5), rad)
                 surf.blit(ts, (int(tx_)-5, int(ty_)-5))
             cx, cy = int(self.x), int(self.y)
-            # Ищем PNG для снаряда по цвету (blade_col определяет тип меча)
+            # Ищем PNG по явному blade_id (надёжнее, чем сравнение цвета)
             _proj_png = None
-            for bid, bdef in CB_BLADE_DEFS.items():
-                if bdef[1] == self.blade_col:
-                    _proj_png = _cb_load_icon(bdef[2], 36)
-                    break
+            if self.blade_id and self.blade_id in CB_BLADE_DEFS:
+                _proj_png = _cb_load_icon(CB_BLADE_DEFS[self.blade_id][2], 48 if self.blade_id == "zenith" else 36)
+            if _proj_png is None:
+                # фоллбэк — поиск по цвету для старых снарядов
+                for bid, bdef in CB_BLADE_DEFS.items():
+                    if bdef[1] == self.blade_col:
+                        _proj_png = _cb_load_icon(bdef[2], 36)
+                        break
             if _proj_png:
                 rotated = pygame.transform.rotate(_proj_png, -self._angle - 45)
                 r2 = rotated.get_rect(center=(cx, cy))
@@ -9869,17 +9875,21 @@ class Castbound(Unit):
          self._max_blades, self._terra_unlocked, self._star_unlocked,
          self._zenith_mode, self.hidden_detection) = row
 
+        # available_blades() использует уже обновлённые флаги — вызываем ПОСЛЕ распаковки row
+        avail = set(self.available_blades())
+        # убираем клинки которые больше недоступны
+        self.selected_blades = [b for b in self.selected_blades if b in avail]
+        if not self.selected_blades:
+            self.selected_blades = ["ice"]
+        # на lv6 автоматически добавляем zenith и starwrath
         if self._zenith_mode:
-            self.selected_blades = ["zenith"]
-        else:
-            allowed = {"ice", "fire"}
-            if self._terra_unlocked: allowed.add("terra")
-            if self._star_unlocked:  allowed.add("star")
-            self.selected_blades = [b for b in self.selected_blades if b in allowed]
-            if not self.selected_blades:
-                self.selected_blades = ["ice"]
+            for _new_blade in ("zenith", "starwrath"):
+                if _new_blade not in self.selected_blades:
+                    self.selected_blades.append(_new_blade)
+        # обрезаем по лимиту (на lv6 max_blades=99, ничего не режет)
+        if self._max_blades < 99:
             while len(self.selected_blades) > self._max_blades:
-                self.selected_blades.pop()
+                self.selected_blades.pop(0)
         self._blade_idx = 0
 
     def upgrade_cost(self):
@@ -9899,37 +9909,43 @@ class Castbound(Unit):
 
     # ── выбор клинков (публичный API для UI) ──────────────────────────────────
     def available_blades(self):
-        if self._zenith_mode: return ["zenith"]
         avail = ["ice"]
-        if self.level >= 1: avail.append("fire")  # fire открывается с lv1
+        if self.level >= 1: avail.append("fire")
         if self._terra_unlocked: avail.append("terra")
         if self._star_unlocked:  avail.append("star")
+        if self._zenith_mode:
+            avail.append("starwrath")
+            avail.append("zenith")
         return avail
 
     def set_blades(self, blade_ids: list):
-        if self._zenith_mode: return
         avail = set(self.available_blades())
         cleaned = [b for b in blade_ids if b in avail]
         if not cleaned: cleaned = ["ice"]
-        self.selected_blades = cleaned[:max(1, self._max_blades)]
+        if self._max_blades < 99:
+            cleaned = cleaned[:max(1, self._max_blades)]
+        self.selected_blades = cleaned
         self._blade_idx = 0
 
     def toggle_blade(self, blade_id: str):
-        """Переключает один клинок. При лимите 1 — заменяет текущий.
-        При лимите 2+ — добавляет/убирает из набора."""
-        if self._zenith_mode: return
+        """Переключает один клинок. На lv6 (max_blades=99) — свободный выбор.
+        При лимите 1 — заменяет текущий. При лимите 2+ — добавляет/убирает."""
         avail = set(self.available_blades())
         if blade_id not in avail: return
         if self._max_blades == 1:
-            # просто переключаемся на этот клинок
             self.selected_blades = [blade_id]
-        else:
+        elif self._max_blades >= 99:
+            # lv6: свободный тоггл, минимум 1 клинок
             if blade_id in self.selected_blades:
-                # убираем (но оставляем хотя бы 1)
                 new = [b for b in self.selected_blades if b != blade_id]
                 self.selected_blades = new if new else [blade_id]
             else:
-                # добавляем, соблюдая лимит (убираем первый если переполнено)
+                self.selected_blades.append(blade_id)
+        else:
+            if blade_id in self.selected_blades:
+                new = [b for b in self.selected_blades if b != blade_id]
+                self.selected_blades = new if new else [blade_id]
+            else:
                 new = self.selected_blades + [blade_id]
                 self.selected_blades = new[-self._max_blades:]
         self._blade_idx = 0
@@ -9964,7 +9980,6 @@ class Castbound(Unit):
         targets = self._get_targets(enemies, 1)
         if not targets: return
 
-        self.cd_left = self.firerate
         target = targets[0]
 
         blades = self.selected_blades
@@ -9972,22 +9987,29 @@ class Castbound(Unit):
         blade = blades[self._blade_idx % len(blades)]
         self._blade_idx = (self._blade_idx + 1) % len(blades)
 
+        # Star Wrath имеет собственный firerate 0.1
+        self.cd_left = 0.25 if blade == "starwrath" else self.firerate
+
         # анимация замаха
         self._swing_angle = math.degrees(
             math.atan2(target.y - self.py, target.x - self.px))
         self._swing_t = 0.0
 
-        # урон
-        target.take_damage(self.damage)
-        self.total_damage += self.damage
+        # урон (Star Wrath наносит 50 базового урона)
+        _atk_dmg_base = 50 if blade == "starwrath" else self.damage
+        target.take_damage(_atk_dmg_base)
+        self.total_damage += _atk_dmg_base
 
         lv = self.level
 
         # ── цвет клинка для снаряда ────────────────────────────────────────
-        if self._zenith_mode:
+        if blade == "zenith":
             _blade_col = _cb_hsv(self._zenith_hue)
         else:
             _blade_col = CB_BLADE_DEFS.get(blade, ("", C_CB_ICE, ""))[1]
+
+        # ── Star Wrath: перегружает урон и firerate для этой атаки ────────
+        _atk_dmg = 50 if blade == "starwrath" else self.damage
 
         # ── применяем эффект клинка ────────────────────────────────────────
         if blade == "zenith":
@@ -9997,34 +10019,43 @@ class Castbound(Unit):
             bdmg, bdur, btick = _CB_FIRE_PARAMS[lv]
             self._star_projs.append(
                 _CB_StarProj(self.px, self.py, target.x, target.y,
-                             self.damage, bdmg, bdur, btick, _blade_col, has_splash=True))
+                             self.damage, bdmg, bdur, btick, _blade_col, has_splash=True, blade_id="zenith"))
 
         elif blade == "ice":
             slow_pct, slow_dur = _CB_ICE_PARAMS[lv]
             _cb_apply_slow(target, slow_pct, slow_dur)
             self._star_projs.append(
                 _CB_StarProj(self.px, self.py, target.x, target.y,
-                             0, 0, 0, 1, _blade_col, has_splash=False))
+                             0, 0, 0, 1, _blade_col, has_splash=False, blade_id="ice"))
 
         elif blade == "fire":
             bdmg, bdur, btick = _CB_FIRE_PARAMS[lv]
             _cb_apply_burn(target, bdmg, bdur, btick)
             self._star_projs.append(
                 _CB_StarProj(self.px, self.py, target.x, target.y,
-                             0, 0, 0, 1, _blade_col, has_splash=False))
+                             0, 0, 0, 1, _blade_col, has_splash=False, blade_id="fire"))
 
         elif blade == "terra":
             self._terra_hit(target, lv)
             self._star_projs.append(
                 _CB_StarProj(self.px, self.py, target.x, target.y,
-                             0, 0, 0, 1, _blade_col, has_splash=False))
+                             0, 0, 0, 1, _blade_col, has_splash=False, blade_id="terra"))
 
         elif blade == "star":
             bdmg, bdur, btick = _CB_FIRE_PARAMS[lv]
-            # Starfury: звезда падает с неба, как в оригинальной Terraria
             self._star_projs.append(
                 _CB_StarfuryProj(target.x, target.y,
                                  self.damage, bdmg, bdur, btick, _blade_col))
+
+        elif blade == "starwrath":
+            bdmg, bdur, btick = _CB_FIRE_PARAMS[lv]
+            # Star Wrath: 3 звезды падают с неба с разбросом, огромный урон
+            for _ in range(3):
+                self._star_projs.append(
+                    _CB_StarfuryProj(
+                        target.x + random.uniform(-60, 60),
+                        target.y,
+                        _atk_dmg, bdmg, bdur, btick, _blade_col))
 
     def _terra_hit(self, enemy, lv):
         kb_px, kb_every = _CB_TERRA_PARAMS[lv]
@@ -10259,13 +10290,14 @@ class Castbound(Unit):
         surf.blit(header, (rx, ry - 18))
 
         # Полный список в нужном порядке — показываем всегда
-        all_blades = ["ice", "fire", "terra", "star"]
         if self._zenith_mode:
-            all_blades = ["zenith"]
+            all_blades = ["ice", "fire", "terra", "star", "starwrath", "zenith"]
+        else:
+            all_blades = ["ice", "fire", "terra", "star"]
         avail_set = set(self.available_blades())
 
         # Разблокируются на каком уровне
-        _unlock_lv = {"fire": 1, "terra": 3, "star": 5, "zenith": 6}
+        _unlock_lv = {"fire": 1, "terra": 3, "star": 5, "starwrath": 6, "zenith": 6}
 
         rects = []
         for i, bid in enumerate(all_blades):

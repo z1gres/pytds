@@ -901,6 +901,9 @@ class FallenKing(Enemy):
         # Hero summon
         self._summon_timer=random.uniform(7,15)
 
+        # Phase shift (immune state)
+        self._phase_shift_active=False
+
     def take_damage(self, dmg):
         eff=dmg*(1.0-self.ARMOR)
         self.hp-=eff
