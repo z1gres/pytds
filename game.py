@@ -671,6 +671,7 @@ class AdminPanel:
                 pygame.draw.rect(surf,brd,cr,2,border_radius=10)
                 if name=="Accelerator": draw_accel_icon(surf,cx2+cw//2,cy2+28,t,size=20)
                 elif name=="Frostcel.": draw_frost_icon(surf,cx2+cw//2,cy2+28,t,size=20)
+                elif name=="Castbound": _draw_tower_icon(surf,"Castbound",cx2+cw//2,cy2+26,t,size=32)
 
                 else:
                     pygame.draw.circle(surf,(16,12,28),(cx2+cw//2,cy2+28),20)
@@ -2191,24 +2192,37 @@ class UI:
                 r_outer = 34
                 r_inner = 28
                 t = pygame.time.get_ticks() * 0.001
-                # Shadow ring
-                pygame.draw.circle(surf, (10, 10, 18), (cx2, icon_cy), r_outer + 3)
+                _is_castbound = UType.NAME == "Castbound"
+                # Shadow ring (skip for Castbound)
+                if not _is_castbound:
+                    pygame.draw.circle(surf, (10, 10, 18), (cx2, icon_cy), r_outer + 3)
                 # Draw detailed icon on a sub-surface
                 icon_sz = r_inner
-                _ic_surf = pygame.Surface((r_outer*2+6, r_outer*2+6), pygame.SRCALPHA)
-                _ic_cx = r_outer + 3; _ic_cy = r_outer + 3
-                # Dark base circle behind icon
-                pygame.draw.circle(_ic_surf, tuple(max(0, c-60) for c in UType.COLOR),
-                                   (_ic_cx, _ic_cy), r_outer)
-                if unavailable:
-                    _draw_tower_icon(_ic_surf, UType.NAME, _ic_cx, _ic_cy, t, size=icon_sz)
-                    # Dim overlay
-                    dim_s = pygame.Surface((r_outer*2+6, r_outer*2+6), pygame.SRCALPHA)
-                    pygame.draw.circle(dim_s, (0,0,0,140), (_ic_cx,_ic_cy), r_outer)
-                    _ic_surf.blit(dim_s, (0,0))
+                _cb_sz = int(icon_sz * 1.8) if _is_castbound else icon_sz
+                _surf_r = r_outer*2+6
+                _ic_surf = pygame.Surface((_surf_r*2, _surf_r*2), pygame.SRCALPHA)
+                _ic_cx = _surf_r; _ic_cy = _surf_r
+                # Dark base circle behind icon (skip for Castbound — no bg)
+                if not _is_castbound:
+                    pygame.draw.circle(_ic_surf, tuple(max(0, c-60) for c in UType.COLOR),
+                                       (_ic_cx, _ic_cy), r_outer)
+                if not _is_castbound:
+                    if unavailable:
+                        _draw_tower_icon(_ic_surf, UType.NAME, _ic_cx, _ic_cy, t, size=_cb_sz)
+                        dim_s = pygame.Surface((_surf_r*2, _surf_r*2), pygame.SRCALPHA)
+                        pygame.draw.circle(dim_s, (0,0,0,140), (_ic_cx,_ic_cy), r_outer)
+                        _ic_surf.blit(dim_s, (0,0))
+                    else:
+                        _draw_tower_icon(_ic_surf, UType.NAME, _ic_cx, _ic_cy, t, size=_cb_sz)
+                if _is_castbound:
+                    # Draw Castbound icon directly onto surf — no sub-surface bg
+                    _draw_tower_icon(surf, UType.NAME, cx2, icon_cy, t, size=_cb_sz)
+                    if unavailable:
+                        dim_s2 = pygame.Surface((slot.w, slot.h), pygame.SRCALPHA)
+                        pygame.draw.circle(dim_s2, (0,0,0,140), (cx2 - slot.x, icon_cy - slot.y), _cb_sz)
+                        surf.blit(dim_s2, (slot.x, slot.y))
                 else:
-                    _draw_tower_icon(_ic_surf, UType.NAME, _ic_cx, _ic_cy, t, size=icon_sz)
-                surf.blit(_ic_surf, (cx2 - r_outer - 3, icon_cy - r_outer - 3))
+                    surf.blit(_ic_surf, (cx2 - _surf_r, icon_cy - _surf_r))
 
                 # Name
                 name_col = (110, 115, 130) if unavailable else (210, 215, 230)
@@ -7718,15 +7732,20 @@ class MainMenu:
                     pygame.draw.line(cls._vig_surf_cached, (0,0,0,_a), (_x,_y), (_x+3,_y))
 
     # Button definitions: (attr_name, label, accent_color)
+    # Main trio drawn separately; small row uses emoji labels
     _BTN_DEFS = [
-        ("btn_play",         "PLAY",         ( 60, 160, 255)),
-        ("btn_loadout",      "LOADOUT",       (120,  80, 220)),
-        ("btn_shop",         "SHOP",          (255, 180,  40)),
-        ("btn_skilltree",    "SKILL TREE",    ( 60, 200, 140)),
-        ("btn_achievements", "ACHIEVEMENTS",  (200, 160,  20)),
-        ("btn_settings",     "SETTINGS",      ( 60, 130, 180)),
-        ("btn_quit",         "QUIT",          (180,  50,  50)),
+        ("btn_play",         "\u25B6",           ( 60, 160, 255)),
+        ("btn_loadout",      "\U0001F6E1",        (120,  80, 220)),
+        ("btn_shop",         "\U0001F6D2",        (255, 180,  40)),
+        ("btn_skilltree",    "\U0001F333",        ( 60, 200, 140)),
+        ("btn_achievements", "\U0001F3C6",        (200, 160,  20)),
+        ("btn_quests",       "\U0001F4DC",        (160,  80, 220)),
+        ("btn_settings",     "\u2699",            ( 60, 130, 180)),
+        ("btn_quit",         "\U0001F6AA",        (180,  50,  50)),
     ]
+    # Indices into _BTN_DEFS for the three main buttons and the small row
+    _MAIN_IDX  = (0, 1, 2)       # play, loadout, shop
+    _SMALL_IDX = (3, 4, 5, 6, 7) # skilltree, achievements, quests, settings, quit
 
     def __init__(self, screen, save_data=None, first_open=True):
         self.screen    = screen
@@ -7737,27 +7756,47 @@ class MainMenu:
         self._ensure_fonts()
         self._ensure_heavy_surfaces()
 
-        btn_w, btn_h = 280, 52
-        gap          = 12
         cx           = SCREEN_W // 2
-        y0           = int(SCREEN_H * 0.33)
+        cy_main      = int(SCREEN_H * 0.50)   # vertical centre of big-button row
 
-        for i, (attr, _label, _acc) in enumerate(self._BTN_DEFS):
-            setattr(self, attr, pygame.Rect(cx - btn_w//2, y0 + i*(btn_h+gap), btn_w, btn_h))
+        # ── Big three: LOADOUT | PLAY | SHOP ─────────────────────────────────
+        play_w,    play_h    = 200, 200
+        side_w,    side_h    = 160, 160
+        side_gap             = 28   # gap between side btn and play btn
 
-        # ── Castbound corner button (bottom-right above version) ─────────────
-        cb_w, cb_h = 130, 32
-        self.btn_castbound = pygame.Rect(SCREEN_W - cb_w - 14, SCREEN_H - cb_h - 36, cb_w, cb_h)
+        self.btn_play    = pygame.Rect(cx - play_w//2,
+                                       cy_main - play_h//2,
+                                       play_w, play_h)
+        self.btn_loadout = pygame.Rect(self.btn_play.left - side_gap - side_w,
+                                       cy_main - side_h//2,
+                                       side_w, side_h)
+        self.btn_shop    = pygame.Rect(self.btn_play.right + side_gap,
+                                       cy_main - side_h//2,
+                                       side_w, side_h)
 
-        # Void particles: black/dark drifting dots, glowing motes, void wisps
+        # ── Small bottom row with emoji ───────────────────────────────────────
+        sm_w, sm_h = 90, 90
+        sm_gap     = 14
+        _sm_btns   = ["btn_skilltree", "btn_achievements", "btn_quests", "btn_settings", "btn_quit"]
+        _total_sm  = len(_sm_btns) * sm_w + (len(_sm_btns) - 1) * sm_gap
+        _sm_x0     = cx - _total_sm // 2
+        _sm_y      = cy_main + play_h//2 + 36
+        for _si, _attr in enumerate(_sm_btns):
+            setattr(self, _attr,
+                    pygame.Rect(_sm_x0 + _si * (sm_w + sm_gap), _sm_y, sm_w, sm_h))
+
+        # ── Void particles: black/dark drifting dots, glowing motes, void wisps
         self._particles  = [_VoidDot()    for _ in range(90)]
         self._embers     = [_VoidMote()   for _ in range(60)]
         self._void_wisps = [_VoidWisp()   for _ in range(30)]
         self._drips      = []
         self._drip_timer = 0.0
 
-        # Per-button hover glow (0..1)
+        # Per-button hover glow (0..1) — one entry per _BTN_DEFS entry
         self._hover_anim = [0.0] * len(self._BTN_DEFS)
+
+        # emoji-capable font for small buttons
+        self._emoji_font = None
 
         # Reuse cached background and vignette
         self._bg_surf    = self.__class__._bg_surf_cached
@@ -7779,18 +7818,38 @@ class MainMenu:
         # Void/pale silver-white main color, soft blue-white glow
         VOID_WHITE  = (220, 225, 240)
         VOID_GLOW   = (120, 150, 210)
-        main = f.render("TOWER DEFENSE", True, VOID_WHITE)
+        main = f.render("pyTDS", True, VOID_WHITE)
         gs   = 0.5 + 0.5 * math.sin(glow_phase)
         ga   = int(55 + 60 * gs)
         gw   = int(main.get_width()  * (1.025 + 0.015*gs))
         gh   = int(main.get_height() * (1.025 + 0.015*gs))
-        glow = pygame.transform.smoothscale(f.render("TOWER DEFENSE", True, VOID_GLOW), (gw, gh))
+        glow = pygame.transform.smoothscale(f.render("pyTDS", True, VOID_GLOW), (gw, gh))
         glow.set_alpha(ga)
         pad  = 16
-        comp = pygame.Surface((gw + pad, gh + pad), pygame.SRCALPHA)
-        comp.blit(glow, ((gw + pad - gw)//2, (gh + pad - gh)//2))
-        comp.blit(main, ((gw + pad - main.get_width())//2,
-                         (gh + pad - main.get_height())//2))
+
+        # ── Decorative divider (subtitle removed) ────────────────────────────
+        div_w    = main.get_width() + 80
+        div_h    = 3
+        div_surf = pygame.Surface((div_w, div_h), pygame.SRCALPHA)
+        for dx in range(div_w):
+            frac  = abs(dx - div_w / 2) / (div_w / 2)
+            alpha = int((1 - frac ** 2) * (120 + 80 * gs))
+            r_c   = int(80  + 80  * gs)
+            g_c   = int(100 + 80  * gs)
+            b_c   = int(180 + 60  * gs)
+            pygame.draw.line(div_surf, (r_c, g_c, b_c, alpha), (dx, 0), (dx, div_h - 1))
+
+        total_h = gh + pad + div_h + 10
+        total_w = max(gw + pad, div_w + pad)
+        comp    = pygame.Surface((total_w, total_h), pygame.SRCALPHA)
+        cx_loc  = total_w // 2
+
+        comp.blit(glow, (cx_loc - gw // 2, (gh + pad - gh) // 2))
+        comp.blit(main, (cx_loc - main.get_width() // 2, (gh + pad - main.get_height()) // 2))
+
+        div_y = gh + pad - 4
+        comp.blit(div_surf, (cx_loc - div_w // 2, div_y))
+
         self._title_cache[key] = comp
         return comp
 
@@ -7845,37 +7904,46 @@ class MainMenu:
             pygame.draw.line(btn_s, (GOLD[0], GOLD[1], GOLD[2], la), (8, 0),        (rect.w-8, 0))
             pygame.draw.line(btn_s, (GOLD[0], GOLD[1], GOLD[2], la), (8, rect.h-1), (rect.w-8, rect.h-1))
 
-        # Left colour stripe — always visible at low opacity, bright on hover
-        stripe_a = min(255, int(h * 180 + 90))
-        stripe_s = pygame.Surface((4, max(1, rect.h - 12)), pygame.SRCALPHA)
+        # Bottom colour stripe — accent glow under emoji
+        stripe_a = min(255, int(h * 200 + 55))
+        stripe_s = pygame.Surface((max(1, rect.w - 20), 3), pygame.SRCALPHA)
         pygame.draw.rect(stripe_s, (accent[0], accent[1], accent[2], stripe_a),
-                         (0, 0, 4, max(1, rect.h - 12)))
-        btn_s.blit(stripe_s, (6, 6))
+                         (0, 0, max(1, rect.w - 20), 3))
+        btn_s.blit(stripe_s, (10, rect.h - 7))
 
         if alpha_val < 255: btn_s.set_alpha(alpha_val)
         surf.blit(btn_s, (rect.x, rect.y + anim_y))
 
-        # Label blends white→gold on hover
-        LIGHT_GR = (210, 210, 220)
-        tc = (
-            int(GOLD_BR[0]*h + LIGHT_GR[0]*(1-h)),
-            int(GOLD_BR[1]*h + LIGHT_GR[1]*(1-h)),
-            int(GOLD_BR[2]*h + LIGHT_GR[2]*(1-h)),
-        )
-        label_s  = self._font_btn.render(label, True, tc)
-        shadow_s = self._font_btn.render(label, True, (0, 0, 0))
-        max_w = rect.w - 28
-        if label_s.get_width() > max_w:
-            new_h = max(1, int(label_s.get_height() * max_w / label_s.get_width()))
-            label_s  = pygame.transform.smoothscale(label_s,  (max_w, new_h))
-            shadow_s = pygame.transform.smoothscale(shadow_s, (max_w, new_h))
-        shadow_s.set_alpha(110)
-        lx = rect.centerx - label_s.get_width()//2
-        ly = rect.centery - label_s.get_height()//2 + anim_y
-        if alpha_val < 255:
-            label_s.set_alpha(alpha_val); shadow_s.set_alpha(min(110, alpha_val//2))
-        surf.blit(shadow_s, (lx+2, ly+2))
-        surf.blit(label_s,  (lx,   ly))
+        # Emoji label — render with emoji font, centred in button
+        if label:
+            LIGHT_GR = (210, 210, 220)
+            tc = (
+                int(GOLD_BR[0]*h + LIGHT_GR[0]*(1-h)),
+                int(GOLD_BR[1]*h + LIGHT_GR[1]*(1-h)),
+                int(GOLD_BR[2]*h + LIGHT_GR[2]*(1-h)),
+            )
+            em_size = max(18, int(rect.h * 0.52))
+            _efb_key = ('_emoji_font_big', em_size)
+            if not hasattr(self, '_emoji_font_big') or getattr(self, '_emoji_font_big_size', 0) != em_size:
+                for _fname in ("segoeuiemoji", "seguiemj", "notocoloremoji",
+                               "applesymbol", "symbola", "segoeui"):
+                    try:
+                        _ef = pygame.font.SysFont(_fname, em_size, bold=False)
+                        _ef.render("\U0001F333", True, (255, 255, 255))
+                        self._emoji_font_big = _ef
+                        self._emoji_font_big_size = em_size
+                        break
+                    except Exception:
+                        pass
+                if not hasattr(self, '_emoji_font_big'):
+                    self._emoji_font_big = pygame.font.SysFont("segoeui", em_size, bold=False)
+                    self._emoji_font_big_size = em_size
+            em_s = self._emoji_font_big.render(label, True, tc)
+            lx = rect.centerx - em_s.get_width() // 2
+            ly = rect.centery - em_s.get_height() // 2 + anim_y
+            if alpha_val < 255:
+                em_s.set_alpha(alpha_val)
+            surf.blit(em_s, (lx, ly))
 
         # (no side ornaments)
 
@@ -7909,9 +7977,9 @@ class MainMenu:
                     if self.btn_shop.collidepoint(pos):         self.action = "shop"
                     if self.btn_skilltree.collidepoint(pos):    self.action = "skilltree"
                     if self.btn_achievements.collidepoint(pos): self.action = "achievements"
+                    if self.btn_quests.collidepoint(pos):       self.action = "quests"
                     if self.btn_settings.collidepoint(pos):     self.action = "settings"
                     if self.btn_quit.collidepoint(pos):         self.action = "quit"
-                    if self.btn_castbound.collidepoint(pos):    self.action = "castbound"
             self._draw()
             pygame.display.flip()
         return self.action
@@ -7963,7 +8031,7 @@ class MainMenu:
         self._drip_timer -= dt
         if self._drip_timer <= 0:
             self._drip_timer = random.uniform(0.4, 1.2)
-            ts_tmp = self._font_title.render("TOWER DEFENSE", True, (255,255,255))
+            ts_tmp = self._font_title.render("pyTDS", True, (255,255,255))
             tw     = ts_tmp.get_width()
             tx     = cx - tw//2
             self._drips.append(_MenuDrip(
@@ -7975,9 +8043,7 @@ class MainMenu:
             d.update(); d.draw(surf)
 
         # ── Ornament lines below title ────────────────────────────────────────
-        orn_y = ty + title_surf.get_height() + 4
-        self._draw_ornament(surf, cx, orn_y,     int(SCREEN_W*0.32), GOLD,      160)
-        self._draw_ornament(surf, cx, orn_y + 6, int(SCREEN_W*0.16), BLOOD_RED, 100)
+        # (ornament lines removed)
 
         # (subtitle removed)
 
@@ -7988,10 +8054,33 @@ class MainMenu:
             speed   = 0.18 if hovered else 0.38
             self._hover_anim[i] += (target - self._hover_anim[i]) * speed
 
-        # ── Buttons ───────────────────────────────────────────────────────────
-        for i, (attr, label, accent) in enumerate(self._BTN_DEFS):
+        # ── Main trio: LOADOUT | PLAY | SHOP ─────────────────────────────────
+        for idx in self._MAIN_IDX:
+            attr, label, accent = self._BTN_DEFS[idx]
             rect = getattr(self, attr)
-            self._draw_fancy_btn(surf, rect, label, self._hover_anim[i], accent, i)
+            self._draw_fancy_btn(surf, rect, label, self._hover_anim[idx], accent, idx)
+
+        # ── Small bottom row with emoji ───────────────────────────────────────
+        # Use Segoe UI Emoji so emoji render as coloured glyphs, not squares
+        if self._emoji_font is None:
+            for _fname in ("segoeuiemoji", "seguiemj", "notocoloremoji",
+                           "applesymbol", "symbola", "segoeui"):
+                try:
+                    _ef = pygame.font.SysFont(_fname, 22, bold=True)
+                    # quick test render
+                    _ef.render("\U0001F333", True, (255, 255, 255))
+                    self._emoji_font = _ef
+                    break
+                except Exception:
+                    pass
+            if self._emoji_font is None:
+                self._emoji_font = pygame.font.SysFont("segoeui", 22, bold=True)
+
+        for idx in self._SMALL_IDX:
+            attr, label, accent = self._BTN_DEFS[idx]
+            rect = getattr(self, attr)
+            h    = self._hover_anim[idx]
+            self._draw_fancy_btn(surf, rect, label, h, accent, idx)
 
         # ── Coins + Shards — bottom-left, stacked like the reference UI ─────────
         pad_x = 18
@@ -8038,26 +8127,6 @@ class MainMenu:
         ver_s.set_alpha(110)
         surf.blit(ver_s, (SCREEN_W - ver_s.get_width() - 14, SCREEN_H - ver_s.get_height() - 14))
 
-        # ── Castbound corner button ───────────────────────────────────────────
-        cb     = self.btn_castbound
-        cb_hov = cb.collidepoint(mx, my)
-        cb_pulse = 0.5 + 0.5 * math.sin(t * 3.0)
-        cb_brd = (
-            int(100 + 80 * cb_pulse),
-            int(40  + 20 * cb_pulse),
-            int(180 + 60 * cb_pulse),
-        )
-        cb_s = pygame.Surface((cb.w, cb.h), pygame.SRCALPHA)
-        cb_bg = (30, 10, 60, 210) if cb_hov else (16, 6, 36, 190)
-        pygame.draw.rect(cb_s, cb_bg, (0, 0, cb.w, cb.h), border_radius=7)
-        pygame.draw.rect(cb_s, (*cb_brd, 255), (0, 0, cb.w, cb.h), 2, border_radius=7)
-        surf.blit(cb_s, (cb.x, cb.y))
-        cb_f   = pygame.font.SysFont("segoeui", 16, bold=True)
-        cb_col = (200, 140, 255) if cb_hov else (140, 80, 200)
-        cb_lbl = cb_f.render("castbound", True, cb_col)
-        surf.blit(cb_lbl, (cb.centerx - cb_lbl.get_width() // 2,
-                           cb.centery - cb_lbl.get_height() // 2))
-
         # ── Fade-in overlay ───────────────────────────────────────────────────
         if self._fade_alpha > 0:
             fade = pygame.Surface((SCREEN_W, SCREEN_H))
@@ -8067,19 +8136,349 @@ class MainMenu:
             self._fade_alpha = max(0, self._fade_alpha - 5)
 
 
+# ── Quests Screen ─────────────────────────────────────────────────────────────
+class QuestsScreen:
+    """Displays all quest lines with progress tracking."""
+
+    # ── Castbound quest definitions ───────────────────────────────────────────
+    _ALL_STAGES = {
+        "easy_runs","fallen_runs","frosty_run","pay_coins","pay_shards",
+        "all_achievements","all_towers","max_skilltree","all_skins","moon_lord","done"
+    }
+    _CB_QUESTS = [
+        {
+            "id":    "easy_runs",
+            "title": "Warmup",
+            "desc":  "Complete Easy difficulty 7 times.",
+            "stage": "easy_runs",
+            "done_stages": {"fallen_runs","frosty_run","pay_coins","pay_shards",
+                            "all_achievements","all_towers","max_skilltree","all_skins","moon_lord","done"},
+        },
+        {
+            "id":    "fallen_runs",
+            "title": "Fallen Veteran",
+            "desc":  "Complete Fallen difficulty 7 times.",
+            "stage": "fallen_runs",
+            "done_stages": {"frosty_run","pay_coins","pay_shards",
+                            "all_achievements","all_towers","max_skilltree","all_skins","moon_lord","done"},
+        },
+        {
+            "id":    "frosty_run",
+            "title": "Into the Cold",
+            "desc":  "Complete Frosty difficulty.",
+            "stage": "frosty_run",
+            "done_stages": {"pay_coins","pay_shards",
+                            "all_achievements","all_towers","max_skilltree","all_skins","moon_lord","done"},
+        },
+        {
+            "id":    "pay_coins",
+            "title": "A Strange Offer",
+            "desc":  "Pay Castbound 20 000 coins.",
+            "stage": "pay_coins",
+            "done_stages": {"pay_shards","all_achievements","all_towers",
+                            "max_skilltree","all_skins","moon_lord","done"},
+        },
+        {
+            "id":    "pay_shards",
+            "title": "Crystal Toll",
+            "desc":  "Pay Castbound 5 000 shards.",
+            "stage": "pay_shards",
+            "done_stages": {"all_achievements","all_towers",
+                            "max_skilltree","all_skins","moon_lord","done"},
+        },
+        {
+            "id":    "all_achievements",
+            "title": "Completionist",
+            "desc":  "Unlock every achievement.",
+            "stage": "all_achievements",
+            "done_stages": {"all_towers","max_skilltree","all_skins","moon_lord","done"},
+        },
+        {
+            "id":    "all_towers",
+            "title": "Tower Collector",
+            "desc":  "Own every tower in the game.",
+            "stage": "all_towers",
+            "done_stages": {"max_skilltree","all_skins","moon_lord","done"},
+        },
+        {
+            "id":    "max_skilltree",
+            "title": "Master of Skills",
+            "desc":  "Max out the entire Skill Tree.",
+            "stage": "max_skilltree",
+            "done_stages": {"all_skins","moon_lord","done"},
+        },
+        {
+            "id":    "all_skins",
+            "title": "Collector",
+            "desc":  "Own every skin in the game.",
+            "stage": "all_skins",
+            "done_stages": {"moon_lord","done"},
+        },
+        {
+            "id":    "moon_lord",
+            "title": "The Moon Lord",
+            "desc":  "Defeat the Moon Lord.",
+            "stage": "moon_lord",
+            "done_stages": {"done"},
+        },
+    ]
+
+    # ── Placeholder future quests ─────────────────────────────────────────────
+    _FUTURE_QUESTS = []
+
+    def __init__(self, screen, save_data):
+        self.screen    = screen
+        self.save_data = save_data
+        self.t         = 0.0
+        self.running   = True
+        self._result   = None   # None = just back, "castbound" = open dialog
+        self.btn_back  = pygame.Rect(SCREEN_W // 2 - 130, SCREEN_H - 74, 260, 50)
+        # Castbound talk button — only visible when quest is in progress
+        self.btn_talk  = pygame.Rect(SCREEN_W // 2 - 150, SCREEN_H - 136, 300, 50)
+
+        MainMenu._ensure_heavy_surfaces()
+        self._wisps = [_VoidWisp() for _ in range(20)]
+        self._dots  = [_VoidDot()  for _ in range(60)]
+        self._motes = [_VoidMote() for _ in range(30)]
+
+    def run(self):
+        clock = pygame.time.Clock()
+        while self.running:
+            dt = clock.tick(60) / 1000.0
+            self.t += dt
+            for ev in pygame.event.get():
+                if ev.type == pygame.QUIT:
+                    pygame.quit(); sys.exit()
+                if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+                    self.running = False
+                if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                    if self.btn_back.collidepoint(ev.pos):
+                        self.running = False
+                    quest_stage = self.save_data.get("castbound_quest", None)
+                    if quest_stage != "done" and self.btn_talk.collidepoint(ev.pos):
+                        self._result = "castbound"
+                        self.running = False
+            self._draw()
+            pygame.display.flip()
+        return self._result
+
+    def _quest_status(self, q):
+        """Return 'done', 'active', or 'locked' for a castbound quest entry."""
+        stage = self.save_data.get("castbound_quest", None)
+        if stage in q["done_stages"]:
+            return "done"
+        if stage == q["stage"]:
+            return "active"
+        return "locked"
+
+    def _draw_quest_card(self, surf, rx, ry, rw, rh, title, desc, status,
+                         extra_line=None, accent=None):
+        """Draw a single quest card at (rx, ry) with size (rw, rh)."""
+        STATUS_COLORS = {
+            "done":   ((30, 80, 40),   (60, 200, 80),  "✔  COMPLETE"),
+            "active": ((40, 20, 80),   (140, 80, 255), "►  IN PROGRESS"),
+            "locked": ((20, 20, 30),   (70, 70, 90),   "🔒  LOCKED"),
+            "soon":   ((10, 10, 20),   (50, 50, 70),   "⏳  COMING SOON"),
+        }
+        bg_col, brd_col, status_lbl = STATUS_COLORS[status]
+
+        card = pygame.Surface((rw, rh), pygame.SRCALPHA)
+        pygame.draw.rect(card, (*bg_col, 210), (0, 0, rw, rh), border_radius=10)
+        pygame.draw.rect(card, (*brd_col, 255), (0, 0, rw, rh), 2, border_radius=10)
+
+        # Left status stripe
+        stripe_col = brd_col if status != "locked" else (50, 50, 60)
+        pygame.draw.rect(card, (*stripe_col, 200), (0, 8, 4, rh - 16), border_radius=2)
+
+        surf.blit(card, (rx, ry))
+
+        # Title
+        tf = pygame.font.SysFont("segoeui", 20, bold=True)
+        title_col = (240, 240, 255) if status != "locked" else (100, 100, 120)
+        ts = tf.render(title, True, title_col)
+        surf.blit(ts, (rx + 16, ry + 10))
+
+        # Description
+        df = pygame.font.SysFont("segoeui", 15)
+        desc_col = (180, 180, 210) if status != "locked" else (70, 70, 90)
+        ds = df.render(desc, True, desc_col)
+        surf.blit(ds, (rx + 16, ry + 34))
+
+        # Extra progress line
+        if extra_line:
+            ef = pygame.font.SysFont("segoeui", 14)
+            es = ef.render(extra_line, True, (160, 200, 255))
+            surf.blit(es, (rx + 16, ry + rh - 22))
+
+        # Status badge — right-aligned
+        bf = pygame.font.SysFont("segoeui", 14, bold=True)
+        bs = bf.render(status_lbl, True, brd_col)
+        surf.blit(bs, (rx + rw - bs.get_width() - 14,
+                       ry + rh // 2 - bs.get_height() // 2))
+
+    def _draw(self):
+        surf   = self.screen
+        t      = self.t
+        cx     = SCREEN_W // 2
+        mx, my = pygame.mouse.get_pos()
+        dt     = 1 / 60.0
+
+        # ── Background ───────────────────────────────────────────────────────
+        _draw_menu_bg(surf, overlay_alpha=80)
+        for w in self._wisps:  w.update(dt); w.draw(surf)
+        for p in self._dots:   p.update();   p.draw(surf)
+        for e in self._motes:  e.update(dt); e.draw(surf)
+        if MainMenu._vig_surf_cached is not None:
+            surf.blit(MainMenu._vig_surf_cached, (0, 0))
+
+        # ── Header ────────────────────────────────────────────────────────────
+        pulse  = 0.5 + 0.5 * math.sin(t * 1.6)
+        hdr_col = (
+            int(130 + 70  * pulse),
+            int(90  + 50  * pulse),
+            int(220 + 35  * pulse),
+        )
+        hf = pygame.font.SysFont("segoeui", 42, bold=True)
+        hs = hf.render("QUESTS", True, hdr_col)
+
+        # Glow behind header
+        glow_s = pygame.Surface((hs.get_width() + 60, hs.get_height() + 24), pygame.SRCALPHA)
+        ga = int(40 + 30 * pulse)
+        pygame.draw.rect(glow_s, (100, 50, 200, ga), glow_s.get_rect(), border_radius=12)
+        surf.blit(glow_s, glow_s.get_rect(center=(cx, 60)))
+        surf.blit(hs, hs.get_rect(center=(cx, 60)))
+
+        # Decorative divider
+        div_w = 520
+        div_surf = pygame.Surface((div_w, 3), pygame.SRCALPHA)
+        for dx in range(div_w):
+            frac  = abs(dx - div_w / 2) / (div_w / 2)
+            alpha = int((1 - frac ** 2) * (140 + 60 * pulse))
+            pygame.draw.line(div_surf, (120, 70, 220, alpha), (dx, 0), (dx, 2))
+        surf.blit(div_surf, (cx - div_w // 2, 88))
+
+        # ── Section: Castbound ───────────────────────────────────────────────
+        sf = pygame.font.SysFont("segoeui", 18, bold=True)
+        section_lbl = sf.render("◈  CASTBOUND  ◈", True, (160, 100, 255))
+        surf.blit(section_lbl, (cx - section_lbl.get_width() // 2, 102))
+
+        card_w  = min(680, SCREEN_W - 80)
+        card_h  = 72
+        card_gap = 10
+        start_x = cx - card_w // 2
+        start_y = 132
+
+        stage       = self.save_data.get("castbound_quest", None)
+        easy_runs   = self.save_data.get("castbound_easy_runs", 0)
+        fallen_runs = self.save_data.get("castbound_fallen_runs", 0)
+        frosty_done = self.save_data.get("castbound_frosty_run", False)
+        abn_kills   = self.save_data.get("castbound_abnormal_kills", 0)
+
+        for i, q in enumerate(self._CB_QUESTS):
+            status = self._quest_status(q)
+            ry = start_y + i * (card_h + card_gap)
+
+            # Slide-in animation
+            slide_t = min(1.0, max(0.0, (t - i * 0.07) / 0.3))
+            slide_t = 1.0 - (1.0 - slide_t) ** 3
+            alpha = int(255 * slide_t)
+            anim_x = int(30 * (1.0 - slide_t))
+
+            # Extra progress info
+            extra = None
+            qid = q["id"]
+            if qid == "easy_runs":
+                n = min(easy_runs, 7)
+                extra = f"Progress: {n} / 7 runs" if status == "active" else (f"Completed: {n} / 7" if status == "done" else None)
+            elif qid == "fallen_runs":
+                n = min(fallen_runs, 7)
+                extra = f"Progress: {n} / 7 runs" if status == "active" else (f"Completed: {n} / 7" if status == "done" else None)
+            elif qid == "frosty_run":
+                extra = "Progress: 1 / 1" if status == "done" else ("In progress..." if status == "active" else None)
+            elif qid == "all_achievements":
+                from game_core import ACHIEVEMENT_DEFS
+                unlocked = load_achievements().get("unlocked", [])
+                n = len(unlocked); total = len(ACHIEVEMENT_DEFS)
+                extra = f"Progress: {n} / {total}" if status in ("active","done") else None
+            elif qid == "all_towers":
+                _owned = list(self.save_data.get("owned_units", []))
+                n_owned = len(set(_owned))
+                total_t = len({u["name"] for u in ALL_UNITS_POOL})
+                extra = f"Progress: {n_owned} / {total_t} towers" if status in ("active","done") else None
+            elif qid == "max_skilltree":
+                st = self.save_data.get("skill_tree", {})
+                total_pts = sum(st.values())
+                extra = f"Skill points spent: {total_pts}" if status in ("active","done") else None
+            elif qid == "all_skins":
+                owned_skins = load_skins().get("owned", [])
+                n = len(owned_skins); total_sk = len(ALL_SKIN_DEFS)
+                extra = f"Progress: {n} / {total_sk} skins" if status in ("active","done") else None
+
+            # Draw card to temp surface for alpha/slide-in
+            card_surf = pygame.Surface((card_w, card_h), pygame.SRCALPHA)
+            self._draw_quest_card(card_surf, 0, 0, card_w, card_h,
+                                  q["title"], q["desc"], status, extra)
+            card_surf.set_alpha(alpha)
+            surf.blit(card_surf, (start_x + anim_x, ry))
+
+        # ── Talk to Castbound button ──────────────────────────────────────────
+        quest_stage = self.save_data.get("castbound_quest", None)
+        # Show button for: not started, or in any active stage (not done)
+        _show_btn = quest_stage != "done"
+
+        if _show_btn:
+            hov_t = self.btn_talk.collidepoint(mx, my)
+            if quest_stage is None:
+                # Not started — green "Start" button
+                bg_t  = (20, 60, 30) if hov_t else (10, 30, 18)
+                brd_t = (80, 220, 100) if hov_t else (50, 150, 70)
+                lbl_t = "▶  Start Castbound Quest"
+                lbl_c = (180, 255, 180) if hov_t else (120, 200, 140)
+            else:
+                # Active — pulsing purple "Talk" button
+                cb_p  = 0.5 + 0.5 * math.sin(t * 3.0)
+                bg_t  = (30, 10, 60) if hov_t else (16, 6, 36)
+                brd_t = (int(100 + 80*cb_p), int(40 + 20*cb_p), int(180 + 60*cb_p))
+                lbl_t = "◈  Talk to Castbound"
+                lbl_c = (210, 150, 255) if hov_t else (150, 90, 220)
+            pygame.draw.rect(surf, bg_t,  self.btn_talk, border_radius=10)
+            pygame.draw.rect(surf, brd_t, self.btn_talk, 2, border_radius=10)
+            btf = pygame.font.SysFont("segoeui", 22, bold=True)
+            bts = btf.render(lbl_t, True, lbl_c)
+            surf.blit(bts, bts.get_rect(center=self.btn_talk.center))
+
+        # ── Back button ───────────────────────────────────────────────────────
+        hov = self.btn_back.collidepoint(mx, my)
+        bg_c  = (60, 30, 120) if hov else (28, 16, 55)
+        brd_c = (160, 100, 255) if hov else (80, 50, 140)
+        pygame.draw.rect(surf, bg_c,  self.btn_back, border_radius=10)
+        pygame.draw.rect(surf, brd_c, self.btn_back, 2, border_radius=10)
+        bbf = pygame.font.SysFont("segoeui", 22, bold=True)
+        bbs = bbf.render("← BACK", True, (220, 200, 255) if hov else (150, 120, 200))
+        surf.blit(bbs, bbs.get_rect(center=self.btn_back.center))
+
+
 # ── Castbound Dialog ───────────────────────────────────────────────────────────
 class CastboundDialog:
-    """Mysterious corner NPC dialog with typewriter text and choice buttons."""
+    """Mysterious NPC dialog for the 10-stage Castbound quest chain."""
 
-    _COST = 10000
+    # Coins cost for stage 4, shards cost for stage 5
+    _COIN_COST  = 20000
+    _SHARD_COST = 5000
 
-    # Quest stages stored in save_data["castbound_quest"]:
-    #   None / missing   → not started (show pay prompt)
-    #   "beat_fallen"    → quest 1 given, not yet completed
-    #   "kill_abnormal"  → quest 2 given (fallen beaten), not yet completed
-    #   "obtain_towers"  → quest 3 given (abnormals killed), not yet completed
-    #   "moon_lord"      → quest 3 complete — Moon Lord reveal shown
-    #   "done"           → all quests completed (legacy / future)
+    # Quest stages (in order):
+    #   None           → not started
+    #   "easy_runs"    → beat Easy x7
+    #   "fallen_runs"  → beat Fallen x7
+    #   "frosty_run"   → beat Frosty x1
+    #   "pay_coins"    → pay 20k coins
+    #   "pay_shards"   → pay 5k shards
+    #   "all_achievements" → unlock all achievements
+    #   "all_towers"   → own all towers
+    #   "max_skilltree"→ max skill tree
+    #   "all_skins"    → own all skins
+    #   "moon_lord"    → defeat Moon Lord
+    #   "done"         → all done
 
     def __init__(self, screen, save_data):
         self.screen    = screen
@@ -8089,184 +8488,216 @@ class CastboundDialog:
         self._result   = "menu"
 
         # Dialog box dimensions
-        dw, dh   = 640, 320
+        dw, dh = 680, 340
         self._rect = pygame.Rect(
             SCREEN_W // 2 - dw // 2,
             SCREEN_H // 2 - dh // 2,
             dw, dh
         )
 
-        # ── Determine opening state based on quest progress ────────────────────
-        quest_stage = self.save_data.get("castbound_quest", None)
-
-        # Check if fallen was beaten (mode "fallen" appears in _gs_chain)
-        fallen_beaten = "fallen" in self.save_data.get("_gs_chain", [])
-
-        # Check if abnormal kill quest is complete
-        abnormal_kills = self.save_data.get("castbound_abnormal_kills", 0)
-        abnormal_done  = abnormal_kills >= 100
-
-        # Check if player owns every tower in the game
-        # Mirror the same logic as LoadoutScreen._owned_units()
-        _owned_raw = list(self.save_data.get("owned_units", ["Assassin"]))
-        if self.save_data.get("frostcelerator_unlocked") and "Frostcelerator" not in _owned_raw:
-            _owned_raw.append("Frostcelerator")
-        if "hacker_laser_effects_test" not in _owned_raw:
-            _owned_raw.append("hacker_laser_effects_test")
-        _owned_raw = ["Cowboy" if u == "Golden Cowboy" else u for u in _owned_raw]
-        if "Cowboy" not in _owned_raw:
-            _owned_raw.append("Cowboy")
-        if "Twitgunner" not in _owned_raw:
-            _owned_raw.append("Twitgunner")
-        if "Control Panel" not in _owned_raw:
-            _owned_raw.append("Control Panel")
-        unlocked = set(_owned_raw)
-        # Only check towers that are actually in ALL_UNITS_POOL (skip internal test units)
-        _all_towers = {u["name"] for u in ALL_UNITS_POOL}
-        all_towers_owned = _all_towers.issubset(unlocked)
-
-        # Typewriter state  — phase: "typing" | "choice" | "reply" | "quest" | "nag" | "moon_lord"
-        self._phase        = "typing"
-        self._full_text    = "Pay me 10000"   # coin icon appended separately
+        # Typewriter state
+        self._phase         = "nag"
+        self._full_text     = ""
         self._visible_chars = 0
         self._char_timer    = 0.0
-        self._char_delay    = 0.045           # seconds per character
+        self._char_delay    = 0.042
+        self._reply_text    = ""
+        self._reply_chars   = 0
+        self._reply_timer   = 0.0
+        self._quest_timer   = 0.0
+        self._quest_pause   = 5.0
+        self._quest_paused  = False
 
-        self._reply_text   = ""
-        self._reply_chars  = 0
-        self._reply_timer  = 0.0
+        # Moon Lord reveal
+        self._ml_phase      = 0
+        self._ml_text1      = "Good job. Now fight the.."
+        self._ml_text2      = "Moon Lord"
+        self._ml_chars1     = 0
+        self._ml_chars2     = 0
+        self._ml_timer      = 0.0
+        self._ml_char_delay = 0.12
+        self._ml_shake_t    = 0.0
 
-        self._quest_pause  = 5.0              # pause before "beat fallen"
-        self._quest_paused = False
-        self._quest_timer  = 0.0
-
-        # Moon Lord reveal state
-        self._ml_phase     = 0      # 0=wait, 1=typing "Good job. Now fight the..", 2=pause, 3=typing "Moon Lord"
-        self._ml_text1     = "Good job. Now fight the.."
-        self._ml_text2     = "Moon Lord"
-        self._ml_chars1    = 0
-        self._ml_chars2    = 0
-        self._ml_timer     = 0.0
-        self._ml_char_delay = 0.12  # slow typing for Moon Lord (~10 sec for ~83 chars total)
-        self._ml_shake_t   = 0.0
-
-        # ── Decide what to show on open ───────────────────────────────────────
-        if quest_stage == "beat_fallen":
-            if fallen_beaten:
-                # Quest 1 complete → advance to quest 2
-                self.save_data["castbound_quest"] = "kill_abnormal"
-                write_save(self.save_data)
-                self._start_nag("Well done. Now kill abnormal 100 times.")
-            else:
-                # Still not done
-                self._start_nag("I already told u. Beat fallen)")
-
-        elif quest_stage == "kill_abnormal":
-            if abnormal_done:
-                # Quest 2 complete → advance to quest 3
-                self.save_data["castbound_quest"] = "obtain_towers"
-                write_save(self.save_data)
-                if all_towers_owned:
-                    self._start_nag("You already have every tower in game..")
-                else:
-                    self._start_nag("Now obtain every tower in game.")
-            else:
-                self._start_nag(f"I already told u. Kill abnormal 100 times")
-
-        elif quest_stage == "obtain_towers":
-            if all_towers_owned:
-                # Quest 3 complete → Moon Lord reveal
-                self.save_data["castbound_quest"] = "moon_lord"
-                write_save(self.save_data)
-                self._start_moon_lord()
-            else:
-                self._start_nag("I already told u. Obtain every tower in game.")
-
-        elif quest_stage == "moon_lord":
-            # Moon Lord revealed — launch the fight immediately
-            self._done = True
-            self._result = "moon_lord_fight"
-
-        elif quest_stage == "done":
-            # Разблокируем Castbound сразу при открытии диалога
-            _owned_cb = list(self.save_data.get("owned_units", []))
-            if "Castbound" not in _owned_cb:
-                _owned_cb.append("Castbound")
-                self.save_data["owned_units"] = _owned_cb
-                write_save(self.save_data)
-            self._start_nag("You've proven yourself.\nYou deserve this.\nUnlocked castbound tower.")
-
-        # else: quest_stage is None → show normal pay prompt (default state above)
-
-        # Fonts
-        self._f_main = pygame.font.SysFont("segoeui", 26, bold=True)
-        self._f_sub  = pygame.font.SysFont("segoeui", 20, bold=False)
-        self._f_btn  = pygame.font.SysFont("segoeui", 22, bold=True)
-
-        # Coin icon (small)
-        self._coin_ico = load_icon("coin_ico", 26)
-
-        # Button rects (set when phase == "choice")
+        # Pay-choice buttons (coins/shards)
         bw, bh = 160, 44
         cx = self._rect.centerx
         by = self._rect.bottom - 64
         self._btn_pay = pygame.Rect(cx - bw - 10, by, bw, bh)
         self._btn_no  = pygame.Rect(cx + 10,       by, bw, bh)
+        # What currency the pay prompt is for ("coins" or "shards")
+        self._pay_mode = "coins"
+
+        # Fonts & icons
+        self._f_main = pygame.font.SysFont("segoeui", 26, bold=True)
+        self._f_sub  = pygame.font.SysFont("segoeui", 20, bold=False)
+        self._f_btn  = pygame.font.SysFont("segoeui", 22, bold=True)
+        self._coin_ico  = load_icon("coin_ico",  26)
+        self._shard_ico = load_icon("shard_ico", 26)
+
+        # ── Gather all quest-check data ──────────────────────────────────────
+        qs = self.save_data.get("castbound_quest", None)
+
+        easy_runs    = self.save_data.get("castbound_easy_runs",   0)
+        fallen_runs  = self.save_data.get("castbound_fallen_runs", 0)
+        frosty_done  = self.save_data.get("castbound_frosty_run",  False)
+
+        coins  = self.save_data.get("coins",  0)
+        shards = self.save_data.get("shards", 0)
+
+        unlocked_ach = load_achievements().get("unlocked", [])
+        all_ach_done = len(unlocked_ach) >= len(ACHIEVEMENT_DEFS)
+
+        _owned_raw = list(self.save_data.get("owned_units", []))
+        _all_towers = {u["name"] for u in ALL_UNITS_POOL}
+        all_towers_done = _all_towers.issubset(set(_owned_raw))
+
+        st = self.save_data.get("skill_tree", {})
+        # "max skill tree" = every defined skill is at a non-zero level.
+        # We consider it maxed when total points >= a threshold — check skill_tree.py isn't
+        # loaded here, so we use a heuristic: all skills from save have > 0 and there are
+        # at least 6 distinct skills with points.
+        _st_skills = [k for k, v in st.items() if v > 0]
+        all_skills_maxed = len(_st_skills) >= 6 and all(v >= 5 for v in st.values() if v)
+
+        owned_skins  = load_skins().get("owned", [])
+        all_skins_done = len(owned_skins) >= len(ALL_SKIN_DEFS)
+
+        # ── State machine: decide what dialog to show ────────────────────────
+        if qs is None:
+            # Not started — ask player to begin
+            self._start_choice_text("To prove yourself, complete my trials. Begin?")
+
+        elif qs == "easy_runs":
+            if easy_runs >= 7:
+                self._advance_quest("fallen_runs")
+                self._start_nag("Warmup done. Now beat Fallen 7 times.")
+            else:
+                self._start_nag(f"Keep going. Easy runs: {easy_runs}/7")
+
+        elif qs == "fallen_runs":
+            if fallen_runs >= 7:
+                self._advance_quest("frosty_run")
+                self._start_nag("Good. Now conquer the Frosty world once.")
+            else:
+                self._start_nag(f"Not done yet. Fallen runs: {fallen_runs}/7")
+
+        elif qs == "frosty_run":
+            if frosty_done:
+                self._advance_quest("pay_coins")
+                self._start_nag("Cold enough. Now pay me 20 000 coins.")
+            else:
+                self._start_nag("Beat Frosty once. Can't be that hard.")
+
+        elif qs == "pay_coins":
+            # Show pay dialog for coins
+            self._pay_mode = "coins"
+            self._start_choice_text("Pay me 20 000 coins to continue.")
+
+        elif qs == "pay_shards":
+            # Show pay dialog for shards
+            self._pay_mode = "shards"
+            self._start_choice_text("Now pay me 5 000 shards.")
+
+        elif qs == "all_achievements":
+            if all_ach_done:
+                self._advance_quest("all_towers")
+                self._start_nag("Impressive. Now own every tower.")
+            else:
+                n = len(unlocked_ach); total = len(ACHIEVEMENT_DEFS)
+                self._start_nag(f"Not all achievements. You have {n}/{total}.")
+
+        elif qs == "all_towers":
+            if all_towers_done:
+                self._advance_quest("max_skilltree")
+                self._start_nag("Nice collection. Max out your skill tree.")
+            else:
+                n = len(set(_owned_raw) & _all_towers); total = len(_all_towers)
+                self._start_nag(f"You only have {n}/{total} towers. Get more.")
+
+        elif qs == "max_skilltree":
+            if all_skills_maxed:
+                self._advance_quest("all_skins")
+                self._start_nag("Skills maxed. Now collect every skin.")
+            else:
+                self._start_nag("Skill tree not maxed. Keep investing.")
+
+        elif qs == "all_skins":
+            if all_skins_done:
+                self._advance_quest("moon_lord")
+                self._start_moon_lord()
+            else:
+                n = len(owned_skins); total = len(ALL_SKIN_DEFS)
+                self._start_nag(f"Only {n}/{total} skins. Collect them all.")
+
+        elif qs == "moon_lord":
+            # Launch fight immediately
+            self._done   = True
+            self._result = "moon_lord_fight"
+
+        elif qs == "done":
+            _owned_cb = list(self.save_data.get("owned_units", []))
+            if "Castbound" not in _owned_cb:
+                _owned_cb.append("Castbound")
+                self.save_data["owned_units"] = _owned_cb
+                write_save(self.save_data)
+            self._start_nag("You've proven yourself.\nYou deserve this.\nUnlocked Castbound.")
+
+    # ── Internal helpers ──────────────────────────────────────────────────────
+    def _advance_quest(self, new_stage):
+        self.save_data["castbound_quest"] = new_stage
+        write_save(self.save_data)
 
     def _start_nag(self, text):
-        """Start the dialog in 'nag' phase — just show a message then exit."""
         self._phase       = "nag"
         self._reply_text  = text
         self._reply_chars = 0
         self._reply_timer = 0.0
         self._quest_timer = 0.0
 
+    def _start_choice_text(self, text):
+        """Typewrite text then show Pay / No buttons."""
+        self._phase         = "typing"
+        self._full_text     = text
+        self._visible_chars = 0
+        self._char_timer    = 0.0
+
     def _start_moon_lord(self):
-        """Start the Moon Lord reveal sequence."""
-        self._phase    = "moon_lord"
-        self._ml_phase = 0       # 0 = pre-pause (2 sec), 1 = type text1, 2 = Moon Lord slow type
-        self._ml_chars1 = 0
-        self._ml_chars2 = 0
-        self._ml_timer  = 0.0
+        self._phase      = "moon_lord"
+        self._ml_phase   = 0
+        self._ml_chars1  = 0
+        self._ml_chars2  = 0
+        self._ml_timer   = 0.0
         self._ml_shake_t = 0.0
 
-    # ── Helpers ───────────────────────────────────────────────────────────────
+    # ── Drawing helpers ───────────────────────────────────────────────────────
     def _draw_panel(self):
         surf = self.screen
         r    = self._rect
-
-        # Dark semi-transparent background
         panel = pygame.Surface((r.w, r.h), pygame.SRCALPHA)
         pygame.draw.rect(panel, (8, 6, 18, 230), (0, 0, r.w, r.h), border_radius=14)
         pygame.draw.rect(panel, (180, 140, 255, 180), (0, 0, r.w, r.h), 2, border_radius=14)
         surf.blit(panel, (r.x, r.y))
-
-        # Title bar "CASTBOUND"
         title_s = self._f_main.render("CASTBOUND", True, (160, 100, 255))
         surf.blit(title_s, (r.centerx - title_s.get_width() // 2, r.y + 14))
-
-        # Divider
         pygame.draw.line(surf, (100, 70, 180),
                          (r.x + 20, r.y + 50), (r.right - 20, r.y + 50), 1)
 
     def _draw_typewriter(self, text_visible):
-        surf = self.screen
-        r    = self._rect
+        surf   = self.screen
+        r      = self._rect
         base_x = r.x + 30
         base_y = r.y + 68
-
-        # Render the text portion char by char
-        x_cur = base_x
+        x_cur  = base_x
         for ch in text_visible:
-            char_s = self._f_main.render(ch, True, (230, 220, 255))
-            surf.blit(char_s, (x_cur, base_y))
-            x_cur += char_s.get_width()
-
-        # If we've finished typing the text, draw coin icon right after
+            cs = self._f_main.render(ch, True, (230, 220, 255))
+            surf.blit(cs, (x_cur, base_y))
+            x_cur += cs.get_width()
+        # If fully typed and coins mode, draw icon after text
         if len(text_visible) == len(self._full_text):
-            if self._coin_ico:
-                surf.blit(self._coin_ico,
-                          (x_cur + 6, base_y + (self._f_main.get_height() - self._coin_ico.get_height()) // 2))
+            ico = self._coin_ico if self._pay_mode == "coins" else self._shard_ico
+            if ico:
+                surf.blit(ico, (x_cur + 6,
+                                base_y + (self._f_main.get_height() - ico.get_height()) // 2))
 
     def _draw_reply(self):
         surf    = self.screen
@@ -8282,9 +8713,15 @@ class CastboundDialog:
 
     def _draw_buttons(self, mx, my):
         surf = self.screen
+        if self._pay_mode == "coins":
+            pay_label = "Pay"
+            pay_color = (60, 200, 80)
+        else:
+            pay_label = "Pay"
+            pay_color = (60, 140, 220)
         for btn, label, ac in [
-            (self._btn_pay, "Pay",  (60, 200, 80)),
-            (self._btn_no,  "No",   (200, 60, 60)),
+            (self._btn_pay, pay_label, pay_color),
+            (self._btn_no,  "No",      (200, 60, 60)),
         ]:
             hov = btn.collidepoint(mx, my)
             bg  = (*ac, 200) if hov else (20, 16, 36, 210)
@@ -8298,32 +8735,22 @@ class CastboundDialog:
                             btn.centery - lbl.get_height() // 2))
 
     def _draw_moon_lord(self):
-        """Draw the Moon Lord reveal: 'Good job. Now fight the..' then shaking red 'Moon Lord'."""
-        surf = self.screen
-        r    = self._rect
-        cx   = r.centerx
+        surf   = self.screen
+        r      = self._rect
+        cx     = r.centerx
         base_y = r.y + 68
-
-        # Phase 0: just blank (pre-pause)
         if self._ml_phase == 0:
             return
-
-        # Phase 1+: draw "Good job. Now fight the.."
         visible1 = self._ml_text1[:self._ml_chars1]
         lbl1 = self._f_main.render(visible1, True, (255, 200, 80))
         surf.blit(lbl1, (cx - lbl1.get_width() // 2, base_y))
-
-        # Phase 2: draw shaking red "Moon Lord" below
         if self._ml_phase >= 2 and self._ml_chars2 > 0:
             visible2 = self._ml_text2[:self._ml_chars2]
             ml_font  = pygame.font.SysFont("segoeui", 38, bold=True)
             ml_surf  = ml_font.render(visible2, True, (220, 30, 30))
-
-            # Shake: random offset that grows with time
             shake_mag = min(6, int(self._ml_shake_t * 2))
             shake_x   = random.randint(-shake_mag, shake_mag)
             shake_y   = random.randint(-shake_mag, shake_mag)
-
             dest_x = cx - ml_surf.get_width() // 2 + shake_x
             dest_y = base_y + self._f_main.get_height() + 18 + shake_y
             surf.blit(ml_surf, (dest_x, dest_y))
@@ -8332,7 +8759,7 @@ class CastboundDialog:
     def run(self):
         clock = pygame.time.Clock()
         while not self._done:
-            dt   = clock.tick(60) / 1000.0
+            dt     = clock.tick(60) / 1000.0
             self._t += dt
             mx, my = pygame.mouse.get_pos()
 
@@ -8343,30 +8770,30 @@ class CastboundDialog:
                 if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                     if self._phase == "choice":
                         if self._btn_no.collidepoint(ev.pos):
-                            # "bye" then back to menu
-                            self._phase       = "reply"
-                            self._reply_text  = "bye"
-                            self._reply_chars = 0
-                            self._reply_timer = 0.0
-
+                            self._start_nag("bye")
                         elif self._btn_pay.collidepoint(ev.pos):
-                            coins = self.save_data.get("coins", 0)
-                            if coins < self._COST:
-                                self._phase       = "reply"
-                                self._reply_text  = "you are poor"
-                                self._reply_chars = 0
-                                self._reply_timer = 0.0
-                            else:
-                                # Deduct coins and give quest 1
-                                self.save_data["coins"] = coins - self._COST
-                                self.save_data["castbound_quest"] = "beat_fallen"
-                                write_save(self.save_data)
-                                self._phase       = "quest"
-                                self._reply_text  = "Ur first quest is..."
-                                self._reply_chars = 0
-                                self._reply_timer = 0.0
-                                self._quest_paused = False
-                                self._quest_timer  = 0.0
+                            if self._pay_mode == "coins":
+                                coins = self.save_data.get("coins", 0)
+                                qs    = self.save_data.get("castbound_quest", None)
+                                if qs is None:
+                                    # Starting quest — no coin cost, just advance
+                                    self._advance_quest("easy_runs")
+                                    self._start_nag("Good. Beat Easy 7 times. Start now.")
+                                elif qs == "pay_coins":
+                                    if coins < self._COIN_COST:
+                                        self._start_nag("you are poor")
+                                    else:
+                                        self.save_data["coins"] = coins - self._COIN_COST
+                                        self._advance_quest("pay_shards")
+                                        self._start_nag("Good. Now pay 5 000 shards.")
+                            elif self._pay_mode == "shards":
+                                shards = self.save_data.get("shards", 0)
+                                if shards < self._SHARD_COST:
+                                    self._start_nag("Not enough shards.")
+                                else:
+                                    self.save_data["shards"] = shards - self._SHARD_COST
+                                    self._advance_quest("all_achievements")
+                                    self._start_nag("Now unlock every achievement.")
 
             # ── Update typewriter ──────────────────────────────────────────────
             if self._phase == "typing":
@@ -8377,85 +8804,49 @@ class CastboundDialog:
                 if self._visible_chars >= len(self._full_text):
                     self._phase = "choice"
 
-            elif self._phase in ("reply", "quest", "nag"):
+            elif self._phase in ("reply", "nag"):
                 self._reply_timer += dt
                 while self._reply_timer >= self._char_delay and self._reply_chars < len(self._reply_text):
                     self._reply_timer -= self._char_delay
                     self._reply_chars += 1
-
                 if self._reply_chars >= len(self._reply_text):
-                    if self._phase in ("reply", "nag"):
-                        # small pause then back to menu
-                        self._quest_timer += dt
-                        pause = 3.0 if "\n" in self._reply_text else 1.5
-                        if self._quest_timer > pause:
-                            self._done = True
-
-                    elif self._phase == "quest":
-                        if not self._quest_paused:
-                            # wait 5 seconds then show "beat fallen"
-                            self._quest_timer += dt
-                            if self._quest_timer >= self._quest_pause:
-                                self._quest_paused = True
-                                self._reply_text   = "Ur first quest is... beat fallen"
-                                # don't reset _reply_chars — append to existing display
-                        else:
-                            # finished — wait a moment then exit
-                            self._quest_timer += dt   # reuse timer
-                            if self._quest_timer >= self._quest_pause + 2.5:
-                                self._done = True
+                    self._quest_timer += dt
+                    pause = 3.0 if "\n" in self._reply_text else 1.8
+                    if self._quest_timer > pause:
+                        self._done = True
 
             elif self._phase == "moon_lord":
                 self._ml_timer   += dt
                 self._ml_shake_t += dt
-
                 if self._ml_phase == 0:
-                    # 2-second pre-pause
                     if self._ml_timer >= 2.0:
-                        self._ml_phase = 1
-                        self._ml_timer = 0.0
-
+                        self._ml_phase = 1; self._ml_timer = 0.0
                 elif self._ml_phase == 1:
-                    # Typewrite "Good job. Now fight the.."
                     while self._ml_timer >= self._char_delay and self._ml_chars1 < len(self._ml_text1):
-                        self._ml_timer -= self._char_delay
-                        self._ml_chars1 += 1
+                        self._ml_timer -= self._char_delay; self._ml_chars1 += 1
                     if self._ml_chars1 >= len(self._ml_text1):
-                        self._ml_phase = 2
-                        self._ml_timer = 0.0
-                        self._ml_shake_t = 0.0
-
+                        self._ml_phase = 2; self._ml_timer = 0.0; self._ml_shake_t = 0.0
                 elif self._ml_phase == 2:
-                    # Slowly type "Moon Lord" (~10 sec total → delay ≈ 0.12s * 9 chars = 1.08s,
-                    # but we pad with a longer per-char delay)
                     while self._ml_timer >= self._ml_char_delay and self._ml_chars2 < len(self._ml_text2):
-                        self._ml_timer -= self._ml_char_delay
-                        self._ml_chars2 += 1
+                        self._ml_timer -= self._ml_char_delay; self._ml_chars2 += 1
                     if self._ml_chars2 >= len(self._ml_text2):
                         self._ml_phase = 3
-
                 elif self._ml_phase == 3:
-                    # Hold for 3 seconds then exit
                     if self._ml_timer >= 3.0:
                         self._done = True
 
             # ── Draw ──────────────────────────────────────────────────────────
-            # Dim background
             dim = _get_dim_surf(); dim.fill((0, 0, 0, 140))
             self.screen.blit(dim, (0, 0))
-
             self._draw_panel()
 
             if self._phase == "typing":
                 self._draw_typewriter(self._full_text[:self._visible_chars])
-
             elif self._phase == "choice":
-                self._draw_typewriter(self._full_text)   # full text stays
+                self._draw_typewriter(self._full_text)
                 self._draw_buttons(mx, my)
-
-            elif self._phase in ("reply", "quest", "nag"):
+            elif self._phase in ("reply", "nag"):
                 self._draw_reply()
-
             elif self._phase == "moon_lord":
                 self._draw_moon_lord()
 
@@ -9940,36 +10331,33 @@ class Game:
                     # ── F9: skip castbound quest stage (debug) ─────────────────
                     if ev.key == pygame.K_F9:
                         _cq = self.save_data.get("castbound_quest", None)
+                        _STAGE_ORDER = [
+                            "easy_runs","fallen_runs","frosty_run","pay_coins","pay_shards",
+                            "all_achievements","all_towers","max_skilltree","all_skins","moon_lord","done"
+                        ]
                         if _cq is None:
-                            # Skip paying — give quest 1 directly
-                            self.save_data["castbound_quest"] = "beat_fallen"
+                            self.save_data["castbound_quest"] = "easy_runs"
+                            self.save_data["castbound_easy_runs"] = 0
                             write_save(self.save_data)
-                            self.ui.show_msg("[DEBUG] Castbound: quest 1 given (beat fallen)", 3.0)
-                        elif _cq == "beat_fallen":
-                            # Mark fallen as beaten + advance to quest 2
-                            _chain = self.save_data.get("_gs_chain", [])
-                            if "fallen" not in _chain:
-                                _chain.append("fallen")
-                                self.save_data["_gs_chain"] = _chain
-                            self.save_data["castbound_quest"] = "kill_abnormal"
-                            self.save_data["castbound_abnormal_kills"] = 0
-                            write_save(self.save_data)
-                            self.ui.show_msg("[DEBUG] Castbound: quest 2 given (kill abnormal x100)", 3.0)
-                        elif _cq == "kill_abnormal":
-                            # Complete kill quest → give quest 3
-                            self.save_data["castbound_quest"] = "obtain_towers"
-                            self.save_data["castbound_abnormal_kills"] = 100
-                            write_save(self.save_data)
-                            self.ui.show_msg("[DEBUG] Castbound: quest 3 given (obtain every tower)", 3.0)
-                        elif _cq == "obtain_towers":
-                            # Complete tower quest → Moon Lord stage
-                            self.save_data["castbound_quest"] = "moon_lord"
-                            write_save(self.save_data)
-                            self.ui.show_msg("[DEBUG] Castbound: Moon Lord revealed!", 3.0)
-                        elif _cq == "moon_lord":
-                            self.ui.show_msg("[DEBUG] Castbound: no more quests to skip", 2.0)
+                            self.ui.show_msg("[DEBUG] Castbound: quest started (easy x7)", 3.0)
+                        elif _cq in _STAGE_ORDER:
+                            idx = _STAGE_ORDER.index(_cq)
+                            if idx + 1 < len(_STAGE_ORDER):
+                                # Prefill current stage as complete
+                                if _cq == "easy_runs":
+                                    self.save_data["castbound_easy_runs"] = 7
+                                elif _cq == "fallen_runs":
+                                    self.save_data["castbound_fallen_runs"] = 7
+                                elif _cq == "frosty_run":
+                                    self.save_data["castbound_frosty_run"] = True
+                                next_s = _STAGE_ORDER[idx + 1]
+                                self.save_data["castbound_quest"] = next_s
+                                write_save(self.save_data)
+                                self.ui.show_msg(f"[DEBUG] Castbound: skipped to {next_s}", 3.0)
+                            else:
+                                self.ui.show_msg("[DEBUG] Castbound: already at last stage", 2.0)
                         else:
-                            self.ui.show_msg("[DEBUG] Castbound: no more quests to skip", 2.0)
+                            self.ui.show_msg("[DEBUG] Castbound: unknown stage", 2.0)
                     if ev.key == pygame.K_e and self.ui.open_unit:
                         u = self.ui.open_unit; cost = u.upgrade_cost()
                         if cost is not None:
@@ -10634,11 +11022,7 @@ class Game:
                             self._cowboy_only_run = False  # Gold Rush: kill reward voids cowboy-only run
                             if SETTINGS.get("show_damage", True):
                                 self.effects.append(FloatingText(e.x, e.y-e.radius-10, f"+{reward}"))
-                        # ── Castbound quest: track abnormal kills ──────────────
-                        if isinstance(e, AbnormalEnemy) and self.save_data.get("castbound_quest") == "kill_abnormal":
-                            cur = self.save_data.get("castbound_abnormal_kills", 0) + 1
-                            self.save_data["castbound_abnormal_kills"] = cur
-                            write_save(self.save_data)
+
     
                 new_enemies=[]
                 for e in self.enemies:
@@ -10996,6 +11380,19 @@ class Game:
                         # Speedrunner: beat Fallen with auto_skip always on
                         if self.mode == "fallen" and not self._auto_skip_ever_off:
                             self.ach_mgr.try_grant("speedrunner")
+                        # ── Castbound quest: track mode runs ─────────────────
+                        _cq = self.save_data.get("castbound_quest")
+                        if self.mode == "easy" and _cq == "easy_runs":
+                            _er = self.save_data.get("castbound_easy_runs", 0) + 1
+                            self.save_data["castbound_easy_runs"] = _er
+                            write_save(self.save_data)
+                        elif self.mode == "fallen" and _cq == "fallen_runs":
+                            _fr = self.save_data.get("castbound_fallen_runs", 0) + 1
+                            self.save_data["castbound_fallen_runs"] = _fr
+                            write_save(self.save_data)
+                        elif self.mode == "frosty" and _cq == "frosty_run":
+                            self.save_data["castbound_frosty_run"] = True
+                            write_save(self.save_data)
                         self.win=True
                         try:
                             pygame.mixer.music.set_endevent(0)
@@ -11744,7 +12141,7 @@ def _run_multiplayer(screen, save_data):
         surf.blit(glow_s, glow_s.get_rect(center=(cx, ty)))
 
         title_font = pygame.font.SysFont("impact", 86)
-        title_str = "TOWER DEFENSE"
+        title_str = "pyTDS"
         
         ts_shadow = title_font.render(title_str, True, (8, 12, 20))
         surf.blit(ts_shadow, ts_shadow.get_rect(center=(cx + 4, ty + 6)))
@@ -11972,6 +12369,13 @@ if __name__ == "__main__":
 
         elif action == "achievements":
             AchievementsScreen(screen).run()
+
+        elif action == "quests":
+            qs_result = QuestsScreen(screen, save_data).run()
+            save_data = load_save()
+            if qs_result == "castbound":
+                action = "castbound"
+                continue  # re-enter loop to handle castbound
 
         elif action == "shop":
             ShopScreen(screen, save_data).run()
