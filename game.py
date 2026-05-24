@@ -8240,6 +8240,10 @@ class MainMenu:
             setattr(self, _attr,
                     pygame.Rect(_sm_x0 + _si * (sm_w + sm_gap), _sm_y, sm_w, sm_h))
 
+        # ── MULTIPLAYER button — below small row ──────────────────────────────
+        mp_w, mp_h = 260, 52
+        self.btn_multiplayer = pygame.Rect(cx - mp_w // 2, _sm_y + sm_h + 16, mp_w, mp_h)
+
         # ── Void particles: black/dark drifting dots, glowing motes, void wisps
         self._particles  = [_VoidDot()    for _ in range(90)]
         self._embers     = [_VoidMote()   for _ in range(60)]
@@ -8440,6 +8444,7 @@ class MainMenu:
                     if self.btn_profile.collidepoint(pos):      self.action = "profile"
                     if self.btn_settings.collidepoint(pos):     self.action = "settings"
                     if self.btn_quit.collidepoint(pos):         self.action = "quit"
+                    if self.btn_multiplayer.collidepoint(pos):  self.action = "multiplayer"
             self._draw()
             pygame.display.flip()
         return self.action
@@ -9079,6 +9084,23 @@ class MainMenu:
         draw_fancy_btn(self.btn_achievements,"ACHIEVEMENTS",  self.btn_achievements.collidepoint(mx, my), 4, (200, 160, 20))
         draw_fancy_btn(self.btn_settings,    "SETTINGS",      self.btn_settings.collidepoint(mx, my),     5, (60, 130, 180))
         draw_fancy_btn(self.btn_quit,        "QUIT",          self.btn_quit.collidepoint(mx, my),         6, (180, 50, 50))
+
+        # ── MULTIPLAYER button ────────────────────────────────────────────────
+        _mp_btn  = self.btn_multiplayer
+        _mp_hov  = _mp_btn.collidepoint(mx, my)
+        _mp_acc  = (20, 160, 220)
+        _mp_bg   = tuple(min(255, c + 30) for c in _mp_acc) if _mp_hov else tuple(c // 2 for c in _mp_acc)
+        _mp_brd  = tuple(min(255, c + 80) for c in _mp_acc) if _mp_hov else _mp_acc
+        # Pulsing glow
+        _mp_glow_a = int(abs(math.sin(t * 2.2)) * 50 + 20)
+        _mp_gs = pygame.Surface((_mp_btn.w + 20, _mp_btn.h + 20), pygame.SRCALPHA)
+        pygame.draw.rect(_mp_gs, (*_mp_acc, _mp_glow_a), (0, 0, _mp_btn.w + 20, _mp_btn.h + 20), border_radius=14)
+        surf.blit(_mp_gs, (_mp_btn.x - 10, _mp_btn.y - 10))
+        pygame.draw.rect(surf, _mp_bg,  _mp_btn, border_radius=10)
+        pygame.draw.rect(surf, _mp_brd, _mp_btn, 2, border_radius=10)
+        _mp_f = pygame.font.SysFont("segoeui", 22, bold=True)
+        _mp_s = _mp_f.render("🌐  MULTIPLAYER", True, C_WHITE)
+        surf.blit(_mp_s, _mp_s.get_rect(center=_mp_btn.center))
 
         # ── Coin counter ──────────────────────────────────────────────────────
         coins = self.save_data.get("coins", 0)
@@ -10815,6 +10837,7 @@ class Game:
         self._end_coin_reward=0  # coins earned this run
         self.player_hp=100; self.player_maxhp=100; self.money=600
         self.enemies=[]; self.units=[]; self.effects=[]
+        self._peer_units = []  # populated by MultiplayerGame subclass
         self.mode=mode
         if mode=="fallen":
             self.wave_mgr=WaveManager(wave_data=FALLEN_WAVE_DATA, max_waves=FALLEN_MAX_WAVES)
@@ -12565,10 +12588,16 @@ class Game:
                         except Exception: pass
                 if self._screamer_img:
                     self.screen.blit(self._screamer_img, (0, 0))
+            self._mp_overlay_hook()   # multiplayer overlay injected here
             pygame.display.flip()
         # Reset skill tree globals so they dont bleed into menu
         game_core.DEBUFF_MULT = 1.0
         game_core.AOE_MULT    = 1.0
+
+    def _mp_overlay_hook(self):
+        """Called every frame just before pygame.display.flip().
+        Overridden by MultiplayerGame subclass to draw peer cursor + leaderboard."""
+        pass
 
     def draw(self):
         fk_shake=(0,0)
@@ -13141,6 +13170,9 @@ if __name__ == "__main__":
 
         if action == "quit":
             pygame.quit(); sys.exit()
+
+        elif action == "multiplayer":
+            save_data = _run_multiplayer(screen, save_data)
 
         elif action == "achievements":
             AchievementsScreen(screen).run()
