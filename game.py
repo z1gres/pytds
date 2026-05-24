@@ -8555,6 +8555,22 @@ class MainMenu:
             h    = self._hover_anim[idx]
             self._draw_fancy_btn(surf, rect, label, h, accent, idx)
 
+        # ── MULTIPLAYER button (default style) ────────────────────────────────
+        _mp_btn = self.btn_multiplayer
+        _mp_hov = _mp_btn.collidepoint(mx, my)
+        _mp_acc = (20, 160, 220)
+        _mp_bg  = tuple(min(255, c + 30) for c in _mp_acc) if _mp_hov else tuple(c // 2 for c in _mp_acc)
+        _mp_brd = tuple(min(255, c + 80) for c in _mp_acc) if _mp_hov else _mp_acc
+        _mp_glow_a = int(abs(math.sin(t * 2.2)) * 50 + 20)
+        _mp_gs = pygame.Surface((_mp_btn.w + 20, _mp_btn.h + 20), pygame.SRCALPHA)
+        pygame.draw.rect(_mp_gs, (*_mp_acc, _mp_glow_a), (0, 0, _mp_btn.w + 20, _mp_btn.h + 20), border_radius=14)
+        surf.blit(_mp_gs, (_mp_btn.x - 10, _mp_btn.y - 10))
+        pygame.draw.rect(surf, _mp_bg,  _mp_btn, border_radius=10)
+        pygame.draw.rect(surf, _mp_brd, _mp_btn, 2, border_radius=10)
+        _mp_f = pygame.font.SysFont("segoeui", 22, bold=True)
+        _mp_s = _mp_f.render("🌐  MULTIPLAYER", True, C_WHITE)
+        surf.blit(_mp_s, _mp_s.get_rect(center=_mp_btn.center))
+
         # ── Coins + Shards — bottom-left, stacked like the reference UI ─────────
         pad_x = 18
         pad_y = SCREEN_H - 18
@@ -8660,6 +8676,7 @@ class MainMenu:
             ("btn_quests",       "\U0001F4DC  QUESTS",   (160,  80, 220)),
             ("btn_profile",      "\U0001F464  PROFILE",  ( 80, 180, 220)),
             ("btn_settings",     "\u2699  SETTINGS",     ( 60, 130, 180)),
+            ("btn_multiplayer",  "\U0001F310  MULTIPLAYER", ( 20, 160, 220)),
             ("btn_quit",         "\U0001F6AA  QUIT",     (180,  50,  50)),
         ]
         total_h = len(BTNS) * BTN_H + (len(BTNS) - 1) * BTN_GAP
@@ -8802,6 +8819,7 @@ class MainMenu:
             ("btn_quests",       "QUESTS"),
             ("btn_profile",      "PROFILE"),
             ("btn_settings",     "SETTINGS"),
+            ("btn_multiplayer",  "MULTIPLAYER"),
             ("btn_quit",         "QUIT"),
         ]
         total_h = len(BTNS) * BTN_H + (len(BTNS) - 1) * BTN_GAP
@@ -9083,24 +9101,8 @@ class MainMenu:
         draw_fancy_btn(self.btn_skilltree,   "SKILL TREE",    self.btn_skilltree.collidepoint(mx, my),    3, (60, 200, 140))
         draw_fancy_btn(self.btn_achievements,"ACHIEVEMENTS",  self.btn_achievements.collidepoint(mx, my), 4, (200, 160, 20))
         draw_fancy_btn(self.btn_settings,    "SETTINGS",      self.btn_settings.collidepoint(mx, my),     5, (60, 130, 180))
-        draw_fancy_btn(self.btn_quit,        "QUIT",          self.btn_quit.collidepoint(mx, my),         6, (180, 50, 50))
-
-        # ── MULTIPLAYER button ────────────────────────────────────────────────
-        _mp_btn  = self.btn_multiplayer
-        _mp_hov  = _mp_btn.collidepoint(mx, my)
-        _mp_acc  = (20, 160, 220)
-        _mp_bg   = tuple(min(255, c + 30) for c in _mp_acc) if _mp_hov else tuple(c // 2 for c in _mp_acc)
-        _mp_brd  = tuple(min(255, c + 80) for c in _mp_acc) if _mp_hov else _mp_acc
-        # Pulsing glow
-        _mp_glow_a = int(abs(math.sin(t * 2.2)) * 50 + 20)
-        _mp_gs = pygame.Surface((_mp_btn.w + 20, _mp_btn.h + 20), pygame.SRCALPHA)
-        pygame.draw.rect(_mp_gs, (*_mp_acc, _mp_glow_a), (0, 0, _mp_btn.w + 20, _mp_btn.h + 20), border_radius=14)
-        surf.blit(_mp_gs, (_mp_btn.x - 10, _mp_btn.y - 10))
-        pygame.draw.rect(surf, _mp_bg,  _mp_btn, border_radius=10)
-        pygame.draw.rect(surf, _mp_brd, _mp_btn, 2, border_radius=10)
-        _mp_f = pygame.font.SysFont("segoeui", 22, bold=True)
-        _mp_s = _mp_f.render("🌐  MULTIPLAYER", True, C_WHITE)
-        surf.blit(_mp_s, _mp_s.get_rect(center=_mp_btn.center))
+        draw_fancy_btn(self.btn_multiplayer, "MULTIPLAYER",   self.btn_multiplayer.collidepoint(mx, my),  6, (20, 160, 220))
+        draw_fancy_btn(self.btn_quit,        "QUIT",          self.btn_quit.collidepoint(mx, my),         7, (180, 50, 50))
 
         # ── Coin counter ──────────────────────────────────────────────────────
         coins = self.save_data.get("coins", 0)
@@ -13141,6 +13143,7 @@ def _run_multiplayer(screen, save_data):
                     if self.btn_achievements.collidepoint(pos): self.action = "achievements"
                     if self.btn_settings.collidepoint(pos):     self.action = "settings"
                     if self.btn_quit.collidepoint(pos):         self.action = "quit"
+                    if self.btn_multiplayer.collidepoint(pos):  self.action = "multiplayer"
                     if self.btn_hardcore.collidepoint(pos):
                         map_choice = MapSelectMenu(self.screen).run()
                         if map_choice != "back":

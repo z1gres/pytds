@@ -21,7 +21,7 @@ from game_core import (
 # ── Tunnel address ────────────────────────────────────────────────────────────
 MP_HOST = "when-jury.gl.at.ply.gg"
 MP_PORT = 33699
-PING_INTERVAL = 4.0
+PING_INTERVAL = 2.0
 STATE_INTERVAL = 0.1   # send game state 10 Hz
 CURSOR_INTERVAL = 0.05 # send cursor 20 Hz
 GLOBAL_UNIT_LIMIT_MP = 80  # doubled for 2 players
@@ -223,7 +223,7 @@ class LobbyScreen:
             dt = clock.tick(60) / 1000.0
             self.t += dt
             if self.error_t > 0: self.error_t -= dt
-            if self.t - self._last_refresh > 3.0:
+            if self.t - self._last_refresh > 1.5:
                 self._request_refresh()
             self._process_net()
             mx, my = pygame.mouse.get_pos()
@@ -241,7 +241,9 @@ class LobbyScreen:
         return self.result
 
     def _request_refresh(self):
-        self.net.send({"type": "list_rooms"})
+        # Send 3x to fight UDP loss
+        for _ in range(3):
+            self.net.send({"type": "list_rooms"})
         self._last_refresh = self.t
 
     def _process_net(self):
@@ -943,16 +945,20 @@ def run_multiplayer(screen, save_data: dict):
     pygame.display.flip()
     try:
         net.connect(MP_HOST, MP_PORT)
-        # Send a ping to verify connectivity
-        net.send({"type":"ping"})
-        deadline = time.time() + 5.0
+        # Send 5 pings to fight UDP loss on first contact
+        for _ in range(5):
+            net.send({"type": "ping"})
+            time.sleep(0.1)
+        deadline = time.time() + 8.0
         got_pong = False
         while time.time() < deadline:
             for msg in net.poll():
                 if msg.get("type") == "pong":
                     got_pong = True; break
             if got_pong: break
-            time.sleep(0.05)
+            # Keep sending pings while waiting
+            net.send({"type": "ping"})
+            time.sleep(0.2)
         if not got_pong:
             raise ConnectionError("No response from server")
     except Exception as e:
