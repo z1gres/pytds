@@ -1187,7 +1187,7 @@ class ArcherArrow:
                         pygame.draw.circle(ts, (255, 220, 60, min(255, alpha + 30)),
                                            (int(gx), int(gy)), random.randint(3, 6))
                 else:
-                    # Обычная стрела — яркий коричнево-золотой trail
+                    # Normal arrow — amber wood trail
                     pygame.draw.line(ts, (220, 150, 50, alpha),
                                      (int(trail[i][0]), int(trail[i][1])),
                                      (int(trail[i+1][0]), int(trail[i+1][1])), 4)
@@ -1214,10 +1214,11 @@ class ArcherArrow:
             pygame.draw.circle(surf, (255, 130, 0),  (cx, cy), 7)
             pygame.draw.circle(surf, (255, 255, 120), (cx, cy), 3)
         else:
-            # Normal arrow — shaft + tip
+            # Normal arrow — dark wood shaft + polished metal tip
             tail_x = self.x - self.vx * 14; tail_y = self.y - self.vy * 14
             pygame.draw.line(surf, (120, 70, 20), (int(tail_x), int(tail_y)), (cx, cy), 4)
-            pygame.draw.circle(surf, (230, 170, 70), (cx, cy), 4)
+            pygame.draw.circle(surf, (230, 185, 100), (cx, cy), 4)
+            pygame.draw.circle(surf, (255, 220, 150), (cx, cy), 2)
 
 
 class _ArcherExplosionEffect:
@@ -1328,11 +1329,12 @@ class Archer(Unit):
         except Exception: pass
 
         cx, cy = int(self.px), int(self.py)
+        t2 = self._anim_t
+
         if _star_skin:
             pygame.draw.circle(surf, (60, 40, 0), (cx, cy), 27)
             pygame.draw.circle(surf, (200, 160, 30), (cx, cy), 20)
             pygame.draw.circle(surf, (255, 220, 80), (cx, cy), 20, 2)
-            t2 = self._anim_t
             for si2 in range(3):
                 sa2 = math.radians(t2 * 140 + si2 * 120)
                 ssx = cx + int(math.cos(sa2) * 24); ssy = cy + int(math.sin(sa2) * 24)
@@ -1343,42 +1345,101 @@ class Archer(Unit):
                     star_pts.append((ssx + int(math.cos(a2) * r2), ssy + int(math.sin(a2) * r2)))
                 pygame.draw.polygon(surf, (255, 220, 60), star_pts)
         else:
-            pygame.draw.circle(surf, C_ARCHER_DARK, (cx, cy), 27)
-            pygame.draw.circle(surf, C_ARCHER, (cx, cy), 20)
+            # ── Warm amber aura (subtle glow) ─────────────────────────────────
+            aura_s = pygame.Surface((66, 66), pygame.SRCALPHA)
+            aura_a = int(30 + abs(math.sin(t2 * 1.4)) * 20)
+            pygame.draw.circle(aura_s, (180, 110, 40, aura_a), (33, 33), 33)
+            surf.blit(aura_s, (cx - 33, cy - 33))
 
-        SIZE = 66; bow_surf = pygame.Surface((SIZE, SIZE), pygame.SRCALPHA); bx, by = SIZE//2, SIZE//2
+            # ── Body — dark brown core with amber coat ─────────────────────────
+            pygame.draw.circle(surf, C_ARCHER_DARK, (cx, cy), 27)
+            pygame.draw.circle(surf, C_ARCHER,      (cx, cy), 20)
+            # Wood-grain ring
+            pygame.draw.circle(surf, (100, 60, 20), (cx, cy), 20, 3)
+            # Radial grain lines
+            for li in range(3):
+                la = math.radians(li * 60 - 30)
+                lx1 = cx + int(math.cos(la) * 6);  ly1 = cy + int(math.sin(la) * 6)
+                lx2 = cx + int(math.cos(la) * 18); ly2 = cy + int(math.sin(la) * 18)
+                pygame.draw.line(surf, (200, 140, 70), (lx1, ly1), (lx2, ly2), 1)
+            # Bright amber rim
+            pygame.draw.circle(surf, (220, 165, 80), (cx, cy), 20, 2)
+            # Inner highlight
+            pygame.draw.circle(surf, (240, 200, 120), (cx - 6, cy - 6), 5)
+            pygame.draw.circle(surf, (255, 230, 170), (cx - 7, cy - 7), 2)
+
+            # ── Quiver on back (small cylinder) ───────────────────────────────
+            qx, qy = cx + 14, cy + 8
+            pygame.draw.rect(surf, (55, 30, 8), (qx - 4, qy - 10, 8, 14), border_radius=2)
+            pygame.draw.rect(surf, (110, 70, 20), (qx - 4, qy - 10, 8, 14), 1, border_radius=2)
+            # Arrow fletching sticking out
+            for qi in range(3):
+                fla = math.radians(-110 + qi * 20)
+                fex = qx + int(math.cos(fla) * 10)
+                fey = qy - 10 + int(math.sin(fla) * 4)
+                pygame.draw.line(surf, (180, 100, 40), (qx, qy - 10), (fex, fey), 1)
+
+        # ── Bow (improved: carved limbs, notched tips) ───────────────────────
+        SIZE = 66
+        bow_surf = pygame.Surface((SIZE, SIZE), pygame.SRCALPHA)
+        bx, by = SIZE // 2, SIZE // 2
         a = self._aim_angle; ca = math.cos(a); sa = math.sin(a); pa = -sa; pb = ca
-        ax0 = int(bx + ca*(-14)); ay0 = int(by + sa*(-14))
-        ax1 = int(bx + ca*18);   ay1 = int(by + sa*18)
-        shaft_col = (255, 220, 60) if _star_skin else (210, 160, 80)
+
+        # Arrow shaft — dark wood
+        ax0 = int(bx + ca * (-14)); ay0 = int(by + sa * (-14))
+        ax1 = int(bx + ca * 18);   ay1 = int(by + sa * 18)
+        shaft_col = (255, 220, 60) if _star_skin else (130, 85, 30)
         pygame.draw.line(bow_surf, shaft_col, (ax0, ay0), (ax1, ay1), 2)
-        tip_x = bx + ca*18; tip_y = by + sa*18; perp_x = pa*5; perp_y = pb*5
-        back_x = bx + ca*12; back_y = by + sa*12
-        pygame.draw.polygon(bow_surf, (255, 210, 100), [
+        # Arrowhead — polished metal
+        tip_x = bx + ca * 18; tip_y = by + sa * 18
+        back_x = bx + ca * 12; back_y = by + sa * 12
+        pygame.draw.polygon(bow_surf, (210, 190, 140), [
             (int(tip_x), int(tip_y)),
-            (int(back_x + perp_x), int(back_y + perp_y)),
-            (int(back_x - perp_x), int(back_y - perp_y))
+            (int(back_x + pa * 5), int(back_y + pb * 5)),
+            (int(back_x - pa * 5), int(back_y - pb * 5))
         ])
-        tail_x = bx + ca*(-14); tail_y = by + sa*(-14)
-        flt_col = (255, 200, 40) if _star_skin else (180, 120, 60)
-        pygame.draw.line(bow_surf, flt_col, (int(tail_x), int(tail_y)),
-                         (int(tail_x + pa*6 - ca*4), int(tail_y + pb*6 - sa*4)), 2)
-        pygame.draw.line(bow_surf, flt_col, (int(tail_x), int(tail_y)),
-                         (int(tail_x - pa*6 - ca*4), int(tail_y - pb*6 - sa*4)), 2)
-        bow_cx = int(bx + ca*(-8)); bow_cy = int(by + sa*(-8)); bow_arm = 16
-        bow_col = (255, 200, 40) if _star_skin else (220, 170, 90)
+        # Fletching — warm feathers (two sides)
+        tail_x = bx + ca * (-14); tail_y = by + sa * (-14)
+        for fc, fmult in [((200, 140, 60), 1), ((160, 100, 40), -1)]:
+            flt_col = (255, 200, 40) if _star_skin else fc
+            pygame.draw.line(bow_surf, flt_col,
+                (int(tail_x), int(tail_y)),
+                (int(tail_x + pa * 7 * fmult - ca * 5), int(tail_y + pb * 7 * fmult - sa * 5)), 2)
+
+        # Bow limbs — carved dark wood
+        bow_cx = int(bx + ca * (-8)); bow_cy = int(by + sa * (-8))
+        bow_arm = 16
+        bow_col = (255, 200, 40) if _star_skin else (100, 60, 15)
         pygame.draw.line(bow_surf, bow_col,
-                         (int(bow_cx + pa*bow_arm), int(bow_cy + pb*bow_arm)),
-                         (int(bow_cx - pa*bow_arm), int(bow_cy - pb*bow_arm)), 3)
-        string_col = (255, 255, 180) if _star_skin else (200, 200, 180)
+            (int(bow_cx + pa * bow_arm), int(bow_cy + pb * bow_arm)),
+            (int(bow_cx - pa * bow_arm), int(bow_cy - pb * bow_arm)), 4)
+        # Highlight stripe on limb
+        highlight_col = (255, 200, 40) if _star_skin else (175, 120, 55)
+        pygame.draw.line(bow_surf, highlight_col,
+            (int(bow_cx + pa * bow_arm), int(bow_cy + pb * bow_arm)),
+            (int(bow_cx - pa * bow_arm), int(bow_cy - pb * bow_arm)), 1)
+        # Notch tips
+        for side in (1, -1):
+            tip_bx = int(bow_cx + pa * bow_arm * side)
+            tip_by = int(bow_cy + pb * bow_arm * side)
+            pygame.draw.circle(bow_surf, (220, 170, 80), (tip_bx, tip_by), 2)
+
+        # Bowstring — taut warm-white line
+        string_col = (255, 255, 180) if _star_skin else (220, 200, 160)
         pygame.draw.line(bow_surf, string_col,
-                         (int(bow_cx + pa*bow_arm), int(bow_cy + pb*bow_arm)),
-                         (int(bx + ca*2), int(by + sa*2)), 1)
+            (int(bow_cx + pa * bow_arm), int(bow_cy + pb * bow_arm)),
+            (int(bx + ca * 2), int(by + sa * 2)), 1)
         pygame.draw.line(bow_surf, string_col,
-                         (int(bow_cx - pa*bow_arm), int(bow_cy - pb*bow_arm)),
-                         (int(bx + ca*2), int(by + sa*2)), 1)
-        surf.blit(bow_surf, (cx - SIZE//2, cy - SIZE//2))
-        for i in range(self.level): pygame.draw.circle(surf, C_GOLD, (cx - 14 + i*6, cy + 36), 3)
+            (int(bow_cx - pa * bow_arm), int(bow_cy - pb * bow_arm)),
+            (int(bx + ca * 2), int(by + sa * 2)), 1)
+
+        surf.blit(bow_surf, (cx - SIZE // 2, cy - SIZE // 2))
+
+        # ── Level pips — amber dots with highlight ────────────────────────────
+        for i in range(self.level):
+            pygame.draw.circle(surf, C_GOLD, (cx - 14 + i * 6, cy + 36), 3)
+            pygame.draw.circle(surf, (255, 240, 160), (cx - 14 + i * 6, cy + 36), 1)
+
         for arr in self._arrows: arr.draw(surf, star_skin=_star_skin)
 
     def get_info(self):
@@ -6014,8 +6075,8 @@ WarlockUnit = Warlock  # alias
 
 
 # ── Jester ─────────────────────────────────────────────────────────────────────
-C_JESTER      = (220, 80, 160)
-C_JESTER_DARK = (80, 20, 55)
+C_JESTER      = (140, 60, 220)   # dark violet — sinister jester
+C_JESTER_DARK = (20,  8,  45)    # near-black deep purple
 
 # Tuple layout:
 #  (damage, firerate, range_tiles, upgrade_cost,
@@ -6228,30 +6289,48 @@ class JesterBomb:
         if not self.alive: return
         # Arc trajectory: bomb bounces up in a parabola
         prog = self._traveled / max(1, self._total_dist)
-        arc_off = math.sin(prog * math.pi) * 40  # peak height offset
+        arc_off = math.sin(prog * math.pi) * 48  # higher arc
         cx = int(self.x)
         cy = int(self.y - arc_off)
         col = self._TYPE_COLS.get(self.bomb_type, (200, 200, 200))
-        # Shadow on ground
-        sh = pygame.Surface((18, 8), pygame.SRCALPHA)
-        shadow_alpha = int(prog * 80 + (1-prog) * 20)
-        pygame.draw.ellipse(sh, (0, 0, 0, shadow_alpha), (0, 0, 18, 8))
-        surf.blit(sh, (int(self.x) - 9, int(self.y) - 4))
-        # Bomb body
-        s = pygame.Surface((20, 20), pygame.SRCALPHA)
-        pygame.draw.circle(s, (*col, 200), (10, 10), 7)
-        pygame.draw.circle(s, (255, 255, 255, 120), (10, 10), 7, 1)
-        # Fuse spark
-        spark_col = (255, 220, 60) if self._arc_t % 0.12 < 0.06 else (255, 140, 20)
-        pygame.draw.circle(s, (*spark_col, 255), (10, 4), 3)
-        surf.blit(s, (cx - 10, cy - 10))
+
+        # Shadow on ground (grows as bomb descends)
+        sh_alpha = int(40 + prog * 80)
+        sh_r = int(6 + prog * 4)
+        sh = pygame.Surface((sh_r * 4, sh_r * 2), pygame.SRCALPHA)
+        pygame.draw.ellipse(sh, (0, 0, 0, sh_alpha), (0, 0, sh_r * 4, sh_r * 2))
+        surf.blit(sh, (int(self.x) - sh_r * 2, int(self.y) - sh_r))
+
+        # Glow halo around bomb
+        gs = pygame.Surface((28, 28), pygame.SRCALPHA)
+        pygame.draw.circle(gs, (*col, 70), (14, 14), 12)
+        surf.blit(gs, (cx - 14, cy - 14))
+
+        # Bomb body (larger, 9px radius)
+        s = pygame.Surface((22, 22), pygame.SRCALPHA)
+        # Dark inner core
+        pygame.draw.circle(s, (max(0,col[0]-60), max(0,col[1]-60), max(0,col[2]-60), 220), (11, 11), 9)
+        # Bright outer colour
+        pygame.draw.circle(s, (*col, 210), (11, 11), 9, 3)
+        # Gold border ring
+        pygame.draw.circle(s, (200, 170, 40, 180), (11, 11), 9, 1)
+        # Specular highlight
+        pygame.draw.circle(s, (255, 255, 255, 130), (8, 7), 3)
+
+        # Fuse spark (alternates fast)
+        spark_col = (255, 230, 60) if self._arc_t % 0.10 < 0.05 else (255, 100, 20)
+        pygame.draw.circle(s, (*spark_col, 255), (11, 3), 3)
+        # Fuse line
+        pygame.draw.line(s, (120, 80, 20), (11, 3), (11, 8), 1)
+
+        surf.blit(s, (cx - 11, cy - 11))
 
 
 class _JesterExplosionEffect:
     """Flash ring effect for Jester bomb explosion."""
     def __init__(self, x, y, radius, color):
         self.x = x; self.y = y; self.radius = radius
-        self.color = color; self.life = 0.4; self.t = 0.0
+        self.color = color; self.life = 0.5; self.t = 0.0
 
     def update(self, dt):
         self.t += dt
@@ -6259,12 +6338,24 @@ class _JesterExplosionEffect:
 
     def draw(self, surf):
         prog = self.t / self.life
-        alpha = int(220 * (1 - prog))
-        r = int(self.radius * (0.3 + 0.7 * prog))
-        s = pygame.Surface((r * 2 + 4, r * 2 + 4), pygame.SRCALPHA)
-        pygame.draw.circle(s, (*self.color[:3], alpha // 3), (r + 2, r + 2), r)
-        pygame.draw.circle(s, (*self.color[:3], alpha),     (r + 2, r + 2), r, max(1, int(3 * (1-prog)) + 1))
-        surf.blit(s, (int(self.x) - r - 2, int(self.y) - r - 2))
+        alpha = int(240 * (1 - prog))
+        r = int(self.radius * (0.2 + 0.8 * prog))
+        s = pygame.Surface((r * 2 + 8, r * 2 + 8), pygame.SRCALPHA)
+        # Outer glow ring
+        pygame.draw.circle(s, (*self.color[:3], alpha // 4), (r + 4, r + 4), r + 3)
+        # Gold shimmer ring
+        gold_a = max(0, int(160 * (1 - prog * 1.4)))
+        pygame.draw.circle(s, (220, 190, 40, gold_a), (r + 4, r + 4),
+                           max(1, r - 3), max(1, int(2 * (1-prog)) + 1))
+        # Main colour ring
+        pygame.draw.circle(s, (*self.color[:3], alpha),
+                           (r + 4, r + 4), r, max(1, int(4 * (1-prog)) + 1))
+        # Inner bright flare (shrinks away)
+        inner_r = max(0, int(r * 0.35 * (1 - prog * 2)))
+        if inner_r > 1:
+            pygame.draw.circle(s, (*self.color[:3], min(255, alpha + 60)),
+                               (r + 4, r + 4), inner_r)
+        surf.blit(s, (int(self.x) - r - 4, int(self.y) - r - 4))
 
 
 class JesterPuddleEffect:
@@ -6435,41 +6526,131 @@ class Jester(Unit):
         cx, cy = int(self.px), int(self.py)
         t = self._anim_t
 
-        # Jester body — colorful magenta/pink
-        pygame.draw.circle(surf, C_JESTER_DARK, (cx, cy), 27)
-        pygame.draw.circle(surf, C_JESTER,      (cx, cy), 21)
-        pygame.draw.circle(surf, (255, 160, 210), (cx, cy), 21, 2)
+        # ── Outer dark aura / shadow ──────────────────────────────────────────
+        aura_s = pygame.Surface((68, 68), pygame.SRCALPHA)
+        pygame.draw.circle(aura_s, (80, 20, 160, 55), (34, 34), 34)
+        surf.blit(aura_s, (cx - 34, cy - 34))
 
-        # Jester hat — two-pointed fool hat above the circle
-        hat_pts = [
-            (cx - 10, cy - 20),
-            (cx - 16, cy - 40),
-            (cx,      cy - 26),
-            (cx + 16, cy - 40),
-            (cx + 10, cy - 20),
-        ]
-        pygame.draw.polygon(surf, (180, 40, 120), hat_pts)
-        pygame.draw.polygon(surf, (255, 120, 200), hat_pts, 2)
-        # Bell on each tip
-        pygame.draw.circle(surf, C_GOLD, (cx - 16, cy - 40), 4)
-        pygame.draw.circle(surf, C_GOLD, (cx + 16, cy - 40), 4)
+        # ── Body — deep purple core with violet rim ───────────────────────────
+        pygame.draw.circle(surf, C_JESTER_DARK,   (cx, cy), 27)
+        pygame.draw.circle(surf, C_JESTER,        (cx, cy), 21)
+        # Inner diamond-pattern detail: two crossing lines (harlequin costume)
+        for ang in (30, 150):
+            rad = math.radians(ang)
+            x1 = cx + int(math.cos(rad) * 18)
+            y1 = cy + int(math.sin(rad) * 18)
+            x2 = cx - int(math.cos(rad) * 18)
+            y2 = cy - int(math.sin(rad) * 18)
+            pygame.draw.line(surf, (200, 120, 255, ), (x1, y1), (x2, y2), 1)
+        # Gleaming gold rim
+        pygame.draw.circle(surf, (200, 170, 40),  (cx, cy), 21, 2)
+        # Inner bright highlight dot
+        pygame.draw.circle(surf, (220, 180, 255), (cx - 6, cy - 6), 5)
+        pygame.draw.circle(surf, (255, 240, 255), (cx - 7, cy - 7), 2)
 
-        # Animated juggling bomb dots
+        # ── Mask — sinister comedy/tragedy split mask ─────────────────────────
+        # Left half = smiling (gold), right half = frowning (dark violet)
+        mask_s = pygame.Surface((30, 22), pygame.SRCALPHA)
+        # Left eye (gold arc — smile)
+        pygame.draw.arc(mask_s, (220, 190, 30), (2, 4, 10, 8), 0, math.pi, 2)
+        # Right eye (violet arc — frown, flipped)
+        pygame.draw.arc(mask_s, (180, 80, 255), (18, 5, 10, 8), math.pi, math.pi*2, 2)
+        surf.blit(mask_s, (cx - 15, cy - 10))
+
+        # ── Three-pointed fool hat (tricorne style) ───────────────────────────
+        # Center tip (tallest), left and right tips
+        tip_c  = (cx,      cy - 50)
+        tip_l  = (cx - 22, cy - 38)
+        tip_r  = (cx + 22, cy - 38)
+        brim_l = (cx - 14, cy - 20)
+        brim_r = (cx + 14, cy - 20)
+
+        # Main hat body (dark base)
+        hat_body = [brim_l, tip_l, tip_c, tip_r, brim_r]
+        pygame.draw.polygon(surf, (18, 8, 40), hat_body)
+
+        # Alternating violet/gold diamond patches on hat
+        # Left panel
+        left_panel = [brim_l, tip_l, (cx - 4, cy - 32)]
+        pygame.draw.polygon(surf, (90, 30, 160), left_panel)
+        # Right panel
+        right_panel = [brim_r, tip_r, (cx + 4, cy - 32)]
+        pygame.draw.polygon(surf, (90, 30, 160), right_panel)
+        # Center panel
+        center_panel = [(cx - 4, cy - 32), tip_c, (cx + 4, cy - 32)]
+        pygame.draw.polygon(surf, (170, 130, 20), center_panel)
+
+        # Hat outline
+        pygame.draw.polygon(surf, (200, 170, 40), hat_body, 2)
+
+        # Gold bells on all three tips with animated jingle glow
+        bell_glow = abs(math.sin(t * 4.0))
+        for tip in (tip_c, tip_l, tip_r):
+            # Glow halo
+            bg_s = pygame.Surface((16, 16), pygame.SRCALPHA)
+            glow_a = int(80 + 60 * bell_glow)
+            pygame.draw.circle(bg_s, (255, 220, 60, glow_a), (8, 8), 7)
+            surf.blit(bg_s, (tip[0] - 8, tip[1] - 8))
+            # Bell body
+            pygame.draw.circle(surf, (200, 160, 20), tip, 5)
+            pygame.draw.circle(surf, (255, 220, 80), tip, 3)
+            # Clapper dot
+            pygame.draw.circle(surf, (100, 70, 0), (tip[0], tip[1] + 3), 1)
+
+        # Hat brim band (thin gold stripe)
+        pygame.draw.line(surf, (200, 170, 40), brim_l, brim_r, 2)
+
+        # ── Collar ruffles (small triangles below body) ───────────────────────
+        for i in range(5):
+            ra = math.radians(-60 + i * 30)
+            rx2 = cx + int(math.cos(ra) * 22)
+            ry2 = cy + int(math.sin(ra) * 22)
+            col_col = (200, 170, 40) if i % 2 == 0 else (120, 50, 200)
+            pygame.draw.circle(surf, col_col, (rx2, ry2), 3)
+
+        # ── Animated juggling bomb orbits ────────────────────────────────────
+        # Each bomb orbits at its own speed and radius with type-coloured glow
+        bomb_types = ["fire", "ice", "poison"]
         for i in range(3):
-            a = math.radians(t * 90 * (1 + i * 0.3) + i * 120)
-            bx2 = cx + int(math.cos(a) * (24 + i * 3))
-            by2 = cy + int(math.sin(a) * (16 + i * 2))
-            btype = ["fire", "ice", "poison"][i]
+            speed  = 110 * (1 + i * 0.35)
+            radius = 26 + i * 4
+            a = math.radians(t * speed + i * 120)
+            bx2 = cx + int(math.cos(a) * radius)
+            by2 = cy + int(math.sin(a) * radius * 0.62)  # elliptical orbit
+            btype = bomb_types[i]
             bcol  = JesterBomb._TYPE_COLS[btype]
-            bs = pygame.Surface((10, 10), pygame.SRCALPHA)
-            pygame.draw.circle(bs, (*bcol, 200), (5, 5), 4)
-            surf.blit(bs, (bx2 - 5, by2 - 5))
 
-        # Hidden detection indicator
+            # Glow halo
+            ghalo = pygame.Surface((18, 18), pygame.SRCALPHA)
+            pygame.draw.circle(ghalo, (*bcol, 90), (9, 9), 8)
+            surf.blit(ghalo, (bx2 - 9, by2 - 9))
+            # Bomb sphere
+            bs = pygame.Surface((12, 12), pygame.SRCALPHA)
+            pygame.draw.circle(bs, (*bcol, 230),     (6, 6), 5)
+            pygame.draw.circle(bs, (255, 255, 255, 120), (6, 6), 5, 1)
+            # Fuse flicker
+            fuse_col = (255, 230, 60) if (t * 8 + i) % 1 < 0.5 else (255, 120, 20)
+            pygame.draw.circle(bs, (*fuse_col, 255), (6, 2), 2)
+            surf.blit(bs, (bx2 - 6, by2 - 6))
 
-        # Level pips
+        # ── Hidden detection indicator ────────────────────────────────────────
+
+        # ── Level pips (golden diamonds) ─────────────────────────────────────
+        pip_cols = [
+            (200, 170,  40),   # lv1 gold
+            (140,  60, 220),   # lv2 violet
+            (255, 120,  30),   # lv3 orange
+            ( 80, 200, 255),   # lv4 ice blue
+        ]
         for i in range(self.level):
-            pygame.draw.circle(surf, C_JESTER, (cx - 10 + i * 7, cy + 36), 3)
+            col_p = pip_cols[i] if i < len(pip_cols) else C_JESTER
+            px_p  = cx - 10 + i * 8
+            py_p  = cy + 36
+            # Diamond shape (4-point)
+            pts = [(px_p, py_p - 4), (px_p + 3, py_p),
+                   (px_p, py_p + 4), (px_p - 3, py_p)]
+            pygame.draw.polygon(surf, col_p, pts)
+            pygame.draw.polygon(surf, (255, 240, 180), pts, 1)
 
         # Draw active bombs
         for b in self._bombs:
@@ -6602,8 +6783,8 @@ class Jester(Unit):
     def draw_range(self, surf):
         r = int(self.range_tiles * TILE)
         s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
-        pygame.draw.circle(s, (255, 100, 180, 18), (r, r), r)
-        pygame.draw.circle(s, (255, 100, 180, 60), (r, r), r, 2)
+        pygame.draw.circle(s, (140, 60, 220, 18), (r, r), r)
+        pygame.draw.circle(s, (200, 170, 40, 70), (r, r), r, 2)
         surf.blit(s, (int(self.px) - r, int(self.py) - r))
 
     def get_info(self):
