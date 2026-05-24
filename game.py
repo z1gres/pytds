@@ -1000,7 +1000,7 @@ class UI:
                 on_path = _on_any_path(mx, my)
                 can_path = getattr(UType, 'CAN_PLACE_ON_PATH', False)
                 own_units = [u for u in units if not getattr(u, '_mp_peer', False)]
-                if (on_path and not can_path) or any(dist((u.px,u.py),pos)<36 for u in units):
+                if (on_path and not can_path) or any(dist((u.px,u.py),(mx,my))<36 for u in units):
                     self.show_msg("Can't place here!")
                     return 0
                 _place_cost = int(UType.PLACE_COST * getattr(self, 'cost_mult', 1.0))
@@ -1187,7 +1187,11 @@ class UI:
                 self.open_unit=None; self._sell_pending=False
             return 0
         for u in units:
-            if dist((u.px,u.py),pos)<20: self.open_unit=u; self._sell_pending=False; return 0
+            if dist((u.px,u.py),pos)<20:
+                if getattr(u, '_mp_peer', False):
+                    self.show_msg("Partner's tower — view only", 1.5)
+                    return 0
+                self.open_unit=u; self._sell_pending=False; return 0
         for i,slot in enumerate(self.slots):
             if slot.collidepoint(pos):
                 UType=self.SLOT_TYPES[i]
@@ -3018,6 +3022,12 @@ class UI:
                     btns[f"cb_blade_{_cb_bid}"] = _cb_r
                 btns["upgrade"] = pygame.Rect(mx_m+6, strip_y_actual+54+_cb_btn_h+8, mw-12, 44)
             up_rect=btns["upgrade"]
+            if _is_peer_unit:
+                # Grey out upgrade button
+                pygame.draw.rect(surf,(35,35,40),up_rect,border_radius=6)
+                pygame.draw.rect(surf,(60,60,70),up_rect,1,border_radius=6)
+                txt(surf,"Can't upgrade partner's tower",up_rect.center,(80,80,100),font_sm,center=True)
+                up_rect=None  # prevent further upgrade drawing
             can_up=bool(cost and money>=cost)
             if can_up:
                 up_bg=(35,100,40); up_border=(70,200,80)
@@ -3412,33 +3422,40 @@ class UI:
                 u._ability_btn_rect=ab_r
 
             # === BOTTOM: X + SELL ===
+            _is_peer_unit = getattr(u, '_mp_peer', False)
             pygame.draw.rect(surf,(40,22,22),btns["close"],border_radius=5)
             pygame.draw.rect(surf,(100,40,40),btns["close"],1,border_radius=5)
             txt(surf,"X",btns["close"].center,(220,100,100),font_lg,center=True)
 
-            sell_val=self._sell_value(u)
-            _sell_pend = getattr(self, '_sell_pending', False)
-            _sell_t = pygame.time.get_ticks() * 0.001
-            _sell_flash = _sell_pend and (int(_sell_t * 6) % 2 == 0)
-            _sell_bg  = (255, 80, 20) if _sell_flash else (170, 28, 28)
-            _sell_brd = (255, 200, 50) if _sell_pend else (230, 65, 65)
-            pygame.draw.rect(surf, _sell_bg, btns["sell"], border_radius=5)
-            pygame.draw.rect(surf, _sell_brd, btns["sell"], 2 if _sell_pend else 1, border_radius=5)
-            if _sell_pend:
-                txt(surf, "CONFIRM?", btns["sell"].center, (255, 255, 100), font_lg, center=True)
+            if _is_peer_unit:
+                # Grey out sell button — can't sell partner's tower
+                pygame.draw.rect(surf,(40,40,44),btns["sell"],border_radius=5)
+                pygame.draw.rect(surf,(70,70,80),btns["sell"],1,border_radius=5)
+                txt(surf,"Partner's tower",btns["sell"].center,(100,100,120),font_sm,center=True)
             else:
-                ico_m=load_icon("money_ico",14)
-                if ico_m:
-                    sell_s=font_lg.render(f"Sell: ",True,(255,210,210))
-                    val_s=font_lg.render(str(sell_val),True,(255,230,100))
-                    total_sw=sell_s.get_width()+ico_m.get_width()+val_s.get_width()
-                    sx=btns["sell"].centerx-total_sw//2
-                    sy=btns["sell"].centery-sell_s.get_height()//2
-                    surf.blit(sell_s,(sx,sy)); sx+=sell_s.get_width()
-                    surf.blit(ico_m,(sx,sy+(sell_s.get_height()-ico_m.get_height())//2)); sx+=ico_m.get_width()
-                    surf.blit(val_s,(sx,sy))
+                sell_val=self._sell_value(u)
+                _sell_pend = getattr(self, '_sell_pending', False)
+                _sell_t = pygame.time.get_ticks() * 0.001
+                _sell_flash = _sell_pend and (int(_sell_t * 6) % 2 == 0)
+                _sell_bg  = (255, 80, 20) if _sell_flash else (170, 28, 28)
+                _sell_brd = (255, 200, 50) if _sell_pend else (230, 65, 65)
+                pygame.draw.rect(surf, _sell_bg, btns["sell"], border_radius=5)
+                pygame.draw.rect(surf, _sell_brd, btns["sell"], 2 if _sell_pend else 1, border_radius=5)
+                if _sell_pend:
+                    txt(surf, "CONFIRM?", btns["sell"].center, (255, 255, 100), font_lg, center=True)
                 else:
-                    txt(surf,f"Sell: ${sell_val}",btns["sell"].center,(255,210,210),font_lg,center=True)
+                    ico_m=load_icon("money_ico",14)
+                    if ico_m:
+                        sell_s=font_lg.render(f"Sell: ",True,(255,210,210))
+                        val_s=font_lg.render(str(sell_val),True,(255,230,100))
+                        total_sw=sell_s.get_width()+ico_m.get_width()+val_s.get_width()
+                        sx=btns["sell"].centerx-total_sw//2
+                        sy=btns["sell"].centery-sell_s.get_height()//2
+                        surf.blit(sell_s,(sx,sy)); sx+=sell_s.get_width()
+                        surf.blit(ico_m,(sx,sy+(sell_s.get_height()-ico_m.get_height())//2)); sx+=ico_m.get_width()
+                        surf.blit(val_s,(sx,sy))
+                    else:
+                        txt(surf,f"Sell: ${sell_val}",btns["sell"].center,(255,210,210),font_lg,center=True)
             # Cache final button positions for handle_click
             self._cached_btns=btns
 

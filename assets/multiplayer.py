@@ -799,6 +799,12 @@ class _MPGameFactory:
 
                 # Track which own units we've already broadcast
                 self._sent_unit_ids = set()
+                # Chat
+                self._chat_log      = []   # list of (nick, text, ticks)
+                self._chat_open     = False
+                self._chat_input    = ""
+                self._chat_scroll   = 0
+                self._last_speed_idx = 2   # track speed changes to broadcast
 
             # ── Called every frame just before pygame.display.flip() ──────────
             def _mp_overlay_hook(self):
@@ -845,6 +851,12 @@ class _MPGameFactory:
                 # Draw peer cursor
                 self.peer_cursor.draw(self.screen)
 
+                # Broadcast speed change
+                cur_spd = self.ui._speed_idx
+                if cur_spd != self._last_speed_idx:
+                    self._last_speed_idx = cur_spd
+                    self.net.send({"type": "speed_sync", "idx": cur_spd})
+
                 # Draw leaderboard
                 own2 = [u for u in self.units if not getattr(u, '_mp_peer', False)]
                 self.leaderboard.draw(
@@ -860,6 +872,9 @@ class _MPGameFactory:
                     self.host_nick,
                     self._elapsed,
                 )
+
+                # Draw chat overlay
+                _draw_chat_overlay(self.screen, self._chat_log, self._chat_open, self._chat_input)
 
             def _process_net(self):
                 for msg in self.net.poll():
@@ -910,12 +925,74 @@ class _MPGameFactory:
                         self.running = False
 
                     elif t == "player_left":
-                        self.ui.show_msg(
-                            f"{msg.get('nick','?')} disconnected!", 5.0)
+                        _left_nick = msg.get('nick','?')
+                        self._chat_log.append(("SYSTEM", f"{_left_nick} left the game", pygame.time.get_ticks()))
+                        self.ui.show_msg(f"{_left_nick} disconnected!", 5.0)
+                        self.peer_cursor.visible = False
 
                     elif t == "chat":
-                        self.ui.show_msg(
-                            f"[{msg.get('nick','?')}]: {msg.get('text','')}", 4.0)
+                        _cn = msg.get('nick','?')
+                        _ct = msg.get('text','')
+                        self._chat_log.append((_cn, _ct, pygame.time.get_ticks()))
+                        self.ui.show_msg(f"[{_cn}]: {_ct}", 4.0)
+
+                    elif t == "speed_sync":
+                        _idx = msg.get("idx", 2)
+                        self.ui._speed_idx = max(0, min(_idx, len(self.ui._SPEED_STEPS)-1))
+
+            def run(self):
+                """Override: pump chat events before parent run() sees them."""
+                # We use a pre-event hook: _mp_overlay_hook fires every frame
+                # just before flip() inside the parent run() loop.
+                # For chat we need to intercept KEYDOWN events.
+                # Strategy: monkey-patch pygame.event.get() for the duration of this run.
+                import pygame as _pg
+                _orig_get = _pg.event.get
+
+                mp_self = self  # capture for closure
+
+                def _filtered_get(*args, **kwargs):
+                    events = _orig_get(*args, **kwargs)
+                    out = []
+                    for ev in events:
+                        if mp_self._chat_open:
+                            # Chat is open — consume keyboard, block ESC from pausing
+                            if ev.type == _pg.KEYDOWN:
+                                if ev.key == _pg.K_ESCAPE:
+                                    mp_self._chat_open = False
+                                    mp_self._chat_input = ""
+                                elif ev.key == _pg.K_RETURN:
+                                    t2 = mp_self._chat_input.strip()
+                                    if t2:
+                                        mp_self.net.send({"type": "chat", "text": t2})
+                                        mp_self._chat_log.append((mp_self.nick, t2, _pg.time.get_ticks()))
+                                    mp_self._chat_open = False
+                                    mp_self._chat_input = ""
+                                elif ev.key == _pg.K_BACKSPACE:
+                                    mp_self._chat_input = mp_self._chat_input[:-1]
+                                elif ev.unicode and len(mp_self._chat_input) < 80:
+                                    mp_self._chat_input += ev.unicode
+                                # Don't pass keyboard events to game while chat open
+                            elif ev.type in (_pg.MOUSEBUTTONDOWN, _pg.MOUSEBUTTONUP):
+                                out.append(ev)  # allow mouse clicks through
+                        else:
+                            # Chat closed — intercept T key to open chat
+                            if ev.type == _pg.KEYDOWN and ev.key == _pg.K_t:
+                                if not mp_self.paused and not mp_self.game_over and not mp_self.win:
+                                    mp_self._chat_open = True
+                                    mp_self._chat_input = ""
+                                    continue
+                            out.append(ev)
+                    return out
+
+                _pg.event.get = _filtered_get
+                try:
+                    super().run()
+                finally:
+                    _pg.event.get = _orig_get
+                    self._restore()
+                    self.net.send({"type": "leave_room"})
+                return self.return_to_menu
 
             def _restore(self):
                 UNIT_LIMITS.clear()
@@ -924,6 +1001,48 @@ class _MPGameFactory:
 
         cls._cls = MultiplayerGame
         return MultiplayerGame
+
+
+# ── Chat overlay ─────────────────────────────────────────────────────────────
+def _draw_chat_overlay(surf, chat_log, chat_open, chat_input):
+    MAX_VISIBLE = 8
+    BOX_W = 420; LINE_H = 22; PAD = 8; x = 8
+    now = pygame.time.get_ticks()
+    visible = []
+    for nick, text, ts in reversed(chat_log):
+        age = (now - ts) / 1000.0
+        if not chat_open and age > 8.0:
+            continue
+        visible.append((nick, text, age))
+        if len(visible) >= MAX_VISIBLE:
+            break
+    visible.reverse()
+    base_y = SCREEN_H - 160 - (LINE_H + PAD if chat_open else 0)
+    if visible:
+        log_h = len(visible) * LINE_H + PAD * 2
+        log_y = base_y - log_h
+        draw_rect_alpha(surf, (8, 10, 18), (x, log_y, BOX_W, log_h), 180, 6)
+        f = pygame.font.SysFont("segoeui", 15)
+        for i, (nick, text, age) in enumerate(visible):
+            alpha = max(60, 255 - int(age * 20)) if not chat_open else 255
+            col = (180, 140, 60) if nick == "SYSTEM" else (100, 200, 255)
+            prefix = "  ★ " if nick == "SYSTEM" else f"  {nick}: "
+            line = (prefix + text)[:60]
+            s = f.render(line, True, col)
+            s.set_alpha(alpha)
+            surf.blit(s, (x + PAD, log_y + PAD + i * LINE_H))
+    if chat_open:
+        ib_y = base_y
+        draw_rect_alpha(surf, (12, 16, 28), (x, ib_y, BOX_W, LINE_H + PAD * 2), 220, 6)
+        pygame.draw.rect(surf, (60, 120, 200), (x, ib_y, BOX_W, LINE_H + PAD * 2), 2, border_radius=6)
+        hint = pygame.font.SysFont("segoeui", 14).render("ENTER send  •  ESC close", True, (60, 80, 120))
+        surf.blit(hint, (x + PAD, ib_y - 18))
+        cursor = "|" if (pygame.time.get_ticks() // 500) % 2 == 0 else ""
+        ts2 = pygame.font.SysFont("segoeui", 16, bold=True).render(chat_input + cursor, True, C_WHITE)
+        surf.blit(ts2, (x + PAD, ib_y + PAD))
+    else:
+        hs = pygame.font.SysFont("segoeui", 13).render("T — chat", True, (50, 60, 90))
+        surf.blit(hs, (x, SCREEN_H - 155))
 
 
 # ── Entry point ──────────────────────────────────────────────────────────────
@@ -1011,8 +1130,7 @@ def run_multiplayer(screen, save_data: dict):
             wait.map_name, wait.mode,
         )
         mp_game.screen = screen
-        mp_game.run()
-        mp_game._restore()
+        mp_game.run()   # _restore() is called inside run()
         save_data = mp_game.save_data
         # After game ends, go back to lobby
         net.send({"type": "list_rooms"})
