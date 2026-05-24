@@ -989,12 +989,12 @@ C_ARCHERPRIME_DARK = (90,  20,  128)
 
 # (damage, firerate, range_tiles, upgrade_cost, max_hits)
 ARCHER_LEVELS = [
-    (6,  1.708, 6.0, None, 1),   # lv0  dmg 4→6
-    (6,  1.708, 7.0, 100,  1),   # lv1  dmg 4→6, +1 Range
-    (8,  1.608, 7.0, 400,  2),   # lv2  dmg 6→8, faster, hid det, max_hits=2
-    (12, 1.508, 7.6, 1000, 3),   # lv3  dmg 8→12, faster, +0.6 Range, max_hits=3, flame
-    (16, 1.508, 8.6, 2750, 4),   # lv4  +4 Dmg, +1 Range, max_hits=4, shock
-    (35, 1.258, 9.6, 8575, 5),   # lv5  +19 Dmg, faster, +1 Range, max_hits=5, explosive
+    (6,  1.608, 6.3, None, 1),   # lv0  firerate 1.7→1.6, range +0.3
+    (6,  1.408, 7.3, 100,  1),   # lv1  firerate 1.6→1.4, +1 Range
+    (9,  1.4,   7.3, 400,  2),   # lv2  dmg +3 (6→9), hid det, max_hits=2
+    (12, 1.4,   7.6, 1000, 3),   # lv3  dmg 8→12, +0.6 Range, max_hits=3, flame
+    (16, 1.2,   8.6, 2750, 4),   # lv4  +4 Dmg, +1 Range, max_hits=4, shock
+    (35, 1.0,   9.6, 8575, 5),   # lv5  +19 Dmg, +1 Range, max_hits=5, explosive
 ]
 
 class ArcherArrow:
@@ -1285,7 +1285,7 @@ class Archer(Unit):
         if t == "explosive" and self.level < 5: t = "arrow"
         kw = dict(arrow_type=t)
         if t == "flame":
-            kw["fire_dmg"] = 2 + (2 if self.level >= 5 else 0)
+            kw["fire_dmg"] = 3 + (2 if self.level >= 5 else 0)
             kw["fire_dur"] = (3 if self.level < 5 else 4)
         elif t == "shock":
             kw["shock_stun"] = 0.3 + (0.15 if self.level >= 5 else 0)
@@ -1316,8 +1316,8 @@ class Archer(Unit):
             if ft > 0:
                 e._fire_timer = max(0, ft - dt)
                 e._fire_tick = getattr(e, '_fire_tick', 0) + dt
-                if e._fire_tick >= 0.5:
-                    e._fire_tick -= 0.5
+                if e._fire_tick >= 1.0:
+                    e._fire_tick -= 1.0
                     e.take_damage(getattr(e, '_fire_dmg', 2))
 
     def draw(self, surf):
