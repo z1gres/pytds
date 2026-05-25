@@ -122,7 +122,8 @@ class NickScreen:
     def __init__(self, screen, save_data):
         self.screen    = screen
         self.save_data = save_data
-        self.nick      = save_data.get("mp_nick", "")
+        # Use mp_nick if already set, otherwise fall back to profile nick
+        self.nick      = save_data.get("mp_nick", "") or save_data.get("player_nick", "")
         self.active    = True
         cx = SCREEN_W // 2
         self.box  = pygame.Rect(cx - 220, SCREEN_H // 2 - 30, 440, 52)
@@ -1049,8 +1050,16 @@ def _draw_chat_overlay(surf, chat_log, chat_open, chat_input):
 def run_multiplayer(screen, save_data: dict):
     """Called by game.py _run_multiplayer(). Returns updated save_data."""
 
-    # 1. Ask for nickname
-    nick = NickScreen(screen, save_data).run()
+    # 1. Ask for nickname — skip screen if profile nick already set
+    _profile_nick = save_data.get("player_nick", "").strip()
+    if _profile_nick:
+        # Auto-use profile nick, sync it to mp_nick
+        save_data["mp_nick"] = _profile_nick
+        from game_core import write_save
+        write_save(save_data)
+        nick = _profile_nick
+    else:
+        nick = NickScreen(screen, save_data).run()
     if nick is None:
         return save_data
 

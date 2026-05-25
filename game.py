@@ -93,6 +93,99 @@ RARITY_DATA["singularity"] = {
     "text_col": (0, 0, 0),
 }
 
+# ── Daily Quest System ────────────────────────────────────────────────────────
+import datetime as _dt
+import hashlib  as _hashlib
+
+# All possible daily quest definitions
+# Each has: id, title, desc, type, target, reward_coins, reward_shards
+_DAILY_QUEST_POOL = [
+    # Win-based quests
+    {"id":"dq_win_easy",    "title":"Easy Victory",      "desc":"Win 1 game on Easy difficulty.",        "type":"win_mode",   "mode":"easy",    "target":1, "coins":200,  "shards":0},
+    {"id":"dq_win2_easy",   "title":"Double Easy",       "desc":"Win 2 games on Easy difficulty.",       "type":"win_mode",   "mode":"easy",    "target":2, "coins":350,  "shards":0},
+    {"id":"dq_win_fallen",  "title":"Fallen Victor",     "desc":"Win 1 game on Fallen difficulty.",      "type":"win_mode",   "mode":"fallen",  "target":1, "coins":300,  "shards":5},
+    {"id":"dq_win_frosty",  "title":"Frost Conqueror",   "desc":"Win 1 game on Frosty difficulty.",      "type":"win_mode",   "mode":"frosty",  "target":1, "coins":400,  "shards":8},
+    {"id":"dq_win_infernal","title":"Infernal Run",      "desc":"Win 1 game on Infernal difficulty.",    "type":"win_mode",   "mode":"infernal","target":1, "coins":500,  "shards":12},
+    # Kill-based quests
+    {"id":"dq_kills_100",   "title":"Pest Control",      "desc":"Kill 100 enemies in any game.",         "type":"kills",      "target":100, "coins":150,  "shards":0},
+    {"id":"dq_kills_300",   "title":"Slaughter",         "desc":"Kill 300 enemies in any game.",         "type":"kills",      "target":300, "coins":300,  "shards":3},
+    {"id":"dq_kills_500",   "title":"Massacre",          "desc":"Kill 500 enemies in any game.",         "type":"kills",      "target":500, "coins":500,  "shards":6},
+    # Wave-based quests
+    {"id":"dq_waves_5",     "title":"Survivor",          "desc":"Survive 5 waves in a single game.",     "type":"waves",      "target":5,  "coins":120,  "shards":0},
+    {"id":"dq_waves_10",    "title":"Veteran",           "desc":"Survive 10 waves in a single game.",    "type":"waves",      "target":10, "coins":250,  "shards":4},
+    {"id":"dq_waves_15",    "title":"War Machine",       "desc":"Survive 15 waves in a single game.",    "type":"waves",      "target":15, "coins":450,  "shards":8},
+    # Coin-earn quests
+    {"id":"dq_earn_2000",   "title":"Early Investor",    "desc":"Earn 2 000 coins in one game.",         "type":"earn_coins", "target":2000,  "coins":150,  "shards":0},
+    {"id":"dq_earn_5000",   "title":"Capitalist",        "desc":"Earn 5 000 coins in one game.",         "type":"earn_coins", "target":5000,  "coins":250,  "shards":3},
+    {"id":"dq_earn_10000",  "title":"Tycoon",            "desc":"Earn 10 000 coins in one game.",        "type":"earn_coins", "target":10000, "coins":500,  "shards":6},
+    # Place-towers quests
+    {"id":"dq_place_5",     "title":"Builder",           "desc":"Place 5 towers in one game.",           "type":"towers_placed","target":5,  "coins":100,  "shards":0},
+    {"id":"dq_place_15",    "title":"Army Builder",      "desc":"Place 15 towers in one game.",          "type":"towers_placed","target":15, "coins":220,  "shards":3},
+    # No-leak quests
+    {"id":"dq_no_leak",     "title":"Flawless",          "desc":"Win a game without letting any enemy through.",  "type":"no_leak_win","target":1, "coins":600, "shards":10},
+    # Hardcore/fallen special
+    {"id":"dq_hardcore_any","title":"Hardcore Attempt",  "desc":"Reach wave 10 in Hardcore mode.",       "type":"waves_mode", "mode":"hardcore","target":10,"coins":500,"shards":12},
+]
+
+_DAILY_COUNT = 3  # how many quests to pick per day
+
+def _get_today_str():
+    return _dt.date.today().isoformat()
+
+def _pick_daily_quests(date_str=None):
+    """Pick 3 quests for a given date deterministically."""
+    if date_str is None:
+        date_str = _get_today_str()
+    seed_bytes = _hashlib.md5(date_str.encode()).digest()
+    seed_int   = int.from_bytes(seed_bytes, "big")
+    import random as _rand
+    rng = _rand.Random(seed_int)
+    pool = list(_DAILY_QUEST_POOL)
+    rng.shuffle(pool)
+    return pool[:_DAILY_COUNT]
+
+def _load_daily_quests(save_data):
+    """Return (today_str, quests, progress, claimed) — reset if date changed."""
+    today = _get_today_str()
+    dq    = save_data.get("daily_quests", {})
+    if dq.get("date") != today:
+        # New day — reset
+        quests = _pick_daily_quests(today)
+        dq = {
+            "date":     today,
+            "quests":   [q["id"] for q in quests],
+            "progress": {q["id"]: 0 for q in quests},
+            "claimed":  [],
+        }
+        save_data["daily_quests"] = dq
+        write_save(save_data)
+    # Rebuild full quest defs from ids
+    _id_map = {q["id"]: q for q in _DAILY_QUEST_POOL}
+    quests  = [_id_map[qid] for qid in dq.get("quests", []) if qid in _id_map]
+    return today, quests, dq.get("progress", {}), dq.get("claimed", [])
+
+def _claim_daily_reward(save_data, quest_id):
+    """Mark quest as claimed and add rewards. Returns True if successful."""
+    today, quests, progress, claimed = _load_daily_quests(save_data)
+    if quest_id in claimed:
+        return False
+    _id_map = {q["id"]: q for q in _DAILY_QUEST_POOL}
+    q = _id_map.get(quest_id)
+    if q is None:
+        return False
+    # Check quest is complete
+    if progress.get(quest_id, 0) < q["target"]:
+        return False
+    # Give rewards
+    save_data["coins"]  = save_data.get("coins",  0) + q["coins"]
+    save_data["shards"] = save_data.get("shards", 0) + q["shards"]
+    dq = save_data.setdefault("daily_quests", {})
+    cl = list(dq.get("claimed", []))
+    cl.append(quest_id)
+    dq["claimed"] = cl
+    write_save(save_data)
+    return True
+
 
 
 
@@ -2985,6 +3078,7 @@ class UI:
             surf.blit(td_n,(mx_m+mw-10-td_n.get_width(),strip_y+22))
 
             # === UPGRADE BUTTON ===
+            _is_peer_unit = getattr(u, '_mp_peer', False)
             cost=u.upgrade_cost()
             if cost is not None:
                 cost = int(cost * getattr(self, 'cost_mult', 1.0))
@@ -4982,6 +5076,12 @@ def _cb_bg_shader(w: int, h: int, t: float) -> "pygame.Surface":
     color = color + (C_HIGHLIGHT - color) * m3
     # Overlay dark void patches on top
     color = color + (C_VOID - color) * vm3
+
+    # Permanent subtle darkening — clouds always have some dark areas, never fully bright
+    # Use n itself to create persistent dark zones that don't flash
+    persistent_dark = _np.clip((0.55 - n) / 0.35, 0.0, 1.0) * 0.35
+    color = color * (1.0 - persistent_dark[..., _np.newaxis])
+
     color = _np.clip(color, 0.0, 1.0)
 
     rgb = (color * 255).astype(_np.uint8)
@@ -6762,43 +6862,45 @@ class SettingsScreen:
         self.save_data = save_data
         self._drag_music = False
         self._drag_sfx   = False
-        self._tab        = 0   # active tab index
+        self._tab        = 0
+        self._tab_anim   = [0.0, 0.0, 0.0]   # hover lerp per tab
+        self._toggle_hover = {}               # key -> 0..1
 
         cx = SCREEN_W // 2
         self._cx = cx
 
         # ── Tab bar ───────────────────────────────────────────────────────────
-        TAB_W, TAB_H = 220, 48
-        TAB_GAP      = 12
+        TAB_W, TAB_H = 200, 44
+        TAB_GAP      = 10
         total_tabs   = len(self._TABS) * TAB_W + (len(self._TABS) - 1) * TAB_GAP
         tab_x0       = cx - total_tabs // 2
         self._tab_rects = [
-            pygame.Rect(tab_x0 + i * (TAB_W + TAB_GAP), 88, TAB_W, TAB_H)
+            pygame.Rect(tab_x0 + i * (TAB_W + TAB_GAP), 92, TAB_W, TAB_H)
             for i in range(len(self._TABS))
         ]
 
         # ── Content card ──────────────────────────────────────────────────────
-        CARD_W = 900; CARD_H = 560
-        self._card = pygame.Rect(cx - CARD_W // 2, 152, CARD_W, CARD_H)
+        CARD_W = 960; CARD_H = 490
+        self._card = pygame.Rect(cx - CARD_W // 2, 148, CARD_W, CARD_H)
 
         # ── Sliders (AUDIO tab) ───────────────────────────────────────────────
-        SL_X  = self._card.x + 60
-        SL_W  = self._card.w - 120
-        self._bar_music = pygame.Rect(SL_X, 230, SL_W, 14)
-        self._bar_sfx   = pygame.Rect(SL_X, 318, SL_W, 14)
+        SL_X = self._card.x + 72
+        SL_W = self._card.w - 144
+        self._bar_music = pygame.Rect(SL_X, self._card.y + 108, SL_W, 12)
+        self._bar_sfx   = pygame.Rect(SL_X, self._card.y + 228, SL_W, 12)
 
         # ── GRAPHICS toggles ──────────────────────────────────────────────────
         self._gfx_toggles = [
-            ("colored_range",        "Colored Range Rings"),
-            ("screen_shake",         "Screen Shake"),
-            ("particles",            "Particles & Effects"),
-            ("show_damage",          "Damage / Money Numbers"),
-            ("compact_numbers",      "Compact Numbers  (1k)"),
-            ("show_grid",            "Show Grid"),
-            ("show_fps",             "Show FPS"),
-            ("show_range_always",    "Always Show Range"),
-            ("low_quality",          "Low Quality  (better FPS)"),
-            ("unlock_fps",           "Unlock FPS — 144  (Experimental)"),
+            ("colored_range",     "Colored Range Rings"),
+            ("screen_shake",      "Screen Shake"),
+            ("particles",         "Particles & Effects"),
+            ("show_damage",       "Damage / Money Numbers"),
+            ("compact_numbers",   "Compact Numbers  (1k)"),
+            ("show_grid",         "Show Grid"),
+            ("show_fps",          "Show FPS"),
+            ("show_range_always", "Always Show Range"),
+            ("low_quality",       "Low Quality  (better FPS)"),
+            ("unlock_fps",        "Unlock FPS — 144"),
         ]
         self._aud_toggles = [
             ("music_muted", "Mute Music"),
@@ -6809,30 +6911,31 @@ class SettingsScreen:
             ("sell_confirm",         "Confirm Before Sell"),
             ("fast_forward_default", "Fast-forward by Default"),
         ]
-        self._toggle_rects_cache = {}  # tab -> list of (rect, key, lbl)
+        self._toggle_rects_cache = {}
 
         # ── DISPLAY buttons ───────────────────────────────────────────────────
         CX = self._card.centerx
-        self.btn_windowed   = pygame.Rect(CX - 230, 270, 210, 52)
-        self.btn_fullscreen = pygame.Rect(CX + 20,  270, 210, 52)
-        _bw = (self._card.w - 120) // len(_RESOLUTIONS)
+        # Window mode buttons — y+78 leaves room for section header at y+30
+        self.btn_windowed   = pygame.Rect(CX - 240, self._card.y + 78, 220, 48)
+        self.btn_fullscreen = pygame.Rect(CX + 20,  self._card.y + 78, 220, 48)
+        # Resolution buttons — y+200
+        _bw = (self._card.w - 144) // len(_RESOLUTIONS)
         self._res_btns = [
-            pygame.Rect(self._card.x + 60 + i * (_bw + 6), 380, _bw - 6, 48)
+            pygame.Rect(self._card.x + 72 + i * (_bw + 6), self._card.y + 200, _bw - 6, 44)
             for i in range(len(_RESOLUTIONS))
         ]
-
-        # ── Menu style buttons (DISPLAY tab) ─────────────────────────────────
-        _sw  = (self._card.w - 120 - 30) // 4   # 4 buttons, 3 gaps of 10px
-        _sx0 = self._card.x + 60
-        self.btn_style_void     = pygame.Rect(_sx0,                486, _sw, 52)
-        self.btn_style_modern   = pygame.Rect(_sx0 + (_sw + 10),   486, _sw, 52)
-        self.btn_style_vertical = pygame.Rect(_sx0 + (_sw + 10)*2, 486, _sw, 52)
-        self.btn_style_gothic   = pygame.Rect(_sx0 + (_sw + 10)*3, 486, _sw, 52)
+        # Style buttons — y+370
+        _sw  = (self._card.w - 144 - 30) // 4
+        _sx0 = self._card.x + 72
+        self.btn_style_void     = pygame.Rect(_sx0,                self._card.y + 370, _sw, 48)
+        self.btn_style_modern   = pygame.Rect(_sx0 + (_sw + 10),   self._card.y + 370, _sw, 48)
+        self.btn_style_vertical = pygame.Rect(_sx0 + (_sw + 10)*2, self._card.y + 370, _sw, 48)
+        self.btn_style_gothic   = pygame.Rect(_sx0 + (_sw + 10)*3, self._card.y + 370, _sw, 48)
 
         # ── Back button ───────────────────────────────────────────────────────
-        self.btn_back = pygame.Rect(cx - 110, SCREEN_H - 68, 220, 46)
+        self.btn_back = pygame.Rect(cx - 110, SCREEN_H - 64, 220, 44)
 
-    # ── slider helpers ────────────────────────────────────────────────────────
+    # ── Slider helpers ────────────────────────────────────────────────────────
     def _music_bar(self): return self._bar_music
     def _sfx_bar(self):   return self._bar_sfx
 
@@ -6845,7 +6948,6 @@ class SettingsScreen:
         bar = self._bar_sfx
         SETTINGS["sfx_volume"] = round(max(0.0, min(1.0, (mx - bar.x) / bar.w)), 2)
 
-    # ── toggle rects for current tab ─────────────────────────────────────────
     def _toggle_rects_left(self):  return []
     def _toggle_rects_right(self): return []
 
@@ -6855,25 +6957,21 @@ class SettingsScreen:
         if tab_i == 0:   keys = self._aud_toggles + self._misc_toggles
         elif tab_i == 1: keys = self._gfx_toggles
         else:            return []
-        # Two-column layout that fits inside the card (card width = 900, padding 60 each side)
-        usable_w = self._card.w - 120        # 780px
-        TW = (usable_w - 20) // 2           # ~380px per column
-        TH = 44; GAP = 10
-        CX = self._card.x + 60              # left edge of usable area
-        # For AUDIO tab (0): start below SFX slider + OTHER label (~bar_sfx.bottom + 60)
-        # For GRAPHICS tab (1): start near top of card
-        start_y = (self._bar_sfx.bottom + 60) if tab_i == 0 else (self._card.y + 62)
+        usable_w = self._card.w - 144
+        TW = (usable_w - 24) // 2
+        TH = 46; GAP = 10
+        CX = self._card.x + 72
+        start_y = (self._bar_sfx.bottom + 52) if tab_i == 0 else (self._card.y + 54)
         rects = []
         for i, (k, lbl) in enumerate(keys):
-            col = i % 2
-            row = i // 2
-            x   = CX + col * (TW + 20)
-            y   = start_y + row * (TH + GAP)
+            col = i % 2; row = i // 2
+            x = CX + col * (TW + 24)
+            y = start_y + row * (TH + GAP)
             rects.append((pygame.Rect(x, y, TW, TH), k, lbl))
         self._toggle_rects_cache[tab_i] = rects
         return rects
 
-    # ── event handling ────────────────────────────────────────────────────────
+    # ── Event handling ────────────────────────────────────────────────────────
     def run(self):
         clock = pygame.time.Clock()
         while self.running:
@@ -6896,39 +6994,29 @@ class SettingsScreen:
     def _handle_click(self, pos):
         if self.btn_back.collidepoint(pos):
             self.running = False; return
-        # tabs
         for i, tr in enumerate(self._tab_rects):
             if tr.collidepoint(pos):
                 self._tab = i; return
-        # AUDIO tab sliders
         if self._tab == 0:
             bm = self._bar_music
-            if pygame.Rect(bm.x, bm.y - 12, bm.w, bm.h + 24).collidepoint(pos):
+            if pygame.Rect(bm.x, bm.y - 14, bm.w, bm.h + 28).collidepoint(pos):
                 self._drag_music = True; self._set_music_vol(pos[0]); return
             bs = self._bar_sfx
-            if pygame.Rect(bs.x, bs.y - 12, bs.w, bs.h + 24).collidepoint(pos):
+            if pygame.Rect(bs.x, bs.y - 14, bs.w, bs.h + 28).collidepoint(pos):
                 self._drag_sfx = True; self._set_sfx_vol(pos[0]); return
-        # DISPLAY tab
         if self._tab == 2:
             if self.btn_windowed.collidepoint(pos):
-                SETTINGS["windowed"] = True
-                self.screen = _apply_display_mode(); return
+                SETTINGS["windowed"] = True; self.screen = _apply_display_mode(); return
             if self.btn_fullscreen.collidepoint(pos):
-                SETTINGS["windowed"] = False
-                self.screen = _apply_display_mode(); return
+                SETTINGS["windowed"] = False; self.screen = _apply_display_mode(); return
             for i, rb in enumerate(self._res_btns):
                 if rb.collidepoint(pos):
                     SETTINGS["resolution"] = _RESOLUTIONS[i]
                     self.screen = _apply_display_mode(); return
-            if self.btn_style_void.collidepoint(pos):
-                SETTINGS["menu_style"] = 0; return
-            if self.btn_style_modern.collidepoint(pos):
-                SETTINGS["menu_style"] = 1; return
-            if self.btn_style_vertical.collidepoint(pos):
-                SETTINGS["menu_style"] = 2; return
-            if self.btn_style_gothic.collidepoint(pos):
-                SETTINGS["menu_style"] = 3; return
-        # toggles
+            if self.btn_style_void.collidepoint(pos):     SETTINGS["menu_style"] = 0; return
+            if self.btn_style_modern.collidepoint(pos):   SETTINGS["menu_style"] = 1; return
+            if self.btn_style_vertical.collidepoint(pos): SETTINGS["menu_style"] = 2; return
+            if self.btn_style_gothic.collidepoint(pos):   SETTINGS["menu_style"] = 3; return
         for rect, key, _ in self._get_tab_toggles(self._tab):
             if rect.collidepoint(pos):
                 SETTINGS[key] = not SETTINGS[key]
@@ -6936,250 +7024,310 @@ class SettingsScreen:
                 self._toggle_rects_cache.pop(self._tab, None)
                 return
 
-    # ── drawing helpers ───────────────────────────────────────────────────────
-    def _draw_slider(self, surf, bar, vol, muted, label, accent):
-        lf  = pygame.font.SysFont("segoeui", 18, bold=True)
-        ls  = lf.render(label, True, (190, 205, 240))
-        surf.blit(ls, ls.get_rect(midleft=(bar.x, bar.y - 20)))
-        # track
-        pygame.draw.rect(surf, (25, 28, 45), bar, border_radius=7)
-        fw  = int(bar.w * vol)
-        col = accent if not muted else (55, 55, 75)
+    # ── Drawing helpers ───────────────────────────────────────────────────────
+    def _draw_section_header(self, surf, label, color, x, y, width):
+        """Draws a section label with accent bar and gradient underline."""
+        # left accent bar
+        bar_h = 18
+        bar_s = pygame.Surface((3, bar_h), pygame.SRCALPHA)
+        r, g, b = color
+        for by in range(bar_h):
+            a = int(255 * (1 - abs(by - bar_h / 2) / (bar_h / 2)) ** 0.5)
+            pygame.draw.line(bar_s, (r, g, b, a), (0, by), (2, by))
+        surf.blit(bar_s, (x, y + 1))
+        # label
+        f = pygame.font.SysFont("segoeui", 13, bold=True)
+        s = f.render(label, True, color)
+        surf.blit(s, (x + 10, y))
+        # gradient underline
+        line_y = y + s.get_height() + 5
+        ul_s = pygame.Surface((width, 2), pygame.SRCALPHA)
+        for dx in range(width):
+            frac = dx / max(1, width - 1)
+            a = int(160 * (1.0 - frac ** 1.2))
+            pygame.draw.line(ul_s, (r, g, b, a), (dx, 0), (dx, 1))
+        surf.blit(ul_s, (x, line_y))
+
+    def _draw_slider(self, surf, bar, vol, muted, label, accent, icon=""):
+        t = self.t
+        # label row
+        lf = pygame.font.SysFont("segoeui", 17, bold=True)
+        pf = pygame.font.SysFont("consolas", 15, bold=True)
+        pct_s = pf.render(f"{int(vol * 100)}%", True,
+                          accent if not muted else (80, 80, 110))
+        lbl_text = (icon + "  " if icon else "") + label
+        ls = lf.render(lbl_text, True, (200, 210, 240) if not muted else (90, 95, 130))
+        surf.blit(ls, (bar.x, bar.y - 24))
+        surf.blit(pct_s, pct_s.get_rect(midright=(bar.right, bar.y - 17)))
+
+        # track shadow
+        shadow_r = pygame.Rect(bar.x + 2, bar.y + 2, bar.w, bar.h + 4)
+        sh = pygame.Surface((shadow_r.w, shadow_r.h), pygame.SRCALPHA)
+        pygame.draw.rect(sh, (0, 0, 0, 60), (0, 0, shadow_r.w, shadow_r.h), border_radius=8)
+        surf.blit(sh, shadow_r.topleft)
+
+        # track background
+        pygame.draw.rect(surf, (18, 20, 38), bar, border_radius=8)
+        pygame.draw.rect(surf, (35, 38, 62), bar, 1, border_radius=8)
+
+        # filled portion
+        fw = max(0, int(bar.w * vol))
         if fw > 0:
-            pygame.draw.rect(surf, col, pygame.Rect(bar.x, bar.y, fw, bar.h), border_radius=7)
-        pygame.draw.rect(surf, (60, 65, 90), bar, 1, border_radius=7)
+            col = accent if not muted else (50, 52, 78)
+            fill_r = pygame.Rect(bar.x, bar.y, fw, bar.h)
+            # gradient fill
+            fill_s = pygame.Surface((fw, bar.h), pygame.SRCALPHA)
+            for px in range(fw):
+                frac = px / max(1, fw - 1)
+                r2 = int(col[0] * (0.6 + 0.4 * frac))
+                g2 = int(col[1] * (0.6 + 0.4 * frac))
+                b2 = int(col[2] * (0.6 + 0.4 * frac))
+                pygame.draw.line(fill_s, (r2, g2, b2, 255), (px, 0), (px, bar.h - 1))
+            mask_s = pygame.Surface((fw, bar.h), pygame.SRCALPHA)
+            pygame.draw.rect(mask_s, (255,255,255,255), (0,0,fw,bar.h), border_radius=8)
+            fill_s.blit(mask_s, (0,0), special_flags=pygame.BLEND_RGBA_MULT)
+            surf.blit(fill_s, bar.topleft)
+
         # knob
         kx = bar.x + fw
-        pygame.draw.circle(surf, (230, 235, 255), (kx, bar.centery), 13)
-        pygame.draw.circle(surf, accent if not muted else (80, 80, 100), (kx, bar.centery), 13, 2)
-        pygame.draw.circle(surf, (255, 255, 255), (kx, bar.centery), 5)
-        # pct
-        pf  = pygame.font.SysFont("consolas", 14, bold=True)
-        ps  = pf.render(f"{int(vol * 100)}%", True, (180, 190, 220))
-        surf.blit(ps, ps.get_rect(midright=(bar.right, bar.bottom + 18)))
+        ky = bar.centery
+        pulse = 0.5 + 0.5 * math.sin(t * 3.0)
+        knob_col = accent if not muted else (70, 72, 100)
+        # outer glow
+        glow_s = pygame.Surface((36, 36), pygame.SRCALPHA)
+        ga = int(60 + 30 * pulse) if not muted else 20
+        pygame.draw.circle(glow_s, (*knob_col, ga), (18, 18), 16)
+        surf.blit(glow_s, (kx - 18, ky - 18))
+        # knob body
+        pygame.draw.circle(surf, (230, 235, 255), (kx, ky), 11)
+        pygame.draw.circle(surf, knob_col, (kx, ky), 11, 2)
+        pygame.draw.circle(surf, (255, 255, 255), (kx, ky), 4)
 
     def _draw_toggle(self, surf, rect, label, active):
-        # pill background
-        bg  = (22, 85, 48) if active else (28, 30, 46)
-        brd = (55, 200, 100) if active else (55, 58, 80)
-        pygame.draw.rect(surf, bg,  rect, border_radius=10)
+        mx, my = pygame.mouse.get_pos()
+        hov = rect.collidepoint(mx, my)
+        key = label  # use label as hover key
+
+        # lerp hover
+        if key not in self._toggle_hover:
+            self._toggle_hover[key] = 0.0
+        target = 1.0 if hov else 0.0
+        self._toggle_hover[key] += (target - self._toggle_hover[key]) * 0.25
+        h = self._toggle_hover[key]
+
+        # background
+        if active:
+            r2, g2, b2 = 20, 75, 45
+            brd = (50, 190, 95)
+        else:
+            r2 = int(22 + h * 12); g2 = int(24 + h * 12); b2 = int(42 + h * 16)
+            brd = (int(55 + h * 40), int(60 + h * 40), int(90 + h * 50))
+
+        bg_s = pygame.Surface((rect.w, rect.h), pygame.SRCALPHA)
+        pygame.draw.rect(bg_s, (r2, g2, b2, 215), (0, 0, rect.w, rect.h), border_radius=10)
+        # subtle top highlight
+        pygame.draw.rect(bg_s, (255, 255, 255, 12), (1, 1, rect.w - 2, rect.h // 2), border_radius=9)
+        surf.blit(bg_s, rect.topleft)
         pygame.draw.rect(surf, brd, rect, 1, border_radius=10)
+
         # label
-        f      = pygame.font.SysFont("segoeui", 17, bold=True)
-        tc     = (220, 255, 225) if active else (130, 135, 160)
-        s      = f.render(label, True, tc)
+        f = pygame.font.SysFont("segoeui", 16, bold=True)
+        tc = (210, 250, 220) if active else (int(120 + h * 60), int(130 + h * 60), int(165 + h * 50))
+        s = f.render(label, True, tc)
         surf.blit(s, s.get_rect(midleft=(rect.x + 14, rect.centery)))
-        # toggle pill on right
-        pill_w, pill_h = 38, 20
+
+        # toggle pill
+        pill_w, pill_h = 36, 18
         pill_x = rect.right - pill_w - 10
         pill_y = rect.centery - pill_h // 2
-        pill_bg = (40, 180, 80) if active else (40, 42, 62)
-        pygame.draw.rect(surf, pill_bg, (pill_x, pill_y, pill_w, pill_h), border_radius=10)
-        dot_x = pill_x + pill_w - 12 if active else pill_x + 12
-        pygame.draw.circle(surf, (255, 255, 255), (dot_x, pill_y + pill_h // 2), 8)
+        pill_bg = (38, 175, 78) if active else (30, 32, 55)
+        pygame.draw.rect(surf, pill_bg, (pill_x, pill_y, pill_w, pill_h), border_radius=9)
+        dot_x = pill_x + pill_w - 11 if active else pill_x + 11
+        # dot shadow
+        pygame.draw.circle(surf, (0, 0, 0, 60), (dot_x + 1, pill_y + pill_h // 2 + 1), 7)
+        pygame.draw.circle(surf, (255, 255, 255), (dot_x, pill_y + pill_h // 2), 7)
+
+    def _draw_option_btn(self, surf, btn, label, active, accent, mx, my):
+        """Generic option button (windowed/fullscreen/resolution/style)."""
+        hov = btn.collidepoint(mx, my)
+        bg_s = pygame.Surface((btn.w, btn.h), pygame.SRCALPHA)
+        if active:
+            pygame.draw.rect(bg_s, (*accent, 50), (0, 0, btn.w, btn.h), border_radius=11)
+            surf.blit(bg_s, btn.topleft)
+            pygame.draw.rect(surf, accent, btn, 2, border_radius=11)
+        else:
+            col = (28, 30, 54, 210) if not hov else (35, 38, 65, 220)
+            pygame.draw.rect(bg_s, col, (0, 0, btn.w, btn.h), border_radius=11)
+            surf.blit(bg_s, btn.topleft)
+            brd = (60, 65, 100) if not hov else (90, 100, 150)
+            pygame.draw.rect(surf, brd, btn, 1, border_radius=11)
+        f = pygame.font.SysFont("segoeui", 17, bold=True)
+        tc = (220, 240, 255) if active else (int(110 + hov * 50), int(120 + hov * 50), int(165 + hov * 50))
+        s = f.render(label, True, tc)
+        surf.blit(s, s.get_rect(center=btn.center))
 
     def _draw(self):
         surf = self.screen
+        t    = self.t
         mx, my = pygame.mouse.get_pos()
-        _draw_menu_bg(surf, overlay_alpha=120)
+        _draw_menu_bg(surf, overlay_alpha=130)
 
-        # ── Header ────────────────────────────────────────────────────────────
-        hdr_surf = pygame.Surface((SCREEN_W, 78), pygame.SRCALPHA)
-        hdr_surf.fill((8, 10, 20, 220))
-        surf.blit(hdr_surf, (0, 0))
-        pygame.draw.line(surf, (45, 50, 75), (0, 78), (SCREEN_W, 78), 1)
-        hf  = pygame.font.SysFont("segoeui", 38, bold=True)
-        hs  = hf.render("SETTINGS", True, (200, 215, 255))
-        surf.blit(hs, hs.get_rect(center=(self._cx, 39)))
+        # ── Full-screen dark overlay for depth ────────────────────────────────
+        ov = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+        ov.fill((4, 6, 16, 100))
+        surf.blit(ov, (0, 0))
+
+        cx = self._cx
+        card = self._card
+
+        # ── Header bar ────────────────────────────────────────────────────────
+        hdr = pygame.Surface((SCREEN_W, 82), pygame.SRCALPHA)
+        for hy in range(82):
+            frac = hy / 82
+            a = int(240 - 60 * frac)
+            pygame.draw.line(hdr, (8, 10, 22, a), (0, hy), (SCREEN_W, hy))
+        surf.blit(hdr, (0, 0))
+        # header accent line
+        for dx in range(SCREEN_W):
+            frac = abs(dx - SCREEN_W / 2) / (SCREEN_W / 2)
+            a = int(180 * (1 - frac ** 2))
+            pulse = 0.5 + 0.5 * math.sin(t * 1.5)
+            col_r = int(50 + 30 * pulse)
+            col_g = int(80 + 40 * pulse)
+            col_b = int(180 + 60 * pulse)
+            pygame.draw.line(surf, (col_r, col_g, col_b, a), (dx, 81), (dx, 82))
+
+        # title with icon
+        hf  = pygame.font.SysFont("segoeui", 36, bold=True)
+        hs  = hf.render("SETTINGS", True, (215, 225, 255))
+        surf.blit(hs, hs.get_rect(center=(cx, 41)))
 
         # ── Tab bar ───────────────────────────────────────────────────────────
-        # Tab accent colors per index
-        _TAB_ACCENTS = [(70, 140, 255), (80, 200, 160), (180, 160, 255)]
+        _TAB_ACCENTS = [(70, 140, 255), (60, 200, 140), (160, 120, 255)]
+        _TAB_ICONS   = [">>", ">>", ">>"]
         for i, (tr, lbl) in enumerate(zip(self._tab_rects, self._TABS)):
             active = (i == self._tab)
             hov    = tr.collidepoint(mx, my)
-            accent = _TAB_ACCENTS[i]
+            acc    = _TAB_ACCENTS[i]
+
+            # lerp
+            target = 1.0 if (hov or active) else 0.0
+            self._tab_anim[i] += (target - self._tab_anim[i]) * 0.2
+            h2 = self._tab_anim[i]
+
+            tab_s = pygame.Surface((tr.w, tr.h), pygame.SRCALPHA)
             if active:
-                tab_bg = pygame.Surface((tr.w, tr.h), pygame.SRCALPHA)
-                pygame.draw.rect(tab_bg, (*accent, 40), (0, 0, tr.w, tr.h), border_radius=12)
-                surf.blit(tab_bg, tr.topleft)
-                pygame.draw.rect(surf, accent, tr, 2, border_radius=12)
-                # accent line below
-                pygame.draw.rect(surf, accent,
-                                 (tr.x + 20, tr.bottom - 3, tr.w - 40, 3), border_radius=2)
+                pygame.draw.rect(tab_s, (*acc, 45), (0, 0, tr.w, tr.h), border_radius=12)
+                surf.blit(tab_s, tr.topleft)
+                pygame.draw.rect(surf, acc, tr, 2, border_radius=12)
+                # bottom glow strip
+                glow_s = pygame.Surface((tr.w - 20, 3), pygame.SRCALPHA)
+                for gx in range(tr.w - 20):
+                    gfrac = abs(gx - (tr.w - 20) / 2) / ((tr.w - 20) / 2)
+                    ga = int(220 * (1 - gfrac ** 2))
+                    pygame.draw.line(glow_s, (*acc, ga), (gx, 0), (gx, 2))
+                surf.blit(glow_s, (tr.x + 10, tr.bottom - 2))
             else:
-                tab_bg = pygame.Surface((tr.w, tr.h), pygame.SRCALPHA)
-                pygame.draw.rect(tab_bg, (20, 22, 38, 180) if not hov else (28, 32, 55, 200),
-                                 (0, 0, tr.w, tr.h), border_radius=12)
-                surf.blit(tab_bg, tr.topleft)
-                pygame.draw.rect(surf, (50, 55, 80) if not hov else (70, 80, 120),
-                                 tr, 1, border_radius=12)
-            tf  = pygame.font.SysFont("segoeui", 18, bold=True)
-            tc  = accent if active else ((170, 185, 215) if hov else (110, 120, 155))
-            ts  = tf.render(lbl, True, tc)
+                col2 = (int(18 + h2 * 14), int(20 + h2 * 14), int(36 + h2 * 20))
+                pygame.draw.rect(tab_s, (*col2, 200), (0, 0, tr.w, tr.h), border_radius=12)
+                surf.blit(tab_s, tr.topleft)
+                brd2 = (int(45 + h2 * 35), int(50 + h2 * 35), int(78 + h2 * 45))
+                pygame.draw.rect(surf, brd2, tr, 1, border_radius=12)
+
+            # icon + label
+            tf = pygame.font.SysFont("segoeui", 17, bold=True)
+            tc = acc if active else (int(100 + h2 * 70), int(110 + h2 * 70), int(150 + h2 * 60))
+            ts = tf.render(lbl, True, tc)
             surf.blit(ts, ts.get_rect(center=tr.center))
 
         # ── Content card ──────────────────────────────────────────────────────
-        card = self._card
-        card_surf = pygame.Surface((card.w, card.h), pygame.SRCALPHA)
-        pygame.draw.rect(card_surf, (12, 14, 28, 235), (0, 0, card.w, card.h), border_radius=18)
-        surf.blit(card_surf, card.topleft)
-        pygame.draw.rect(surf, (40, 48, 80), card, 1, border_radius=18)
+        card_s = pygame.Surface((card.w, card.h), pygame.SRCALPHA)
+        # layered bg
+        pygame.draw.rect(card_s, (10, 12, 26, 245), (0, 0, card.w, card.h), border_radius=20)
+        surf.blit(card_s, card.topleft)
+        # border with tab accent tint
+        acc_main = _TAB_ACCENTS[self._tab]
+        pygame.draw.rect(surf, (int(35 + acc_main[0] * 0.08), int(38 + acc_main[1] * 0.06), int(65 + acc_main[2] * 0.08)), card, 1, border_radius=20)
 
-        rel_y = card.y  # for offset calculations below
+        PAD = 72   # horizontal padding inside card
+        lx  = card.x + PAD
+        w_inner = card.w - PAD * 2
 
         # ══ AUDIO tab ═════════════════════════════════════════════════════════
         if self._tab == 0:
-            sec_f = pygame.font.SysFont("segoeui", 16, bold=True)
+            acc = _TAB_ACCENTS[0]
 
-            # Music section
-            sec_s = sec_f.render("MUSIC", True, (80, 130, 220))
-            surf.blit(sec_s, (card.x + 60, card.y + 28))
-            pygame.draw.line(surf, (40, 55, 100),
-                             (card.x + 60, card.y + 46),
-                             (card.x + card.w - 60, card.y + 46), 1)
+            # Music
+            self._draw_section_header(surf, "MUSIC", acc, lx, card.y + 30, w_inner)
             self._draw_slider(surf, self._bar_music,
                               SETTINGS["music_volume"], SETTINGS["music_muted"],
-                              "Music Volume", (70, 140, 255))
+                              "Music Volume", acc)
 
-            # SFX section
-            sec_s2 = sec_f.render("SOUND EFFECTS", True, (70, 200, 140))
-            surf.blit(sec_s2, (card.x + 60, card.y + 120))
-            pygame.draw.line(surf, (35, 90, 70),
-                             (card.x + 60, card.y + 138),
-                             (card.x + card.w - 60, card.y + 138), 1)
+            # SFX
+            sfx_acc = _TAB_ACCENTS[1]
+            self._draw_section_header(surf, "SOUND EFFECTS", sfx_acc, lx, card.y + 150, w_inner)
             self._draw_slider(surf, self._bar_sfx,
                               SETTINGS["sfx_volume"], SETTINGS["sfx_muted"],
-                              "SFX Volume", (70, 200, 140))
+                              "SFX Volume", sfx_acc)
 
-            # Audio toggles + misc toggles — starts after SFX slider (bar_sfx.y + ~60px)
-            other_label_y = self._bar_sfx.bottom + 32
-            sec_s3 = sec_f.render("OTHER", True, (160, 130, 220))
-            surf.blit(sec_s3, (card.x + 60, other_label_y))
-            pygame.draw.line(surf, (70, 55, 100),
-                             (card.x + 60, other_label_y + 18),
-                             (card.x + card.w - 60, other_label_y + 18), 1)
+            # Other toggles
+            other_y = self._bar_sfx.bottom + 36
+            misc_acc = (160, 120, 255)
+            self._draw_section_header(surf, "OTHER", misc_acc, lx, other_y, w_inner)
             for rect, key, lbl in self._get_tab_toggles(0):
                 self._draw_toggle(surf, rect, lbl, SETTINGS[key])
 
         # ══ GRAPHICS tab ══════════════════════════════════════════════════════
         elif self._tab == 1:
-            sec_f = pygame.font.SysFont("segoeui", 16, bold=True)
-            sec_s = sec_f.render("VISUAL OPTIONS", True, (80, 200, 160))
-            surf.blit(sec_s, (card.x + 60, card.y + 28))
-            pygame.draw.line(surf, (35, 90, 70),
-                             (card.x + 60, card.y + 46),
-                             (card.x + card.w - 60, card.y + 46), 1)
+            acc = _TAB_ACCENTS[1]
+            self._draw_section_header(surf, "VISUAL OPTIONS", acc, lx, card.y + 22, w_inner)
             for rect, key, lbl in self._get_tab_toggles(1):
                 self._draw_toggle(surf, rect, lbl, SETTINGS[key])
 
         # ══ DISPLAY tab ═══════════════════════════════════════════════════════
         elif self._tab == 2:
-            sec_f      = pygame.font.SysFont("segoeui", 16, bold=True)
-            mode_f     = pygame.font.SysFont("segoeui", 19, bold=True)
+            acc = _TAB_ACCENTS[2]
             is_windowed = SETTINGS.get("windowed", False)
 
-            sec_s = sec_f.render("WINDOW MODE", True, (180, 160, 255))
-            surf.blit(sec_s, (card.x + 60, card.y + 28))
-            pygame.draw.line(surf, (70, 55, 110),
-                             (card.x + 60, card.y + 46),
-                             (card.x + card.w - 60, card.y + 46), 1)
-
+            # Window mode
+            self._draw_section_header(surf, "WINDOW MODE", acc, lx, card.y + 32, w_inner)
             for btn, label, active in [
-                (self.btn_windowed,   "⊡  Windowed",   is_windowed),
-                (self.btn_fullscreen, "⛶  Fullscreen",  not is_windowed),
+                (self.btn_windowed,   "Windowed",  is_windowed),
+                (self.btn_fullscreen, "Fullscreen", not is_windowed),
             ]:
-                hov = btn.collidepoint(mx, my)
-                if active:
-                    bg  = pygame.Surface((btn.w, btn.h), pygame.SRCALPHA)
-                    pygame.draw.rect(bg, (50, 60, 160, 220), (0, 0, btn.w, btn.h), border_radius=12)
-                    surf.blit(bg, btn.topleft)
-                    pygame.draw.rect(surf, (100, 140, 255), btn, 2, border_radius=12)
-                else:
-                    bg  = pygame.Surface((btn.w, btn.h), pygame.SRCALPHA)
-                    pygame.draw.rect(bg, (22, 24, 42, 200) if not hov else (30, 34, 60, 200),
-                                     (0, 0, btn.w, btn.h), border_radius=12)
-                    surf.blit(bg, btn.topleft)
-                    pygame.draw.rect(surf, (55, 60, 90) if not hov else (80, 90, 130),
-                                     btn, 1, border_radius=12)
-                col = (220, 235, 255) if active else (120, 130, 165)
-                ms  = mode_f.render(label, True, col)
-                surf.blit(ms, ms.get_rect(center=btn.center))
+                self._draw_option_btn(surf, btn, label, active, acc, mx, my)
 
             # Resolution
-            sec_s2 = sec_f.render("RESOLUTION", True, (180, 160, 255))
-            surf.blit(sec_s2, (card.x + 60, card.y + 192))
-            pygame.draw.line(surf, (70, 55, 110),
-                             (card.x + 60, card.y + 210),
-                             (card.x + card.w - 60, card.y + 210), 1)
-
+            self._draw_section_header(surf, "RESOLUTION", acc, lx, card.y + 158, w_inner)
             cur_res = SETTINGS.get("resolution", "1920x1080")
-            res_f   = pygame.font.SysFont("consolas", 16, bold=True)
             for rb, res in zip(self._res_btns, _RESOLUTIONS):
-                active = (res == cur_res)
-                hov    = rb.collidepoint(mx, my)
-                if active:
-                    rb_bg = pygame.Surface((rb.w, rb.h), pygame.SRCALPHA)
-                    pygame.draw.rect(rb_bg, (30, 90, 55, 220), (0, 0, rb.w, rb.h), border_radius=10)
-                    surf.blit(rb_bg, rb.topleft)
-                    pygame.draw.rect(surf, (70, 210, 110), rb, 2, border_radius=10)
-                else:
-                    rb_bg = pygame.Surface((rb.w, rb.h), pygame.SRCALPHA)
-                    pygame.draw.rect(rb_bg, (20, 22, 40, 200) if not hov else (28, 32, 55, 200),
-                                     (0, 0, rb.w, rb.h), border_radius=10)
-                    surf.blit(rb_bg, rb.topleft)
-                    pygame.draw.rect(surf, (50, 55, 80) if not hov else (75, 85, 120),
-                                     rb, 1, border_radius=10)
-                col = (180, 255, 200) if active else (110, 120, 150)
-                rs  = res_f.render(res, True, col)
-                surf.blit(rs, rs.get_rect(center=rb.center))
+                self._draw_option_btn(surf, rb, res, res == cur_res, (60, 200, 140), mx, my)
 
-            # hint
-            hint_f = pygame.font.SysFont("segoeui", 14)
-            hint_s = hint_f.render("Changes apply immediately. Game restart may be needed for resolution.", True, (70, 78, 110))
-            surf.blit(hint_s, hint_s.get_rect(center=(card.centerx, card.y + 470)))
+            hint_f = pygame.font.SysFont("segoeui", 13)
+            hint_s = hint_f.render("Changes apply immediately. Restart may be needed.", True, (60, 68, 100))
+            surf.blit(hint_s, hint_s.get_rect(center=(card.centerx, card.y + 262)))
 
-            # ── Menu style ────────────────────────────────────────────────────
-            sec_s3 = sec_f.render("MAIN MENU STYLE", True, (180, 160, 255))
-            surf.blit(sec_s3, (card.x + 60, card.y + 304))
-            pygame.draw.line(surf, (70, 55, 110),
-                             (card.x + 60, card.y + 322),
-                             (card.x + card.w - 60, card.y + 322), 1)
-
+            # Menu style
+            self._draw_section_header(surf, "MENU STYLE", acc, lx, card.y + 330, w_inner)
+            _STYLE_LABELS = ["Void", "Modern", "Vertical", "Gothic"]
+            _style_btns   = [self.btn_style_void, self.btn_style_modern,
+                             self.btn_style_vertical, self.btn_style_gothic]
             cur_style = SETTINGS.get("menu_style", 0)
-            _STYLE_LABELS = [("✦  Void / Gothic", 0), ("★  Modern / Blue", 1), ("☰  Classic / Vertical", 2), ("⚔  Gothic / Dark", 3)]
-            _style_btns   = [self.btn_style_void, self.btn_style_modern, self.btn_style_vertical, self.btn_style_gothic]
-            for s_btn, (s_lbl, s_idx) in zip(_style_btns, _STYLE_LABELS):
-                s_active = (cur_style == s_idx)
-                s_hov    = s_btn.collidepoint(mx, my)
-                if s_active:
-                    sb_bg = pygame.Surface((s_btn.w, s_btn.h), pygame.SRCALPHA)
-                    pygame.draw.rect(sb_bg, (50, 60, 160, 220), (0, 0, s_btn.w, s_btn.h), border_radius=12)
-                    surf.blit(sb_bg, s_btn.topleft)
-                    pygame.draw.rect(surf, (100, 140, 255), s_btn, 2, border_radius=12)
-                else:
-                    sb_bg = pygame.Surface((s_btn.w, s_btn.h), pygame.SRCALPHA)
-                    pygame.draw.rect(sb_bg, (22, 24, 42, 200) if not s_hov else (30, 34, 60, 200),
-                                     (0, 0, s_btn.w, s_btn.h), border_radius=12)
-                    surf.blit(sb_bg, s_btn.topleft)
-                    pygame.draw.rect(surf, (55, 60, 90) if not s_hov else (80, 90, 130),
-                                     s_btn, 1, border_radius=12)
-                s_col = (220, 235, 255) if s_active else (120, 130, 165)
-                s_s   = mode_f.render(s_lbl, True, s_col)
-                surf.blit(s_s, s_s.get_rect(center=s_btn.center))
+            for idx2, (s_btn, s_lbl) in enumerate(zip(_style_btns, _STYLE_LABELS)):
+                self._draw_option_btn(surf, s_btn, s_lbl, cur_style == idx2, acc, mx, my)
 
         # ── Back button ───────────────────────────────────────────────────────
-        hov  = self.btn_back.collidepoint(mx, my)
-        bb   = pygame.Surface((self.btn_back.w, self.btn_back.h), pygame.SRCALPHA)
-        pygame.draw.rect(bb, (70, 30, 30, 220) if hov else (40, 22, 22, 200),
-                         (0, 0, self.btn_back.w, self.btn_back.h), border_radius=10)
+        hov = self.btn_back.collidepoint(mx, my)
+        bb  = pygame.Surface((self.btn_back.w, self.btn_back.h), pygame.SRCALPHA)
+        r_col = (70, 22, 22, 230) if hov else (38, 18, 18, 210)
+        pygame.draw.rect(bb, r_col, (0, 0, self.btn_back.w, self.btn_back.h), border_radius=11)
+        pygame.draw.rect(bb, (255,255,255,10), (1,1,self.btn_back.w-2,self.btn_back.h//2), border_radius=10)
         surf.blit(bb, self.btn_back.topleft)
-        pygame.draw.rect(surf, (180, 70, 70) if hov else (100, 45, 45),
-                         self.btn_back, 1, border_radius=10)
-        bk_f = pygame.font.SysFont("segoeui", 22, bold=True)
-        bk_s = bk_f.render("← BACK", True, (240, 200, 200) if hov else (180, 150, 150))
+        brd_col = (200, 70, 70) if hov else (100, 40, 40)
+        pygame.draw.rect(surf, brd_col, self.btn_back, 1, border_radius=11)
+        bk_f = pygame.font.SysFont("segoeui", 20, bold=True)
+        bk_s = bk_f.render("← BACK", True, (245, 200, 200) if hov else (170, 130, 130))
         surf.blit(bk_s, bk_s.get_rect(center=self.btn_back.center))
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Skin system
@@ -7194,7 +7342,7 @@ ALL_SKIN_DEFS = [
         "id":        "archer_star",
         "unit_name": "Archer",
         "name":      "Star Archer",
-        "rarity":    "early_access",
+        "rarity":    "apex",
         "desc":      "Shoots stars instead of arrows. Unique look.",
         "free":      True,   # can be claimed for free in shop
     },
@@ -7438,9 +7586,9 @@ class ShopScreen:
         self.msg_timer = 0.0
         self.btn_back  = pygame.Rect(20, 20, 130, 44)
 
-        # Tabs: 0 = Skins, 1 = Exchange
+        # Tabs: 0 = Skins, 1 = Exchange, 2 = Passes
         self.active_tab = 0
-        tab_labels = ["🎨  SKINS", "💱  EXCHANGE"]
+        tab_labels = ["🎨  SKINS", "💱  EXCHANGE", "🎫  PASSES"]
         tab_w, tab_h = 200, 40
         tab_start_x = SCREEN_W // 2 - (len(tab_labels) * tab_w + (len(tab_labels)-1)*8) // 2
         self.tab_rects  = []
@@ -7501,8 +7649,10 @@ class ShopScreen:
                 return
         if self.active_tab == 0:
             self._handle_skins_click(pos)
-        else:
+        elif self.active_tab == 1:
             self._handle_exchange_click(pos)
+        else:
+            self._handle_passes_click(pos)
 
     def _handle_skins_click(self, pos):
         for i, skin in enumerate(ALL_SKIN_DEFS):
@@ -7573,6 +7723,170 @@ class ShopScreen:
         self._ex_input[direction] = ""
         self.msg_timer = 3.0
 
+    def _handle_passes_click(self, pos):
+        EA_PRICE = 50000
+        for pass_id, btn in getattr(self, '_pass_buy_btns', []):
+            if btn and btn.collidepoint(pos):
+                coins = self.save_data.get("coins", 0)
+                if pass_id == "early_access":
+                    if self.save_data.get("early_access_purchased", False):
+                        self.msg = "Early Access already owned!"; self.msg_timer = 2.5
+                    elif coins >= EA_PRICE:
+                        self.save_data["coins"] = coins - EA_PRICE
+                        self.save_data["early_access_purchased"] = True
+                        write_save(self.save_data)
+                        self.msg = "Early Access purchased!"
+                        self.msg_timer = 3.0
+                    else:
+                        self.msg = f"Need {fmt_num(EA_PRICE)} coins!"
+                        self.msg_timer = 2.5
+                return
+
+    # ── Pass definitions ──────────────────────────────────────────────────────
+    _PASSES = [
+        {
+            "id":       "early_access",
+            "name":     "Early Access",
+            "subtitle": "Get access to Early Access content",
+            "price":    50000,
+            "currency": "coins",
+            "color":    (20,  80,  65),
+            "border":   (60, 220, 180),
+            "text":     (60, 220, 180),
+            "shimmer":  (120, 255, 220),
+            "icon":     "🔓",
+            "perks": [
+                "Access to future EA-exclusive towers",
+                "Early preview of new content",
+            ],
+            "owned_key": "early_access_purchased",
+        },
+    ]
+
+    def _draw_passes(self, surf, t, cx, mx, my):
+        self._pass_buy_btns = []
+
+        # Section title
+        tf5 = pygame.font.SysFont("segoeui", 22, bold=True)
+        ts5 = tf5.render("Choose a Pass to unlock exclusive content and perks.", True, (140, 150, 170))
+        surf.blit(ts5, ts5.get_rect(center=(cx, 132)))
+
+        card_w, card_h = 380, 380
+        n_passes = len(self._PASSES)
+        total_w  = n_passes * card_w + (n_passes - 1) * 28
+        start_x  = cx - total_w // 2
+        card_y   = 158
+
+        for i, p in enumerate(self._PASSES):
+            cx2 = start_x + i * (card_w + 28)
+            cr  = pygame.Rect(cx2, card_y, card_w, card_h)
+
+            owned = bool(p["owned_key"] and self.save_data.get(p["owned_key"], False))
+            coming_soon = p["price"] is None
+
+            # Card background
+            card_s = pygame.Surface((card_w, card_h), pygame.SRCALPHA)
+            bg_alpha = 240 if (not coming_soon) else 160
+            pygame.draw.rect(card_s, (*p["color"], bg_alpha), (0, 0, card_w, card_h), border_radius=18)
+
+            # Border — gold if owned, normal otherwise
+            brd = (220, 180, 40) if owned else p["border"]
+            brd_w = 3 if (owned or not coming_soon) else 1
+            pygame.draw.rect(card_s, (*brd, 255), (0, 0, card_w, card_h), brd_w, border_radius=18)
+
+            # Shimmer scan line
+            if not coming_soon:
+                scan = int((t * 70 + i * 40) % (card_h + 40)) - 20
+                sh_s = pygame.Surface((card_w, 3), pygame.SRCALPHA)
+                sh_s.fill((*p["shimmer"], 50))
+                card_s.blit(sh_s, (0, scan))
+
+            surf.blit(card_s, (cx2, card_y))
+
+            # "COMING SOON" overlay
+            if coming_soon:
+                ov = pygame.Surface((card_w, card_h), pygame.SRCALPHA)
+                ov.fill((0, 0, 0, 100))
+                pygame.draw.rect(ov, (0,0,0,0), (0, 0, card_w, card_h), border_radius=18)
+                surf.blit(ov, (cx2, card_y))
+                cs_f = pygame.font.SysFont("segoeui", 22, bold=True)
+                cs_s = cs_f.render("COMING SOON", True, (120, 120, 140))
+                surf.blit(cs_s, cs_s.get_rect(center=(cx2 + card_w // 2, card_y + card_h // 2)))
+
+            # Icon + Name
+            icon_f = pygame.font.SysFont("segoeui", 36, bold=True)
+            icon_s = icon_f.render(p["icon"], True, p["text"])
+            surf.blit(icon_s, icon_s.get_rect(center=(cx2 + card_w // 2, card_y + 36)))
+
+            name_f = pygame.font.SysFont("segoeui", 26, bold=True)
+            name_col = (255, 220, 80) if owned else p["text"]
+            name_s = name_f.render(("✓ " if owned else "") + p["name"], True, name_col)
+            surf.blit(name_s, name_s.get_rect(center=(cx2 + card_w // 2, card_y + 76)))
+
+            sub_f = pygame.font.SysFont("segoeui", 15)
+            sub_col = (160, 200, 180) if not coming_soon else (90, 95, 110)
+            sub_s = sub_f.render(p["subtitle"], True, sub_col)
+            surf.blit(sub_s, sub_s.get_rect(center=(cx2 + card_w // 2, card_y + 102)))
+
+            # Separator
+            pygame.draw.line(surf, (*p["border"], 180) if not coming_soon else (60, 65, 80),
+                             (cx2 + 16, card_y + 118), (cx2 + card_w - 16, card_y + 118), 1)
+
+            # Perks list
+            perk_f = pygame.font.SysFont("segoeui", 15)
+            for j, perk in enumerate(p["perks"]):
+                pc = p["text"] if not coming_soon else (80, 85, 100)
+                perk_s = perk_f.render(f"  ✦  {perk}", True, pc)
+                surf.blit(perk_s, (cx2 + 18, card_y + 130 + j * 26))
+
+            # Price / buy button
+            btn_y = card_y + card_h - 62
+            if owned:
+                ok_f = pygame.font.SysFont("segoeui", 17, bold=True)
+                ok_s = ok_f.render("✓  Owned", True, (80, 240, 140))
+                surf.blit(ok_s, ok_s.get_rect(center=(cx2 + card_w // 2, btn_y + 20)))
+            elif not coming_soon:
+                coins = self.save_data.get("coins", 0)
+                can_buy = coins >= p["price"]
+                btn_r = pygame.Rect(cx2 + 20, btn_y, card_w - 40, 48)
+                hov5 = btn_r.collidepoint(mx, my)
+                if can_buy:
+                    pulse5 = abs(math.sin(t * 2.5))
+                    r5 = int(p["color"][0] + 20 + pulse5 * 15)
+                    g5 = int(p["color"][1] + 40 + pulse5 * 30)
+                    b5 = int(p["color"][2] + 20 + pulse5 * 10)
+                    bg5 = (min(255,r5 + (20 if hov5 else 0)),
+                           min(255,g5 + (20 if hov5 else 0)),
+                           min(255,b5 + (20 if hov5 else 0)))
+                    bd5 = p["shimmer"] if hov5 else p["border"]
+                else:
+                    bg5 = (50, 28, 28)
+                    bd5 = (130, 55, 55)
+                pygame.draw.rect(surf, bg5, btn_r, border_radius=10)
+                pygame.draw.rect(surf, bd5, btn_r, 2, border_radius=10)
+
+                bf5 = pygame.font.SysFont("segoeui", 18, bold=True)
+                ico_c3 = load_icon("coin_ico", 18)
+                if can_buy:
+                    price_str = f"  {fmt_num(p['price'])} coins"
+                    buy_lbl = "PURCHASE"
+                else:
+                    price_str = f"  Need {fmt_num(p['price'] - coins)} more"
+                    buy_lbl = price_str
+                # Draw icon + price inside button
+                btn_text = bf5.render(f"{fmt_num(p['price'])} coins", True,
+                                       C_GOLD if can_buy else (150, 80, 80))
+                ico_surf = ico_c3
+                tw5 = (ico_surf.get_width() + 4 if ico_surf else 0) + btn_text.get_width()
+                bx5 = btn_r.centerx - tw5 // 2
+                if ico_surf:
+                    surf.blit(ico_surf, (bx5, btn_r.centery - 9))
+                    surf.blit(btn_text, (bx5 + ico_surf.get_width() + 4,
+                                         btn_r.centery - btn_text.get_height() // 2))
+                else:
+                    surf.blit(btn_text, btn_text.get_rect(center=btn_r.center))
+                self._pass_buy_btns.append((p["id"], btn_r))
+
     def _skin_btn_rect(self, idx):
         cx = SCREEN_W // 2
         card_w, card_h = 320, 420
@@ -7641,6 +7955,7 @@ class ShopScreen:
         tab_colors = [
             ((255, 200, 80),  (255, 180, 30),  (50, 38, 8)),
             ((80,  200, 255), (40,  160, 220), (8,  28, 45)),
+            ((60,  220, 180), (20,  140, 110), (5,  30, 22)),
         ]
         tf2 = pygame.font.SysFont("segoeui", 18, bold=True)
         for i, (r, lbl) in enumerate(zip(self.tab_rects, self.tab_labels)):
@@ -7663,8 +7978,10 @@ class ShopScreen:
         # Tab content
         if self.active_tab == 0:
             self._draw_skins(surf, t, cx, mx, my)
-        else:
+        elif self.active_tab == 1:
             self._draw_exchange(surf, t, cx, mx, my)
+        else:
+            self._draw_passes(surf, t, cx, mx, my)
 
         # Toast message
         if self.msg_timer > 0:
@@ -8214,10 +8531,11 @@ class MainMenu:
         ("btn_profile",      "\U0001F464",        ( 80, 180, 220)),
         ("btn_settings",     "\u2699",            ( 60, 130, 180)),
         ("btn_quit",         "\U0001F6AA",        (180,  50,  50)),
+        ("btn_multiplayer",  "\U0001F310",        ( 20, 160, 220)),
     ]
     # Indices into _BTN_DEFS for the three main buttons and the small row
     _MAIN_IDX  = (0, 1, 2)       # play, loadout, shop
-    _SMALL_IDX = (3, 4, 5, 6, 7, 8) # skilltree, achievements, quests, profile, settings, quit
+    _SMALL_IDX = (3, 4, 5, 6, 9, 7, 8)  # skilltree, achievements, quests, profile, multiplayer, settings, quit
 
     def __init__(self, screen, save_data=None, first_open=True):
         self.screen    = screen
@@ -8249,7 +8567,7 @@ class MainMenu:
         # ── Small bottom row with emoji ───────────────────────────────────────
         sm_w, sm_h = 90, 90
         sm_gap     = 14
-        _sm_btns   = ["btn_skilltree", "btn_achievements", "btn_quests", "btn_profile", "btn_settings", "btn_quit"]
+        _sm_btns   = ["btn_skilltree", "btn_achievements", "btn_quests", "btn_profile", "btn_multiplayer", "btn_settings", "btn_quit"]
         _total_sm  = len(_sm_btns) * sm_w + (len(_sm_btns) - 1) * sm_gap
         _sm_x0     = cx - _total_sm // 2
         _sm_y      = cy_main + play_h//2 + 36
@@ -8257,9 +8575,6 @@ class MainMenu:
             setattr(self, _attr,
                     pygame.Rect(_sm_x0 + _si * (sm_w + sm_gap), _sm_y, sm_w, sm_h))
 
-        # ── MULTIPLAYER button — below small row ──────────────────────────────
-        mp_w, mp_h = 260, 52
-        self.btn_multiplayer = pygame.Rect(cx - mp_w // 2, _sm_y + sm_h + 16, mp_w, mp_h)
 
         # ── Void particles: black/dark drifting dots, glowing motes, void wisps
         self._particles  = [_VoidDot()    for _ in range(90)]
@@ -8571,22 +8886,6 @@ class MainMenu:
             rect = getattr(self, attr)
             h    = self._hover_anim[idx]
             self._draw_fancy_btn(surf, rect, label, h, accent, idx)
-
-        # ── MULTIPLAYER button (default style) ────────────────────────────────
-        _mp_btn = self.btn_multiplayer
-        _mp_hov = _mp_btn.collidepoint(mx, my)
-        _mp_acc = (20, 160, 220)
-        _mp_bg  = tuple(min(255, c + 30) for c in _mp_acc) if _mp_hov else tuple(c // 2 for c in _mp_acc)
-        _mp_brd = tuple(min(255, c + 80) for c in _mp_acc) if _mp_hov else _mp_acc
-        _mp_glow_a = int(abs(math.sin(t * 2.2)) * 50 + 20)
-        _mp_gs = pygame.Surface((_mp_btn.w + 20, _mp_btn.h + 20), pygame.SRCALPHA)
-        pygame.draw.rect(_mp_gs, (*_mp_acc, _mp_glow_a), (0, 0, _mp_btn.w + 20, _mp_btn.h + 20), border_radius=14)
-        surf.blit(_mp_gs, (_mp_btn.x - 10, _mp_btn.y - 10))
-        pygame.draw.rect(surf, _mp_bg,  _mp_btn, border_radius=10)
-        pygame.draw.rect(surf, _mp_brd, _mp_btn, 2, border_radius=10)
-        _mp_f = pygame.font.SysFont("segoeui", 22, bold=True)
-        _mp_s = _mp_f.render("🌐  MULTIPLAYER", True, C_WHITE)
-        surf.blit(_mp_s, _mp_s.get_rect(center=_mp_btn.center))
 
         # ── Coins + Shards — bottom-left, stacked like the reference UI ─────────
         pad_x = 18
@@ -9283,28 +9582,62 @@ class QuestsScreen:
         # Castbound talk button — only visible when quest is in progress
         self.btn_talk  = pygame.Rect(SCREEN_W // 2 - 150, SCREEN_H - 136, 300, 50)
 
+        # ── Tabs ─────────────────────────────────────────────────────────────
+        self._tab       = "daily"   # "daily" or "castbound"
+        tab_w, tab_h    = 200, 38
+        tab_y           = 94
+        cx_tab          = SCREEN_W // 2
+        self._tab_daily = pygame.Rect(cx_tab - tab_w - 4, tab_y, tab_w, tab_h)
+        self._tab_cb    = pygame.Rect(cx_tab + 4,          tab_y, tab_w, tab_h)
+
+        # ── Daily quest state ─────────────────────────────────────────────────
+        self._claim_anim  = {}   # quest_id → float (0..1) for flash animation
+        self._load_daily()
+
         MainMenu._ensure_heavy_surfaces()
         self._wisps = [_VoidWisp() for _ in range(20)]
         self._dots  = [_VoidDot()  for _ in range(60)]
         self._motes = [_VoidMote() for _ in range(30)]
+
+    def _load_daily(self):
+        """Reload daily quest state from save."""
+        _, self._dq_quests, self._dq_progress, self._dq_claimed = _load_daily_quests(self.save_data)
 
     def run(self):
         clock = pygame.time.Clock()
         while self.running:
             dt = clock.tick(60) / 1000.0
             self.t += dt
+            # Animate claim flashes
+            for k in list(self._claim_anim):
+                self._claim_anim[k] = max(0.0, self._claim_anim[k] - dt * 1.5)
+                if self._claim_anim[k] <= 0:
+                    del self._claim_anim[k]
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
                     pygame.quit(); sys.exit()
                 if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
                     self.running = False
                 if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
-                    if self.btn_back.collidepoint(ev.pos):
+                    # Tab switching
+                    if self._tab_daily.collidepoint(ev.pos):
+                        self._tab = "daily"; self._load_daily()
+                    elif self._tab_cb.collidepoint(ev.pos):
+                        self._tab = "castbound"
+                    elif self.btn_back.collidepoint(ev.pos):
                         self.running = False
+                    # Castbound talk button
                     quest_stage = self.save_data.get("castbound_quest", None)
-                    if quest_stage != "done" and self.btn_talk.collidepoint(ev.pos):
+                    if self._tab == "castbound" and quest_stage != "done" and self.btn_talk.collidepoint(ev.pos):
                         self._result = "castbound"
                         self.running = False
+                    # Daily quest claim buttons
+                    if self._tab == "daily":
+                        for qid, btn_rect in getattr(self, "_claim_btns", {}).items():
+                            if btn_rect.collidepoint(ev.pos):
+                                if _claim_daily_reward(self.save_data, qid):
+                                    self._claim_anim[qid] = 1.0
+                                    self._load_daily()
             self._draw()
             pygame.display.flip()
         return self._result
@@ -9324,8 +9657,8 @@ class QuestsScreen:
         STATUS_COLORS = {
             "done":   ((30, 80, 40),   (60, 200, 80),  "✔  COMPLETE"),
             "active": ((40, 20, 80),   (140, 80, 255), "►  IN PROGRESS"),
-            "locked": ((20, 20, 30),   (70, 70, 90),   "🔒  LOCKED"),
-            "soon":   ((10, 10, 20),   (50, 50, 70),   "⏳  COMING SOON"),
+            "locked": ((20, 20, 30),   (70, 70, 90),   "** LOCKED"),
+            "soon":   ((10, 10, 20),   (50, 50, 70),   ".. COMING SOON"),
         }
         bg_col, brd_col, status_lbl = STATUS_COLORS[status]
 
@@ -9392,28 +9725,209 @@ class QuestsScreen:
         glow_s = pygame.Surface((hs.get_width() + 60, hs.get_height() + 24), pygame.SRCALPHA)
         ga = int(40 + 30 * pulse)
         pygame.draw.rect(glow_s, (100, 50, 200, ga), glow_s.get_rect(), border_radius=12)
-        surf.blit(glow_s, glow_s.get_rect(center=(cx, 60)))
-        surf.blit(hs, hs.get_rect(center=(cx, 60)))
+        surf.blit(glow_s, glow_s.get_rect(center=(cx, 50)))
+        surf.blit(hs, hs.get_rect(center=(cx, 50)))
 
-        # Decorative divider
-        div_w = 520
-        div_surf = pygame.Surface((div_w, 3), pygame.SRCALPHA)
-        for dx in range(div_w):
-            frac  = abs(dx - div_w / 2) / (div_w / 2)
-            alpha = int((1 - frac ** 2) * (140 + 60 * pulse))
-            pygame.draw.line(div_surf, (120, 70, 220, alpha), (dx, 0), (dx, 2))
-        surf.blit(div_surf, (cx - div_w // 2, 88))
+        # ── Tabs ──────────────────────────────────────────────────────────────
+        for tab_id, tab_rect, label in [
+            ("daily",      self._tab_daily, "[ DAILY ]"),
+            ("castbound",  self._tab_cb,    "[ CASTBOUND ]"),
+        ]:
+            active   = self._tab == tab_id
+            hov      = tab_rect.collidepoint(mx, my)
+            bg_col   = (40, 20, 80)  if active else ((25, 12, 50) if hov else (12, 6, 24))
+            brd_col  = (180, 100, 255) if active else ((100, 60, 180) if hov else (50, 30, 90))
+            pygame.draw.rect(surf, bg_col,  tab_rect, border_radius=8)
+            pygame.draw.rect(surf, brd_col, tab_rect, 2, border_radius=8)
+            if active:
+                pygame.draw.rect(surf, brd_col, (tab_rect.x, tab_rect.bottom - 2, tab_rect.w, 2))
+            tf = pygame.font.SysFont("segoeui", 18, bold=True)
+            tc = (230, 200, 255) if active else (140, 110, 200)
+            ts = tf.render(label, True, tc)
+            surf.blit(ts, ts.get_rect(center=tab_rect.center))
 
-        # ── Section: Castbound ───────────────────────────────────────────────
-        sf = pygame.font.SysFont("segoeui", 18, bold=True)
-        section_lbl = sf.render("◈  CASTBOUND  ◈", True, (160, 100, 255))
-        surf.blit(section_lbl, (cx - section_lbl.get_width() // 2, 102))
+        # Divider line under tabs
+        pygame.draw.rect(surf, (60, 30, 110), (cx - 220, self._tab_daily.bottom, 440, 1))
+
+        # ── Content by tab ────────────────────────────────────────────────────
+        if self._tab == "daily":
+            self._draw_daily(surf, t, cx, mx, my, pulse)
+        else:
+            self._draw_castbound(surf, t, cx, mx, my, pulse)
+
+        # ── Back button ───────────────────────────────────────────────────────
+        hov = self.btn_back.collidepoint(mx, my)
+        bg_c  = (60, 30, 120) if hov else (28, 16, 55)
+        brd_c = (160, 100, 255) if hov else (80, 50, 140)
+        pygame.draw.rect(surf, bg_c,  self.btn_back, border_radius=10)
+        pygame.draw.rect(surf, brd_c, self.btn_back, 2, border_radius=10)
+        bbf = pygame.font.SysFont("segoeui", 22, bold=True)
+        bbs = bbf.render("← BACK", True, (220, 200, 255) if hov else (150, 120, 200))
+        surf.blit(bbs, bbs.get_rect(center=self.btn_back.center))
+
+    def _draw_daily(self, surf, t, cx, mx, my, pulse):
+        """Draw the daily quests tab content."""
+        today_str = _get_today_str()
+
+        # Time until next reset
+        now      = _dt.datetime.now()
+        tomorrow = _dt.datetime.combine(_dt.date.today() + _dt.timedelta(days=1), _dt.time.min)
+        secs_left = int((tomorrow - now).total_seconds())
+        h_left, rem = divmod(secs_left, 3600)
+        m_left = rem // 60
+        reset_lbl = f"Resets in: {h_left:02d}:{m_left:02d}"
+
+        rf = pygame.font.SysFont("segoeui", 16)
+        rs = rf.render(reset_lbl, True, (140, 120, 200))
+        surf.blit(rs, (cx - rs.get_width() // 2, self._tab_daily.bottom + 8))
+
+        card_w   = min(700, SCREEN_W - 80)
+        card_h   = 116
+        card_gap = 12
+        start_x  = cx - card_w // 2
+        start_y  = self._tab_daily.bottom + 34
+
+        self._claim_btns = {}
+
+        for i, q in enumerate(self._dq_quests):
+            qid     = q["id"]
+            target  = q["target"]
+            prog    = min(self._dq_progress.get(qid, 0), target)
+            claimed = qid in self._dq_claimed
+            done    = prog >= target
+
+            # Slide-in
+            slide_t = min(1.0, max(0.0, (t - i * 0.10) / 0.35))
+            slide_t = 1.0 - (1.0 - slide_t) ** 3
+
+            ry  = start_y + i * (card_h + card_gap)
+            rx  = start_x + int(30 * (1.0 - slide_t))
+
+            # Claim flash
+            flash_v = self._claim_anim.get(qid, 0.0)
+
+            # Card background
+            if claimed:
+                bg_c  = (20, 60, 28)
+                brd_c = (50, 160, 70)
+            elif done:
+                bg_c  = (60, 45, 10)
+                brd_c = (220, 180, 40)
+            else:
+                bg_c  = (16, 12, 32)
+                brd_c = (70, 50, 120)
+
+            if flash_v > 0:
+                brd_c = (int(brd_c[0] + (255-brd_c[0])*flash_v),
+                         int(brd_c[1] + (255-brd_c[1])*flash_v),
+                         int(brd_c[2]))
+
+            card_surf = pygame.Surface((card_w, card_h), pygame.SRCALPHA)
+            pygame.draw.rect(card_surf, (*bg_c, 210), (0, 0, card_w, card_h), border_radius=12)
+            pygame.draw.rect(card_surf, (*brd_c, 255), (0, 0, card_w, card_h), 2, border_radius=12)
+
+            # Left stripe
+            pygame.draw.rect(card_surf, (*brd_c, 200), (0, 8, 4, card_h - 16), border_radius=2)
+
+            # Title
+            title_col = (240, 240, 255) if not claimed else (130, 220, 140)
+            tf2 = pygame.font.SysFont("segoeui", 21, bold=True)
+            ts2 = tf2.render(q["title"], True, title_col)
+            card_surf.blit(ts2, (16, 9))
+
+            # Description
+            df2 = pygame.font.SysFont("segoeui", 15)
+            ds2 = df2.render(q["desc"], True, (170, 160, 210))
+            card_surf.blit(ds2, (16, 34))
+
+            # ── Reward row (prominent, right-aligned block) ───────────────────
+            _ico_size = 20
+            _rwf_lbl = pygame.font.SysFont("segoeui", 13)
+            _rwf_val = pygame.font.SysFont("segoeui", 17, bold=True)
+            _lbl_s   = _rwf_lbl.render("REWARD", True, (110, 100, 160))
+            # Position: top-right corner of card
+            _rw_right = card_w - 14
+            _rw_top   = 8
+
+            # Draw label above icons
+            card_surf.blit(_lbl_s, (_rw_right - _lbl_s.get_width(), _rw_top))
+            _rw_top += _lbl_s.get_height() + 2
+
+            # Coin reward
+            _rw_x_cur = _rw_right
+            if q["shards"] > 0:
+                _shard_s = _rwf_val.render(f"{q['shards']}", True, (100, 210, 255))
+                _rw_x_cur -= _shard_s.get_width()
+                card_surf.blit(_shard_s, (_rw_x_cur, _rw_top))
+                _rw_x_cur -= _ico_size + 2
+                _shard_ico = load_icon("shard_ico", _ico_size)
+                if _shard_ico:
+                    card_surf.blit(_shard_ico, (_rw_x_cur, _rw_top - 1))
+                _rw_x_cur -= 8
+            if q["coins"] > 0:
+                _coin_s = _rwf_val.render(f"{q['coins']}", True, (240, 200, 70))
+                _rw_x_cur -= _coin_s.get_width()
+                card_surf.blit(_coin_s, (_rw_x_cur, _rw_top))
+                _rw_x_cur -= _ico_size + 2
+                _coin_ico = load_icon("coin_ico", _ico_size)
+                if _coin_ico:
+                    card_surf.blit(_coin_ico, (_rw_x_cur, _rw_top - 1))
+
+            # ── Progress bar ──────────────────────────────────────────────────
+            bar_x, bar_y = 16, 57
+            bar_w = card_w - 180   # leave room for reward block on right
+            bar_h = 11
+            pygame.draw.rect(card_surf, (30, 20, 50), (bar_x, bar_y, bar_w, bar_h), border_radius=5)
+            fill_w = int(bar_w * prog / max(target, 1))
+            if fill_w > 0:
+                bar_col = (80, 200, 100) if claimed else ((220, 170, 30) if done else (100, 80, 200))
+                pygame.draw.rect(card_surf, bar_col, (bar_x, bar_y, fill_w, bar_h), border_radius=5)
+
+            # Progress text + percentage
+            pf  = pygame.font.SysFont("segoeui", 14, bold=True)
+            pct = int(100 * prog / max(target, 1))
+            ps  = pf.render(f"{prog} / {target}  ({pct}%)", True, (180, 165, 220))
+            card_surf.blit(ps, (bar_x, bar_y + 14))
+
+            card_surf.set_alpha(int(255 * slide_t))
+            surf.blit(card_surf, (rx, ry))
+
+            # Claim button (drawn directly on surf so it can be hit-tested)
+            btn_w, btn_h = 130, 38
+            btn_rx = rx + card_w - btn_w - 14
+            btn_ry = ry + card_h - btn_h - 10
+            btn_rect = pygame.Rect(btn_rx, btn_ry, btn_w, btn_h)
+            self._claim_btns[qid] = btn_rect
+
+            if claimed:
+                pygame.draw.rect(surf, (20, 55, 28), btn_rect, border_radius=8)
+                pygame.draw.rect(surf, (40, 130, 55), btn_rect, 2, border_radius=8)
+                bf2 = pygame.font.SysFont("segoeui", 16, bold=True)
+                bs2 = bf2.render("[v] CLAIMED", True, (80, 200, 100))
+                surf.blit(bs2, bs2.get_rect(center=btn_rect.center))
+            elif done:
+                hov_b = btn_rect.collidepoint(mx, my)
+                bg_b  = (80, 60, 10) if hov_b else (50, 40, 8)
+                brd_b = (255, 210, 50) if hov_b else (180, 150, 30)
+                pygame.draw.rect(surf, bg_b,  btn_rect, border_radius=8)
+                pygame.draw.rect(surf, brd_b, btn_rect, 2, border_radius=8)
+                bf2 = pygame.font.SysFont("segoeui", 16, bold=True)
+                bs2 = bf2.render("CLAIM", True, (255, 220, 60) if hov_b else (200, 170, 30))
+                surf.blit(bs2, bs2.get_rect(center=btn_rect.center))
+            else:
+                pygame.draw.rect(surf, (20, 15, 35), btn_rect, border_radius=8)
+                pygame.draw.rect(surf, (55, 40, 90), btn_rect, 2, border_radius=8)
+                bf2 = pygame.font.SysFont("segoeui", 15)
+                bs2 = bf2.render("IN PROGRESS", True, (90, 75, 130))
+                surf.blit(bs2, bs2.get_rect(center=btn_rect.center))
+
+    def _draw_castbound(self, surf, t, cx, mx, my, pulse):
 
         card_w  = min(680, SCREEN_W - 80)
         card_h  = 72
         card_gap = 10
         start_x = cx - card_w // 2
-        start_y = 132
+        start_y = self._tab_daily.bottom + 34
 
         stage       = self.save_data.get("castbound_quest", None)
         easy_runs   = self.save_data.get("castbound_easy_runs", 0)
@@ -9470,19 +9984,16 @@ class QuestsScreen:
 
         # ── Talk to Castbound button ──────────────────────────────────────────
         quest_stage = self.save_data.get("castbound_quest", None)
-        # Show button for: not started, or in any active stage (not done)
         _show_btn = quest_stage != "done"
 
         if _show_btn:
             hov_t = self.btn_talk.collidepoint(mx, my)
             if quest_stage is None:
-                # Not started — green "Start" button
                 bg_t  = (20, 60, 30) if hov_t else (10, 30, 18)
                 brd_t = (80, 220, 100) if hov_t else (50, 150, 70)
                 lbl_t = "▶  Start Castbound Quest"
                 lbl_c = (180, 255, 180) if hov_t else (120, 200, 140)
             else:
-                # Active — pulsing purple "Talk" button
                 cb_p  = 0.5 + 0.5 * math.sin(t * 3.0)
                 bg_t  = (30, 10, 60) if hov_t else (16, 6, 36)
                 brd_t = (int(100 + 80*cb_p), int(40 + 20*cb_p), int(180 + 60*cb_p))
@@ -9493,16 +10004,6 @@ class QuestsScreen:
             btf = pygame.font.SysFont("segoeui", 22, bold=True)
             bts = btf.render(lbl_t, True, lbl_c)
             surf.blit(bts, bts.get_rect(center=self.btn_talk.center))
-
-        # ── Back button ───────────────────────────────────────────────────────
-        hov = self.btn_back.collidepoint(mx, my)
-        bg_c  = (60, 30, 120) if hov else (28, 16, 55)
-        brd_c = (160, 100, 255) if hov else (80, 50, 140)
-        pygame.draw.rect(surf, bg_c,  self.btn_back, border_radius=10)
-        pygame.draw.rect(surf, brd_c, self.btn_back, 2, border_radius=10)
-        bbf = pygame.font.SysFont("segoeui", 22, bold=True)
-        bbs = bbf.render("← BACK", True, (220, 200, 255) if hov else (150, 120, 200))
-        surf.blit(bbs, bbs.get_rect(center=self.btn_back.center))
 
 
 # ── Castbound Dialog ───────────────────────────────────────────────────────────
@@ -9911,7 +10412,7 @@ ALL_UNITS_POOL = [
     {"name": "Conduit",        "rarity": "rare"},
     {"name": "Accelerator",    "rarity": "epic"},
     {"name": "Frostcelerator", "rarity": "epic"},
-    {"name": "Lifestealer",    "rarity": "starter"},
+    {"name": "Lifestealer",    "rarity": "common"},
     {"name": "Archer",         "rarity": "rare"},
     {"name": "Red Ball",       "rarity": "rare"},
     {"name": "Farm",           "rarity": "starter"},
@@ -10131,6 +10632,7 @@ class LoadoutScreen:
             owned = list(owned) + ["Twitgunner"]
         # Control Panel unlocked via shards (apex rarity)
         # Rubber Duck — покупается за 1300 монет
+
         return owned
 
     def _show_msg(self, text, dur=2.5):
@@ -10825,7 +11327,7 @@ class PauseMenu:
         mx, my = pygame.mouse.get_pos()
         for btn, label in [
             (self.btn_resume,   "▶  RESUME"),
-            (self.btn_settings, "⚙  SETTINGS"),
+            (self.btn_settings, "SETTINGS"),
             (self.btn_menu,     "⌂  MAIN MENU"),
         ]:
             hov = btn.collidepoint(mx, my)
@@ -10973,6 +11475,7 @@ class Game:
         # ── Profile stat tracking ──────────────────────────────────────────────
         self._total_kills  = 0    # enemies killed this run
         self._total_earned = 0    # total money earned from kills this run
+        self._towers_placed_count = 0  # towers placed this run (daily quest tracking)
 
         # Apply saved loadout to slot types
         _name_to_cls = {"Assassin": Assassin, "Accelerator": Accelerator,
@@ -11537,6 +12040,8 @@ class Game:
                     if ev.type == pygame.MOUSEBUTTONUP and ev.button == 1:
                         _pre_len = len(self.units)
                         delta = self.ui.handle_release(ev.pos, self.units, self.money)
+                        if delta < 0 and len(self.units) > _pre_len:
+                            self._towers_placed_count += 1
                         self.money += delta
                     if ev.type == pygame.MOUSEMOTION and pygame.mouse.get_pressed()[0]:
                         if getattr(self.ui, '_rc_open', False):
@@ -12453,6 +12958,32 @@ class Game:
                         elif self.mode == "frosty" and _cq == "frosty_run":
                             self.save_data["castbound_frosty_run"] = True
                             write_save(self.save_data)
+                        # ── Daily quest tracking on WIN ───────────────────────
+                        _dl_today, _dl_quests, _dl_prog, _dl_claimed = _load_daily_quests(self.save_data)
+                        _dl_dq = self.save_data.setdefault("daily_quests", {})
+                        _dl_pr = _dl_dq.setdefault("progress", {})
+                        for _dlq in _dl_quests:
+                            _dlqid = _dlq["id"]
+                            if _dlqid in _dl_claimed:
+                                continue
+                            _dltype = _dlq.get("type")
+                            _dltgt  = _dlq.get("target", 1)
+                            _dlcur  = _dl_pr.get(_dlqid, 0)
+                            if _dltype == "win_mode" and self.mode == _dlq.get("mode"):
+                                _dl_pr[_dlqid] = min(_dlcur + 1, _dltgt)
+                            elif _dltype == "kills":
+                                _dl_pr[_dlqid] = min(_dlcur + getattr(self, "_total_kills", 0), _dltgt)
+                            elif _dltype == "waves":
+                                _dl_pr[_dlqid] = min(max(_dlcur, self.wave_mgr.wave), _dltgt)
+                            elif _dltype == "earn_coins":
+                                _dl_pr[_dlqid] = min(max(_dlcur, getattr(self, "_total_earned", 0)), _dltgt)
+                            elif _dltype == "towers_placed":
+                                _dl_pr[_dlqid] = min(max(_dlcur, getattr(self, "_towers_placed_count", 0)), _dltgt)
+                            elif _dltype == "no_leak_win" and not getattr(self, "_wave_ever_leaked", False):
+                                _dl_pr[_dlqid] = 1
+                            elif _dltype == "waves_mode" and self.mode == _dlq.get("mode"):
+                                _dl_pr[_dlqid] = min(max(_dlcur, self.wave_mgr.wave), _dltgt)
+                        write_save(self.save_data)
                         # ── Profile stats: record win ────────────────────
                         _mode_key_w = self.mode if self.mode else "easy"
                         _pst_w = self.save_data.setdefault("profile_stats", {})
@@ -13114,6 +13645,15 @@ def _run_multiplayer(screen, save_data):
         _mp  = importlib.util.module_from_spec(spec)
         sys.modules["multiplayer"] = _mp
         spec.loader.exec_module(_mp)
+        # ── Inject profile nick into multiplayer module ───────────────────────
+        _profile_nick = save_data.get("player_nick", "Player") or "Player"
+        # Patch common name attributes the multiplayer module may expose
+        for _attr in ("DEFAULT_NAME", "default_name", "player_name",
+                      "MY_NAME", "my_name", "local_name", "nickname"):
+            if hasattr(_mp, _attr):
+                setattr(_mp, _attr, _profile_nick)
+        # Also store in save_data so multiplayer can read it
+        save_data.setdefault("player_nick", _profile_nick)
         return _mp.run_multiplayer(screen, save_data)
     except Exception as e:
         screen.fill((18,22,30))
