@@ -64,6 +64,25 @@ class Unit:
         self._try_attack(enemies, effects)
     def _try_attack(self, enemies, effects): pass
     def draw(self, surf): pass
+    def draw_simple(self, surf):
+        """Draw a plain colored circle — used when 'No Tower Details' is enabled."""
+        cx, cy = int(self.px), int(self.py)
+        col = getattr(self, 'COLOR', (180, 180, 180))
+        # outer dark ring
+        pygame.draw.circle(surf, (20, 20, 30), (cx, cy), 24)
+        # colored fill
+        pygame.draw.circle(surf, col, (cx, cy), 20)
+        # bright rim
+        rim = tuple(min(255, c + 80) for c in col)
+        pygame.draw.circle(surf, rim, (cx, cy), 20, 2)
+        # level pips as small dots below
+        lv = getattr(self, 'level', 0)
+        if lv > 0:
+            pip_r = 3
+            spacing = 8
+            start_x = cx - (lv - 1) * spacing // 2
+            for i in range(lv):
+                pygame.draw.circle(surf, C_WHITE, (start_x + i * spacing, cy + 26), pip_r)
     def draw_range(self, surf):
         r=int(self.range_tiles*TILE)
         s=pygame.Surface((r*2,r*2),pygame.SRCALPHA)
@@ -9329,9 +9348,9 @@ C_CTRLPANEL      = (40, 180, 220)
 C_CTRLPANEL_DARK = (10,  60,  90)
 
 _CP_BUFF_DEFS = {
-    "Range":    {"base": 300,  "per_sec": 15,  "mult": 1.35, "color": (80,  200, 255)},
-    "Damage":   {"base": 400,  "per_sec": 20,  "mult": 1.40, "color": (255, 120,  60)},
-    "Firerate": {"base": 350,  "per_sec": 18,  "mult": 1.35, "color": (120, 255, 100)},
+    "Range":    {"base": 360,  "per_sec": 18,  "mult": 1.35, "color": (80,  200, 255)},
+    "Damage":   {"base": 480,  "per_sec": 24,  "mult": 1.40, "color": (255, 120,  60)},
+    "Firerate": {"base": 420,  "per_sec": 22,  "mult": 1.35, "color": (120, 255, 100)},
 }
 _CP_ABILITY_CD = 30.0
 

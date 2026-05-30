@@ -329,6 +329,11 @@ class LobbyScreen:
         self._popup = False
 
     def _do_join(self, room, password):
+        # Check if our nick matches the host's nick
+        if self.nick.strip().lower() == room.get("host", "").strip().lower():
+            self.error   = f"Your nickname '{self.nick}' is the same as the host's! Change it in Profile."
+            self.error_t = 4.0
+            return
         self.net.send({"type": "join_room", "nick": self.nick,
                        "room_id": room["id"], "password": password})
 
@@ -765,11 +770,11 @@ class _MPGameFactory:
             """
             def __init__(self, save_data, net, nick, is_host,
                          host_nick, map_name, mode):
-                # Patch limits before super().__init__ spawns the UI
+                # In multiplayer, each player keeps their own personal limits
+                # (no doubling). The global limit per player stays at 40.
                 self._orig_limits = dict(UNIT_LIMITS)
-                for k in list(UNIT_LIMITS.keys()):
-                    UNIT_LIMITS[k] = (UNIT_LIMITS[k] or 5) * 2
-                game_mod.GLOBAL_UNIT_LIMIT = GLOBAL_UNIT_LIMIT_MP
+                # Do NOT double UNIT_LIMITS — each player has their own budget
+                game_mod.GLOBAL_UNIT_LIMIT = 40  # per-player limit stays 40
 
                 import game_core as _gc2
                 _gc2.CURRENT_MAP = map_name
@@ -796,7 +801,7 @@ class _MPGameFactory:
                 self._peer_nick         = ""
                 self._peer_money        = 0
                 self._peer_units_placed = 0
-                self._peer_unit_limit   = GLOBAL_UNIT_LIMIT_MP
+                self._peer_unit_limit   = 40
 
                 # Track which own units we've already broadcast
                 self._sent_unit_ids = set()
@@ -827,8 +832,18 @@ class _MPGameFactory:
                         "type":         "game_state",
                         "money":        self.money,
                         "units_placed": len(own),
-                        "unit_limit":   GLOBAL_UNIT_LIMIT_MP,
+                        "unit_limit":   40,
                     })
+                    # Host broadcasts wave state so guest stays in sync
+                    if self.is_host:
+                        _wm = self.wave_mgr
+                        self.net.send({
+                            "type":       "wave_sync",
+                            "wave":       _wm.wave,
+                            "timer":      getattr(_wm, '_timer', getattr(_wm, 'timer', 0.0)),
+                            "between":    getattr(_wm, '_between', getattr(_wm, 'between', False)),
+                            "active":     getattr(_wm, '_active', getattr(_wm, 'active', False)),
+                        })
                     # Broadcast any newly placed own units
                     for u in own:
                         uid = id(u)
@@ -865,7 +880,7 @@ class _MPGameFactory:
                     self.nick,
                     self.money,
                     len(own2),
-                    GLOBAL_UNIT_LIMIT_MP,
+                    40,
                     self._peer_nick or self.peer_cursor.nick,
                     self._peer_money,
                     self._peer_units_placed,
@@ -888,7 +903,7 @@ class _MPGameFactory:
                         self._peer_nick         = msg.get("nick", "?")
                         self._peer_money        = msg.get("money", 0)
                         self._peer_units_placed = msg.get("units_placed", 0)
-                        self._peer_unit_limit   = msg.get("unit_limit", GLOBAL_UNIT_LIMIT_MP)
+                        self._peer_unit_limit   = msg.get("unit_limit", 40)
                         if self.peer_cursor.nick == "?":
                             self.peer_cursor.nick = self._peer_nick
 
@@ -921,6 +936,33 @@ class _MPGameFactory:
                             if msg.get("event") == "next_wave":
                                 try: self.wave_mgr.force_next_wave()
                                 except Exception: pass
+
+                    elif t == "wave_sync":
+                        # Guest syncs wave state from host
+                        if not self.is_host:
+                            _wm = self.wave_mgr
+                            host_wave = msg.get("wave", _wm.wave)
+                            # Force-advance wave number if guest is behind
+                            try:
+                                while _wm.wave < host_wave:
+                                    _wm.wave += 1
+                                    if hasattr(_wm, '_wave_idx'):
+                                        _wm._wave_idx = min(_wm._wave_idx + 1, len(getattr(_wm, '_wave_data', [])))
+                                    self._chat_log  # just touch self to avoid unused var
+                            except Exception:
+                                pass
+                            # Sync timer so between-wave countdowns match
+                            _timer_val = msg.get("timer", None)
+                            if _timer_val is not None:
+                                if hasattr(_wm, '_timer'):
+                                    _wm._timer = _timer_val
+                                elif hasattr(_wm, 'timer'):
+                                    _wm.timer = _timer_val
+                            # Clear stale enemies when host's wave is ahead
+                            if host_wave > getattr(self, '_last_synced_wave', 0):
+                                self._last_synced_wave = host_wave
+                                # Remove enemies that belong to old waves
+                                self.enemies = [e for e in self.enemies if getattr(e, 'alive', False)]
 
                     elif t == "game_over":
                         self.running = False

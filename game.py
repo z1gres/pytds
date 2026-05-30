@@ -127,6 +127,20 @@ _DAILY_QUEST_POOL = [
     {"id":"dq_hardcore_any","title":"Hardcore Attempt",  "desc":"Reach wave 10 in Hardcore mode.",       "type":"waves_mode", "mode":"hardcore","target":10,"coins":500,"shards":12},
 ]
 
+_DRAFT_CARDS = [
+    {"id": "remove_tower", "title": "Sacrifice", "desc": "Удалить рандомную башню"},
+    {"id": "range_down", "title": "Myopia", "desc": "Дальность всех башен -20% на 5 волн"},
+    {"id": "upgrade_cost", "title": "Inflation", "desc": "Цена на апгрейды +15%"},
+    {"id": "half_money", "title": "Taxes", "desc": "Деньги делятся на 2"},
+    {"id": "level_down", "title": "Amnesia", "desc": "Рандомная башня теряет 1 уровень"},
+    {"id": "damage_down", "title": "Weakness", "desc": "Урон всех башен -50% на 5 волн"},
+    {"id": "firerate_down", "title": "Lethargy", "desc": "Фаеррейт -20%"},
+    {"id": "rollback", "title": "Time Loop", "desc": "Откат на 3 волны назад"},
+    {"id": "zero_money", "title": "Bankruptcy", "desc": "Списывает деньги до нуля"},
+    {"id": "damage_5", "title": "Nerf Gun", "desc": "Урон 5 всем башням на 15 секунд"},
+    {"id": "all_jesters", "title": "Circus", "desc": "Все башни заменяются на Jester 1 лвла навсегда"},
+]
+
 _DAILY_COUNT = 3  # how many quests to pick per day
 
 def _get_today_str():
@@ -1120,6 +1134,7 @@ class UI:
                     u.range_tiles = round(u.range_tiles * (1.0 + _sk_rng), 4)
                 self.drag_unit=None; self.selected_slot=None; return -_place_cost
         for u in units:
+            if getattr(u, '_mp_peer', False): continue  # can't click partner's ability buttons
             btn1=getattr(u,'_ability_btn_rect',None)
             if btn1 and btn1.collidepoint(pos):
                 if u.ability and u.ability.ready():
@@ -2464,6 +2479,7 @@ class UI:
             elif dist((u.px,u.py),(mx2,my2))<22 and self.open_unit!=u: u.draw_range(surf)
         if self.open_unit:
             u=self.open_unit; u.draw_range(surf)
+
             menu,btns=self._menu_rects(u)
             self._cached_btns=btns  # will be overwritten after draw updates them
             mw=menu.w; mx_m=menu.x; my_m=menu.y
@@ -3116,6 +3132,25 @@ class UI:
                     btns[f"cb_blade_{_cb_bid}"] = _cb_r
                 btns["upgrade"] = pygame.Rect(mx_m+6, strip_y_actual+54+_cb_btn_h+8, mw-12, 44)
             up_rect=btns["upgrade"]
+            # ── Upgrade Preview: draw next-level range ring on Upgrade-button hover ──
+            if SETTINGS.get("upgrade_preview", True) and up_rect and up_rect.collidepoint(mx2, my2):
+                _nxt_prev = self._get_next_stats(u)
+                _sk_rng2 = getattr(self, '_sk_range_bonus', 0)
+                _nxt_r = None
+                if _nxt_prev and "Range" in _nxt_prev:
+                    _nxt_r = _nxt_prev["Range"]
+                    if _nxt_r and _nxt_r > 0 and _sk_rng2 > 0:
+                        _nxt_r = round(_nxt_r * (1.0 + _sk_rng2), 4)
+                if _nxt_r and _nxt_r > 0:
+                    _pr = int(_nxt_r * TILE)
+                    _col_prev = u.COLOR if SETTINGS.get("colored_range", False) else (255, 255, 255)
+                    _prev_s = pygame.Surface((_pr*2, _pr*2), pygame.SRCALPHA)
+                    pygame.draw.circle(_prev_s, (*_col_prev, 40), (_pr, _pr), _pr)
+                    pygame.draw.circle(_prev_s, (*_col_prev, 160), (_pr, _pr), _pr, 3)
+                    _old_clip = surf.get_clip()
+                    surf.set_clip(pygame.Rect(0, 0, SCREEN_W, SLOT_AREA_Y))
+                    surf.blit(_prev_s, (int(u.px) - _pr, int(u.py) - _pr))
+                    surf.set_clip(_old_clip)
             if _is_peer_unit:
                 # Grey out upgrade button
                 pygame.draw.rect(surf,(35,35,40),up_rect,border_radius=6)
@@ -3560,7 +3595,11 @@ class UI:
             if isinstance(self.drag_unit,RedBall):
                 self.drag_unit._home_x=float(mx2); self.drag_unit._home_y=float(my2)
                 self.drag_unit._draw_x=float(mx2); self.drag_unit._draw_y=float(my2)
-            self.drag_unit.draw_range(surf); self.drag_unit.draw(surf)
+            self.drag_unit.draw_range(surf)
+            if SETTINGS.get("no_tower_details", False):
+                self.drag_unit.draw_simple(surf)
+            else:
+                self.drag_unit.draw(surf)
 
         # ── Harvester thorn-placement preview ────────────────────────────────
         if self._thorn_place_mode and self._thorn_place_owner:
@@ -3601,6 +3640,7 @@ class UI:
 
         ab_entries=[]
         for u in units:
+            if getattr(u, '_mp_peer', False): continue  # skip partner's units — their abilities are theirs
             if getattr(u,'ability2',None) and u.level>=1: ab_entries.append((u, u.ability2, 'ab2'))
             _ab1_min = 0 if isinstance(u, (Harvester, ControlPanel)) else 2
             if u.ability and u.level >= _ab1_min: ab_entries.append((u, u.ability, 'ab1'))
@@ -3623,9 +3663,9 @@ class UI:
             pygame.draw.circle(surf,C_WHITE,(bx3+26,by3+bh3//2),16,2)
             txt(surf,ab.name if ready else f"CD {ab.cd_left:.1f}s",(bx3+46,by3+8),C_WHITE if ready else (100,100,120),font_sm)
             if not ready:
-                r3=1-(ab.cd_left/ab.cooldown)
+                r3=max(0.0, min(1.0, 1-(ab.cd_left/ab.cooldown)))
                 pygame.draw.rect(surf,(40,40,60),(bx3+46,by3+26,bw3-54,8),border_radius=3)
-                pygame.draw.rect(surf,C_CYAN,(bx3+46,by3+26,int((bw3-54)*r3),8),border_radius=3)
+                pygame.draw.rect(surf,C_CYAN,(bx3+46,by3+26,max(0,int((bw3-54)*r3)),8),border_radius=3)
             else:
                 txt(surf,"CLICK / [F]",(bx3+46,by3+28),C_CYAN,font_sm)
             ab._btn_rect=pygame.Rect(bx3,by3,bw3,bh3)
@@ -5489,10 +5529,15 @@ class DifficultyMenu:
          "Icy battlefield. Multi-lane chaos.",
          ["HP: 200", "Starting cash: $700"],
          ("1500", (100, 210, 255))),
+        ("play_draft",   "DRAFT",   "draft_ico",
+         (255, 60, 60),
+         "Draft curses every few waves.",
+         ["HP: 150", "Starting cash: $650"],
+         ("1000", (255, 100, 100))),
 
         ("play_sandbox", "SANDBOX", "sandbox_ico",
          (220, 180, 80),
-         "No rules. Test anything.",
+         "No rules. Test anything.",    
          ["HP: ∞", "Starting cash: ∞"],
          ("—", (180, 160, 100))),
     ]
@@ -5586,6 +5631,7 @@ class DifficultyMenu:
             try:
                 iw, ih = raw.get_size()
                 scale = max(r.w / iw, img_h / ih)
+                if ico_name == "draft_ico": scale *= 1.2
                 nw, nh = max(1, int(iw * scale)), max(1, int(ih * scale))
                 scaled = pygame.transform.smoothscale(raw, (nw, nh))
                 ox2 = (nw - r.w) // 2; oy2 = (nh - img_h) // 2
@@ -6243,14 +6289,72 @@ SETTINGS = {
     "windowed":       False,
     "resolution":     "1920x1080",
     "unlock_fps":     False,
+    "linux_mode":     False,  # Включает Wayland Fix + KDE Tearing Fix + Arch Font Fix
     "menu_style":     0,   # 0 = Void/Gothic, 1 = Modern/Blue
+    "no_tower_details": False,  # simple colored circles instead of detailed tower art
+    "upgrade_preview":  True,   # show translucent next-level range ring on Upgrade hover
 }
+
+
+def _get_emoji_font(size: int, bold: bool = False) -> pygame.font.Font:
+    """Return best available emoji font, respecting Linux Mode setting."""
+    if SETTINGS.get("linux_mode", False):
+        order = ("notocoloremoji", "noto color emoji", "symbola",
+                 "segoeuiemoji", "seguiemj", "applesymbol", "segoeui")
+    else:
+        order = ("segoeuiemoji", "seguiemj", "notocoloremoji",
+                 "applesymbol", "symbola", "segoeui")
+    for _fname in order:
+        try:
+            _ef = pygame.font.SysFont(_fname, size, bold=bold)
+            _ef.render("🌳", True, (255, 255, 255))
+            return _ef
+        except Exception:
+            pass
+    return pygame.font.SysFont("segoeui", size, bold=bold)
 
 def _apply_audio_settings():
     try:
         vol = 0.0 if SETTINGS["music_muted"] else SETTINGS["music_volume"]
         pygame.mixer.music.set_volume(vol)
     except Exception: pass
+
+def _apply_arch_linux_fix(key=None):
+    """Apply all Linux Mode fixes (Wayland, KDE Tearing, Arch Font) at once."""
+    import os as _os
+    try:
+        # ── Wayland Fix ──────────────────────────────────────────────────────────
+        # Force SDL to use the Wayland backend instead of XWayland.
+        # Fixes blurry scaling, incorrect DPI, and input lag on Wayland compositors.
+        _os.environ.setdefault("SDL_VIDEODRIVER", "wayland")
+        _os.environ.setdefault("SDL_DYNAMIC_API", "")
+        # Disable compositor bypass (prevents black-screen flicker under KWin).
+        _os.environ["SDL_VIDEO_WAYLAND_ALLOW_LIBDECOR"] = "1"
+        _os.environ.pop("SDL_VIDEO_X11_DGAMOUSE", None)
+
+        # ── KDE Tearing Fix ──────────────────────────────────────────────────────
+        # Tell SDL to request adaptive vsync (EGL_MIN_SWAP_INTERVAL=0 allows
+        # triple-buffering), which eliminates tearing artifacts in KWin.
+        _os.environ["SDL_RENDER_VSYNC"] = "1"
+        _os.environ["__GL_SYNC_TO_VBLANK"] = "1"
+        _os.environ["__GL_MaxFramesAllowed"] = "1"
+        # Prevent KDE compositor from dropping frames on fullscreen apps.
+        _os.environ.setdefault("KWIN_X11_NO_EXPLICIT_SYNC", "0")
+
+        # ── Arch Font Fix ────────────────────────────────────────────────────────
+        # On minimal Arch installs several Windows fonts are absent.
+        # Pre-seed the pygame font cache with Noto/Liberation fallbacks.
+        _os.environ.setdefault("PYGAME_FREETYPE", "1")
+        _extra = "/usr/share/fonts/noto:/usr/share/fonts/liberation:/usr/share/fonts/TTF"
+        _cur = _os.environ.get("FONTCONFIG_PATH", "")
+        if _extra not in _cur:
+            _os.environ["FONTCONFIG_PATH"] = (_cur + ":" + _extra).lstrip(":")
+        try:
+            pygame.font.init()
+        except Exception:
+            pass
+    except Exception:
+        pass
 
 _RESOLUTIONS = ["1280x720", "1600x900", "1920x1080", "2560x1440"]
 
@@ -6899,17 +7003,20 @@ class SettingsScreen:
             ("show_grid",         "Show Grid"),
             ("show_fps",          "Show FPS"),
             ("show_range_always", "Always Show Range"),
-            ("low_quality",       "Low Quality  (better FPS)"),
-            ("unlock_fps",        "Unlock FPS — 144"),
+            ("low_quality",       "Low Detail Mode"),
+            ("unlock_fps",        "Unlock FPS"),
+            ("no_tower_details",  "No Tower Details"),
+            ("upgrade_preview",   "Upgrade Preview Range"),
         ]
         self._aud_toggles = [
             ("music_muted", "Mute Music"),
             ("sfx_muted",   "Mute SFX"),
         ]
         self._misc_toggles = [
-            ("auto_skip",            "Auto-skip Waves"),
+            ("auto_skip",            "Auto Skip"),
             ("sell_confirm",         "Confirm Before Sell"),
-            ("fast_forward_default", "Fast-forward by Default"),
+            ("fast_forward_default", "Auto X2 Speed"),
+            ("linux_mode",           "Linux Mode"),
         ]
         self._toggle_rects_cache = {}
 
@@ -6934,6 +7041,10 @@ class SettingsScreen:
 
         # ── Back button ───────────────────────────────────────────────────────
         self.btn_back = pygame.Rect(cx - 110, SCREEN_H - 64, 220, 44)
+
+        # ── Linux Mode warning modal state ───────────────────────────────────
+        self._linux_warn_active = False   # показывать полноэкранное предупреждение
+        self._linux_warn_btn    = pygame.Rect(SCREEN_W // 2 - 140, SCREEN_H - 160, 280, 52)
 
     # ── Slider helpers ────────────────────────────────────────────────────────
     def _music_bar(self): return self._bar_music
@@ -6992,6 +7103,11 @@ class SettingsScreen:
         _sync_compact()
 
     def _handle_click(self, pos):
+        # ── Linux Mode modal intercept — блокирует все клики под собой ──────────
+        if self._linux_warn_active:
+            if self._linux_warn_btn.collidepoint(pos):
+                self._linux_warn_active = False
+            return
         if self.btn_back.collidepoint(pos):
             self.running = False; return
         for i, tr in enumerate(self._tab_rects):
@@ -7017,10 +7133,14 @@ class SettingsScreen:
             if self.btn_style_modern.collidepoint(pos):   SETTINGS["menu_style"] = 1; return
             if self.btn_style_vertical.collidepoint(pos): SETTINGS["menu_style"] = 2; return
             if self.btn_style_gothic.collidepoint(pos):   SETTINGS["menu_style"] = 3; return
+        _ARCH_KEYS = {"linux_mode"}
         for rect, key, _ in self._get_tab_toggles(self._tab):
             if rect.collidepoint(pos):
                 SETTINGS[key] = not SETTINGS[key]
                 if key == "music_muted": _apply_audio_settings()
+                if key == "linux_mode" and SETTINGS[key]:
+                    _apply_arch_linux_fix()
+                    self._linux_warn_active = True
                 self._toggle_rects_cache.pop(self._tab, None)
                 return
 
@@ -7328,6 +7448,91 @@ class SettingsScreen:
         bk_f = pygame.font.SysFont("segoeui", 20, bold=True)
         bk_s = bk_f.render("← BACK", True, (245, 200, 200) if hov else (170, 130, 130))
         surf.blit(bk_s, bk_s.get_rect(center=self.btn_back.center))
+
+        # ── Linux Mode full-screen warning modal ─────────────────────────────
+        if self._linux_warn_active:
+            # ── Затемнение ────────────────────────────────────────────────────
+            _dim = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            _dim.fill((0, 4, 12, 210))
+            surf.blit(_dim, (0, 0))
+
+            # ── Параметры карточки ────────────────────────────────────────────
+            CW, CH = 620, 310
+            CX = SCREEN_W // 2 - CW // 2
+            CY = SCREEN_H // 2 - CH // 2
+
+            # Фон карточки — очень тёмный, почти чёрный с лёгким синим оттенком
+            _card_s = pygame.Surface((CW, CH), pygame.SRCALPHA)
+            _card_s.fill((4, 10, 22, 248))
+            surf.blit(_card_s, (CX, CY))
+
+            # Внешнее свечение (несколько слоёв)
+            for _gi, _ga in [(6, 18), (4, 30), (2, 55), (1, 90)]:
+                pygame.draw.rect(surf, (0, 120, 220, _ga),
+                                 (CX - _gi, CY - _gi, CW + _gi * 2, CH + _gi * 2), 1, border_radius=4 + _gi)
+            # Основная рамка
+            pygame.draw.rect(surf, (0, 160, 255), (CX, CY, CW, CH), 1, border_radius=4)
+
+            # Тонкая верхняя полоска-акцент
+            pygame.draw.line(surf, (0, 200, 255), (CX + 1, CY + 1), (CX + CW - 2, CY + 1))
+
+            # ── Шрифты ────────────────────────────────────────────────────────
+            _f_head  = pygame.font.SysFont("segoeui", 11, bold=True)
+            _f_title = pygame.font.SysFont("segoeui", 30, bold=True)
+            _f_body  = pygame.font.SysFont("segoeui", 15)
+            _f_hint  = pygame.font.SysFont("segoeui", 13)
+
+            # Надпись категории сверху (как в Subnautica — маленькие капсы)
+            _cat = _f_head.render("SYSTEM  //  LINUX MODE", True, (0, 160, 220))
+            surf.blit(_cat, _cat.get_rect(centerx=SCREEN_W // 2, top=CY + 18))
+
+            # Горизонтальный разделитель под категорией
+            pygame.draw.line(surf, (0, 80, 140), (CX + 24, CY + 36), (CX + CW - 24, CY + 36), 1)
+
+            # Заголовок
+            _title_s = _f_title.render("Совместимость не гарантирована", True, (200, 230, 255))
+            surf.blit(_title_s, _title_s.get_rect(centerx=SCREEN_W // 2, top=CY + 48))
+
+            # Основной текст — лаконично, без буллетов
+            _body_lines = [
+                "Режим разработан для Arch Linux + KDE Plasma + Wayland.",
+                "На других системах поведение может отличаться.",
+                "Для применения изменений перезапустите игру.",
+            ]
+            _ty = CY + 106
+            for _bl in _body_lines:
+                _bs = _f_body.render(_bl, True, (120, 160, 200))
+                surf.blit(_bs, _bs.get_rect(centerx=SCREEN_W // 2, top=_ty))
+                _ty += 26
+
+            # Нижний разделитель
+            pygame.draw.line(surf, (0, 80, 140), (CX + 24, CY + CH - 80), (CX + CW - 24, CY + CH - 80), 1)
+
+            # ── Кнопка "Продолжить" ───────────────────────────────────────────
+            btn = self._linux_warn_btn
+            mx, my = pygame.mouse.get_pos()
+            _hov = btn.collidepoint(mx, my)
+
+            # Фон кнопки
+            _btn_col = (0, 140, 220, 200) if _hov else (0, 80, 160, 180)
+            _btn_s = pygame.Surface((btn.w, btn.h), pygame.SRCALPHA)
+            _btn_s.fill(_btn_col)
+            surf.blit(_btn_s, btn.topleft)
+            # Рамка кнопки
+            pygame.draw.rect(surf, (0, 200, 255) if _hov else (0, 120, 200), btn, 1)
+            # Верхний блик
+            if _hov:
+                _shine = pygame.Surface((btn.w - 2, btn.h // 2), pygame.SRCALPHA)
+                _shine.fill((255, 255, 255, 14))
+                surf.blit(_shine, (btn.x + 1, btn.y + 1))
+
+            _btn_lbl = _f_title.render("ПРОДОЛЖИТЬ", True, (200, 240, 255) if _hov else (140, 200, 240))
+            surf.blit(_btn_lbl, _btn_lbl.get_rect(center=btn.center))
+
+            # Подсказка под кнопкой
+            _hint_s = _f_hint.render("нажмите для продолжения", True, (40, 90, 130))
+            surf.blit(_hint_s, _hint_s.get_rect(centerx=SCREEN_W // 2, top=btn.bottom + 8))
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Skin system
@@ -8718,21 +8923,10 @@ class MainMenu:
                 int(GOLD_BR[2]*h + LIGHT_GR[2]*(1-h)),
             )
             em_size = max(18, int(rect.h * 0.52))
-            _efb_key = ('_emoji_font_big', em_size)
-            if not hasattr(self, '_emoji_font_big') or getattr(self, '_emoji_font_big_size', 0) != em_size:
-                for _fname in ("segoeuiemoji", "seguiemj", "notocoloremoji",
-                               "applesymbol", "symbola", "segoeui"):
-                    try:
-                        _ef = pygame.font.SysFont(_fname, em_size, bold=False)
-                        _ef.render("\U0001F333", True, (255, 255, 255))
-                        self._emoji_font_big = _ef
-                        self._emoji_font_big_size = em_size
-                        break
-                    except Exception:
-                        pass
-                if not hasattr(self, '_emoji_font_big'):
-                    self._emoji_font_big = pygame.font.SysFont("segoeui", em_size, bold=False)
-                    self._emoji_font_big_size = em_size
+            if not hasattr(self, '_emoji_font_big') or getattr(self, '_emoji_font_big_size', 0) != em_size or getattr(self, '_emoji_font_big_linux', None) != SETTINGS.get('linux_mode', False):
+                self._emoji_font_big = _get_emoji_font(em_size, bold=False)
+                self._emoji_font_big_size = em_size
+                self._emoji_font_big_linux = SETTINGS.get('linux_mode', False)
             em_s = self._emoji_font_big.render(label, True, tc)
             lx = rect.centerx - em_s.get_width() // 2
             ly = rect.centery - em_s.get_height() // 2 + anim_y
@@ -8866,20 +9060,10 @@ class MainMenu:
             self._draw_fancy_btn(surf, rect, label, self._hover_anim[idx], accent, idx)
 
         # ── Small bottom row with emoji ───────────────────────────────────────
-        # Use Segoe UI Emoji so emoji render as coloured glyphs, not squares
-        if self._emoji_font is None:
-            for _fname in ("segoeuiemoji", "seguiemj", "notocoloremoji",
-                           "applesymbol", "symbola", "segoeui"):
-                try:
-                    _ef = pygame.font.SysFont(_fname, 22, bold=True)
-                    # quick test render
-                    _ef.render("\U0001F333", True, (255, 255, 255))
-                    self._emoji_font = _ef
-                    break
-                except Exception:
-                    pass
-            if self._emoji_font is None:
-                self._emoji_font = pygame.font.SysFont("segoeui", 22, bold=True)
+        # Rebuild emoji font if linux_mode changed
+        if self._emoji_font is None or getattr(self, '_emoji_font_linux', None) != SETTINGS.get('linux_mode', False):
+            self._emoji_font = _get_emoji_font(22, bold=True)
+            self._emoji_font_linux = SETTINGS.get('linux_mode', False)
 
         for idx in self._SMALL_IDX:
             attr, label, accent = self._BTN_DEFS[idx]
@@ -11364,6 +11548,19 @@ class Game:
             self.wave_mgr=WaveManager(wave_data=FALLEN_WAVE_DATA, max_waves=FALLEN_MAX_WAVES)
             self.wave_mgr._mode="fallen"
             self.player_hp=150; self.player_maxhp=150
+        elif mode=="draft":
+            self.wave_mgr=WaveManager(wave_data=FALLEN_WAVE_DATA, max_waves=FALLEN_MAX_WAVES)
+            self.wave_mgr._mode="draft"
+            self.player_hp=150; self.player_maxhp=150
+            self.draft_active = False
+            self.draft_cards = []
+            self.waves_to_next_draft = random.randint(1, 4)
+            self.draft_mod_range_duration = 0
+            self.draft_mod_damage_duration = 0
+            self.draft_mod_upgrade_cost = 1.0
+            self.draft_mod_firerate = 1.0
+            self.draft_mod_dmg5_timer = 0.0
+            self._draft_state_hash = 0
         elif mode=="frosty":
             self.wave_mgr=WaveManager(wave_data=FROSTY_WAVE_DATA, max_waves=FROSTY_MAX_WAVES)
             self.wave_mgr._mode="frosty"
@@ -11813,7 +12010,7 @@ class Game:
 
     def run(self):
         while self.running:
-            _fps_cap = 144 if SETTINGS.get("unlock_fps") else FPS
+            _fps_cap = 720 if SETTINGS.get("unlock_fps") else FPS
             raw_dt = min(self.clock.tick(_fps_cap) / 1000.0, 0.05)
             dt = raw_dt * getattr(self.ui.admin_panel, '_game_speed', 1.0)
             dt *= self.ui._SPEED_STEPS[self.ui._speed_idx]
@@ -11998,6 +12195,55 @@ class Game:
                             else:
                                 self.running = False; self.return_to_menu = True
                 elif not self.game_over:
+                    if getattr(self, 'draft_active', False):
+                        if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                            # Draft Card layout coordinates (must match draw loop)
+                            card_w, card_h = 300, 400
+                            gap = 60
+                            total_w = 2 * card_w + gap
+                            start_x = SCREEN_W // 2 - total_w // 2
+                            start_y = SCREEN_H // 2 - card_h // 2
+                            for i, c in enumerate(self.draft_cards):
+                                r = pygame.Rect(start_x + i * (card_w + gap), start_y, card_w, card_h)
+                                if r.collidepoint(ev.pos):
+                                    cid = c["id"]
+                                    if cid == "remove_tower" and self.units:
+                                        import random
+                                        self.units.remove(random.choice(self.units))
+                                    elif cid == "range_down":
+                                        self.draft_mod_range_duration += 5
+                                    elif cid == "upgrade_cost":
+                                        self.draft_mod_upgrade_cost += 0.15
+                                    elif cid == "half_money":
+                                        self.money //= 2
+                                    elif cid == "level_down" and self.units:
+                                        import random
+                                        u = random.choice(self.units)
+                                        if u.level > 0:
+                                            u.level -= 1
+                                    elif cid == "damage_down":
+                                        self.draft_mod_damage_duration += 5
+                                    elif cid == "firerate_down":
+                                        self.draft_mod_firerate *= 1.25
+                                    elif cid == "rollback":
+                                        self.wave_mgr.wave = max(1, self.wave_mgr.wave - 3)
+                                        self.wave_mgr.state = "idle"
+                                        self.wave_mgr._between_timer = 5.0
+                                    elif cid == "zero_money":
+                                        self.money = 0
+                                    elif cid == "damage_5":
+                                        self.draft_mod_dmg5_timer = 15.0
+                                    elif cid == "all_jesters":
+                                        new_units = []
+                                        for u in self.units:
+                                            new_units.append(Jester(u.px, u.py))
+                                        self.units = new_units
+                                    
+                                    self._draft_state_hash += 1
+                                    self.draft_active = False
+                                    break
+                        continue # block other interactions while draft is active
+
                     if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 3:
                         if self.ui._thorn_place_mode:
                             self.ui._thorn_place_mode  = False
@@ -12056,7 +12302,33 @@ class Game:
                 self._elapsed += raw_dt
                 self._real_elapsed += raw_dt
             prev_wave = self.wave_mgr.wave
-            if not self.paused and not self.game_over and not self.win:
+            
+            if self.mode == "draft":
+                self.ui.cost_mult = self.draft_mod_upgrade_cost
+                for u in self.units:
+                    if not hasattr(u, '_draft_synced') or u._draft_synced != (self._draft_state_hash, u.level):
+                        if hasattr(u, '_apply_level'):
+                            u._apply_level()
+                            if getattr(self, '_sk_range_bonus', 0) > 0:
+                                u._base_range_tiles = u.range_tiles
+                                u.range_tiles = round(u.range_tiles * (1.0 + self._sk_range_bonus), 4)
+                            if self.draft_mod_dmg5_timer > 0:
+                                u.damage = 5
+                            elif self.draft_mod_damage_duration > 0:
+                                u.damage *= 0.5
+                            u.firerate *= self.draft_mod_firerate
+                            if self.draft_mod_range_duration > 0:
+                                u.range_tiles *= 0.8
+                        u._draft_synced = (self._draft_state_hash, u.level)
+            
+            if not self.paused and not self.game_over and not self.win and not getattr(self, 'draft_active', False):
+                if self.mode == "draft":
+                    if self.draft_mod_dmg5_timer > 0:
+                        self.draft_mod_dmg5_timer -= dt
+                        if self.draft_mod_dmg5_timer <= 0:
+                            self.draft_mod_dmg5_timer = 0
+                            self._draft_state_hash += 1
+
                 # ── Auto-skip: automatically skip prep/between timers if enabled ──
                 if SETTINGS.get("auto_skip", False):
                     if getattr(self.wave_mgr, 'can_skip', lambda: False)():
@@ -12076,6 +12348,17 @@ class Game:
                             ne._wp_index = 1
                             self._frosty_lane += 1
                 if self.wave_mgr.wave!=prev_wave:
+                    if self.mode == "draft":
+                        if self.draft_mod_range_duration > 0: self.draft_mod_range_duration -= 1
+                        if self.draft_mod_damage_duration > 0: self.draft_mod_damage_duration -= 1
+                        self._draft_state_hash += 1
+                        self.waves_to_next_draft -= 1
+                        if self.waves_to_next_draft <= 0:
+                            self.draft_active = True
+                            import random
+                            self.draft_cards = random.sample(_DRAFT_CARDS, 2)
+                            self.waves_to_next_draft = random.randint(1, 4)
+
                     self._wave_leaked=False
                     # Wave just advanced — immediately pay coins for the completed wave
                     self._give_wave_coins(prev_wave)
@@ -13124,7 +13407,7 @@ class Game:
                 self._draw_end_screen()
             if SETTINGS.get("show_fps", False):
                 _fps_val = int(self.clock.get_fps())
-                _fps_cap = 144 if SETTINGS.get("unlock_fps") else FPS
+                _fps_cap = 720 if SETTINGS.get("unlock_fps") else FPS
                 _fps_col = (80,255,80) if _fps_val >= _fps_cap - 10 else ((255,200,40) if _fps_val>=30 else (255,60,60))
                 _fps_s = pygame.font.SysFont("consolas", 18, bold=True).render(f"FPS: {_fps_val} / {_fps_cap}", True, _fps_col)
                 self.screen.blit(_fps_s, (8, 8))
@@ -13165,10 +13448,18 @@ class Game:
             if hasattr(u, '_draw_puddles_only'):
                 u._draw_puddles_only(self.screen)
 
-        for u in self.units: u.draw(self.screen)
+        for u in self.units:
+            if SETTINGS.get("no_tower_details", False):
+                u.draw_simple(self.screen)
+            else:
+                u.draw(self.screen)
         # Draw peer (other player's) units in the same pass for correct layering
         for u in getattr(self, '_peer_units', []):
-            try: u.draw(self.screen)
+            try:
+                if SETTINGS.get("no_tower_details", False):
+                    u.draw_simple(self.screen)
+                else:
+                    u.draw(self.screen)
             except Exception: pass
         for e in self.enemies:
             if not e.alive: continue
@@ -13546,8 +13837,44 @@ class Game:
         if self.game_over or self.win:
             self._draw_end_screen()
 
+        if getattr(self, 'draft_active', False):
+            # Dim background
+            draw_rect_alpha(self.screen, C_BLACK, (0,0,SCREEN_W,SCREEN_H), 180)
+            
+            title_font=pygame.font.SysFont("consolas",60,bold=True)
+            ts = title_font.render("CHOOSE YOUR CURSE", True, (255, 80, 80))
+            self.screen.blit(ts, ts.get_rect(center=(SCREEN_W//2, SCREEN_H//2 - 280)))
 
-
+            card_w, card_h = 300, 400
+            gap = 60
+            total_w = 2 * card_w + gap
+            start_x = SCREEN_W // 2 - total_w // 2
+            start_y = SCREEN_H // 2 - card_h // 2
+            
+            title_f = pygame.font.SysFont("segoeui", 26, bold=True)
+            desc_f = pygame.font.SysFont("segoeui", 18)
+            
+            mx, my = pygame.mouse.get_pos()
+            for i, c in enumerate(self.draft_cards):
+                r = pygame.Rect(start_x + i * (card_w + gap), start_y, card_w, card_h)
+                hov = r.collidepoint((mx, my))
+                
+                bg_col = (40, 20, 25) if hov else (25, 15, 20)
+                brd_col = (255, 100, 100) if hov else (150, 40, 40)
+                
+                draw_rect_alpha(self.screen, bg_col, r, 240, 16)
+                pygame.draw.rect(self.screen, brd_col, r, 3, border_radius=16)
+                
+                # Title
+                ts = title_f.render(c["title"], True, (255, 150, 150))
+                self.screen.blit(ts, ts.get_rect(centerx=r.centerx, top=r.top + 30))
+                
+                # Description
+                import textwrap
+                words = textwrap.wrap(c["desc"], width=24)
+                for line_idx, line in enumerate(words):
+                    ls = desc_f.render(line, True, (200, 200, 200))
+                    self.screen.blit(ls, ls.get_rect(centerx=r.centerx, top=r.top + 100 + line_idx * 28))
 
 
         # Achievement toasts — always drawn on top
@@ -13714,7 +14041,8 @@ def _run_multiplayer(screen, save_data):
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("START")
-    screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
+    # Apply saved display settings (fullscreen/windowed + resolution) on startup
+    screen = _apply_display_mode()
     pygame.display.set_caption("Tower Defense")
     save_data = load_save()
     print("save_data loaded:", list(save_data.keys()))
@@ -13804,12 +14132,13 @@ if __name__ == "__main__":
             ls.run()
             save_data = load_save()
 
-        elif action in ("play_easy", "play_sandbox", "play_fallen", "play_frosty", "play_infernal", "play_hardcore"):
+        elif action in ("play_easy", "play_sandbox", "play_fallen", "play_frosty", "play_infernal", "play_hardcore", "play_draft"):
             if action == "play_sandbox": mode = "sandbox"
             elif action == "play_fallen": mode = "fallen"
             elif action == "play_frosty": mode = "frosty"
             elif action == "play_infernal": mode = "infernal"
             elif action == "play_hardcore": mode = "hardcore"
+            elif action == "play_draft": mode = "draft"
             else: mode = "easy"
             print("Starting game mode:", mode)
             try:
