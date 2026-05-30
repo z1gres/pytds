@@ -18,6 +18,23 @@ from game_core import (
     UNIT_LIMITS,
 )
 
+# ── Language system ────────────────────────────────────────────────────────────
+try:
+    import lang as _lang_mp
+    _t_mp = _lang_mp.t
+except ImportError:
+    try:
+        import importlib.util as _lilu_mp, os as _os_mp, sys as _sys_mp
+        _lp = _os_mp.path.join(_os_mp.path.dirname(_os_mp.path.abspath(__file__)),
+                               "..", "assets", "lang.py")
+        _ls = _lilu_mp.spec_from_file_location("lang", _lp)
+        _lm = _lilu_mp.module_from_spec(_ls)
+        _ls.loader.exec_module(_lm)
+        _sys_mp.modules["lang"] = _lm
+        _t_mp = _lm.t
+    except Exception:
+        def _t_mp(key, **kw): return key
+
 # ── Tunnel address ────────────────────────────────────────────────────────────
 MP_HOST = "when-jury.gl.at.ply.gg"
 MP_PORT = 33699
@@ -89,12 +106,11 @@ class UDPClient:
 # ── Shared drawing helpers ────────────────────────────────────────────────────
 def _draw_bg(surf):
     surf.fill((12, 14, 22))
-    random.seed(7)
+    _rng_bg = random.Random(7)
     for _ in range(120):
-        sx = random.randint(0, SCREEN_W)
-        sy = random.randint(0, SCREEN_H)
+        sx = _rng_bg.randint(0, SCREEN_W)
+        sy = _rng_bg.randint(0, SCREEN_H)
         pygame.draw.circle(surf, (30, 35, 55), (sx, sy), 1)
-    random.seed()
 
 def _btn(surf, rect, label, hov, accent=(60, 130, 220)):
     bg  = tuple(min(255, c + 30) for c in accent) if hov else tuple(c // 2 for c in accent)
@@ -331,8 +347,9 @@ class LobbyScreen:
     def _do_join(self, room, password):
         # Check if our nick matches the host's nick
         if self.nick.strip().lower() == room.get("host", "").strip().lower():
-            self.error   = f"Your nickname '{self.nick}' is the same as the host's! Change it in Profile."
-            self.error_t = 4.0
+            self.error   = _t_mp("mp.nick_taken", nick=self.nick)
+            self.error_t = 5.0
+            self._join_popup = None  # закрыть попап с паролем если открыт
             return
         self.net.send({"type": "join_room", "nick": self.nick,
                        "room_id": room["id"], "password": password})
@@ -351,10 +368,20 @@ class LobbyScreen:
         hint_f = pygame.font.SysFont("segoeui", 14)
         hint_s = hint_f.render(f"Server: {MP_HOST}:{MP_PORT}", True, (60, 80, 120))
         surf.blit(hint_s, (10, SCREEN_H - 22))
-        # Error
+        # Error banner
         if self.error_t > 0:
-            ef = pygame.font.SysFont("segoeui", 22).render(self.error, True, (255, 80, 80))
-            surf.blit(ef, ef.get_rect(center=(cx, 125)))
+            ef = pygame.font.SysFont("segoeui", 20, bold=True)
+            es = ef.render("⚠  " + self.error, True, (255, 220, 80))
+            ew, eh = es.get_size()
+            pad = 14
+            bx = cx - ew // 2 - pad
+            by = 108
+            # Мигание при свежей ошибке
+            alpha = 255 if self.error_t > 4.5 or int(self.error_t * 6) % 2 == 0 else 180
+            draw_rect_alpha(surf, (120, 20, 20), (bx, by, ew + pad * 2, eh + pad), alpha, 10)
+            pygame.draw.rect(surf, (255, 80, 80), pygame.Rect(bx, by, ew + pad * 2, eh + pad), 2, border_radius=10)
+            es.set_alpha(alpha)
+            surf.blit(es, (bx + pad, by + pad // 2))
         # Room list
         list_top = 130; row_h = 72; list_w = 900
         list_x = cx - list_w // 2
@@ -810,7 +837,6 @@ class _MPGameFactory:
                 self._chat_open     = False
                 self._chat_input    = ""
                 self._chat_scroll   = 0
-                self._last_speed_idx = 2   # track speed changes to broadcast
 
             # ── Called every frame just before pygame.display.flip() ──────────
             def _mp_overlay_hook(self):
@@ -866,12 +892,6 @@ class _MPGameFactory:
 
                 # Draw peer cursor
                 self.peer_cursor.draw(self.screen)
-
-                # Broadcast speed change
-                cur_spd = self.ui._speed_idx
-                if cur_spd != self._last_speed_idx:
-                    self._last_speed_idx = cur_spd
-                    self.net.send({"type": "speed_sync", "idx": cur_spd})
 
                 # Draw leaderboard
                 own2 = [u for u in self.units if not getattr(u, '_mp_peer', False)]
@@ -978,10 +998,6 @@ class _MPGameFactory:
                         _ct = msg.get('text','')
                         self._chat_log.append((_cn, _ct, pygame.time.get_ticks()))
                         self.ui.show_msg(f"[{_cn}]: {_ct}", 4.0)
-
-                    elif t == "speed_sync":
-                        _idx = msg.get("idx", 2)
-                        self.ui._speed_idx = max(0, min(_idx, len(self.ui._SPEED_STEPS)-1))
 
             def run(self):
                 """Override: pump chat events before parent run() sees them."""

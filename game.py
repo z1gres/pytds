@@ -34,6 +34,16 @@ def _get_dim_surf() -> pygame.Surface:
 _ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 if _ASSETS_DIR not in sys.path:
     sys.path.insert(0, _ASSETS_DIR)
+
+# ── Language system ────────────────────────────────────────────────────────────
+import importlib.util as _lang_ilu
+_lang_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "lang.py")
+_lang_spec = _lang_ilu.spec_from_file_location("lang", _lang_path)
+_lang_mod  = _lang_ilu.module_from_spec(_lang_spec)
+_lang_spec.loader.exec_module(_lang_mod)
+import sys as _sys_lang
+_sys_lang.modules["lang"] = _lang_mod
+from lang import t as _t, set_lang as _set_lang, get_lang as _get_lang
 import game_core  # needed to update game_core.CURRENT_MAP in the shared module
 _game_core = game_core  # alias expected by multiplayer.py
 from game_core import (
@@ -64,6 +74,7 @@ UNIT_LIMITS["Conduit"]    = 3
 
 UNIT_LIMITS["ControlPanel"] = 1
 UNIT_LIMITS["Castbound"]   = 5
+UNIT_LIMITS["TheStrongest"] = 5
 
 GLOBAL_UNIT_LIMIT = 40   # max total towers per match
 
@@ -128,17 +139,17 @@ _DAILY_QUEST_POOL = [
 ]
 
 _DRAFT_CARDS = [
-    {"id": "remove_tower", "title": "Sacrifice", "desc": "Удалить рандомную башню"},
-    {"id": "range_down", "title": "Myopia", "desc": "Дальность всех башен -20% на 5 волн"},
-    {"id": "upgrade_cost", "title": "Inflation", "desc": "Цена на апгрейды +15%"},
-    {"id": "half_money", "title": "Taxes", "desc": "Деньги делятся на 2"},
-    {"id": "level_down", "title": "Amnesia", "desc": "Рандомная башня теряет 1 уровень"},
-    {"id": "damage_down", "title": "Weakness", "desc": "Урон всех башен -50% на 5 волн"},
-    {"id": "firerate_down", "title": "Lethargy", "desc": "Фаеррейт -20%"},
-    {"id": "rollback", "title": "Time Loop", "desc": "Откат на 3 волны назад"},
-    {"id": "zero_money", "title": "Bankruptcy", "desc": "Списывает деньги до нуля"},
-    {"id": "damage_5", "title": "Nerf Gun", "desc": "Урон 5 всем башням на 15 секунд"},
-    {"id": "all_jesters", "title": "Circus", "desc": "Все башни заменяются на Jester 1 лвла навсегда"},
+    {"id": "remove_tower", "title": "Sacrifice",  "desc_key": "draft.remove_tower"},
+    {"id": "range_down",   "title": "Myopia",     "desc_key": "draft.range_down"},
+    {"id": "upgrade_cost", "title": "Inflation",  "desc_key": "draft.upgrade_cost"},
+    {"id": "half_money",   "title": "Taxes",      "desc_key": "draft.half_money"},
+    {"id": "level_down",   "title": "Amnesia",    "desc_key": "draft.level_down"},
+    {"id": "damage_down",  "title": "Weakness",   "desc_key": "draft.damage_down"},
+    {"id": "firerate_down","title": "Lethargy",   "desc_key": "draft.firerate_down"},
+    {"id": "rollback",     "title": "Time Loop",  "desc_key": "draft.rollback"},
+    {"id": "zero_money",   "title": "Bankruptcy", "desc_key": "draft.zero_money"},
+    {"id": "damage_5",     "title": "Nerf Gun",   "desc_key": "draft.damage_5"},
+    {"id": "all_jesters",  "title": "Circus",     "desc_key": "draft.all_jesters"},
 ]
 
 _DAILY_COUNT = 3  # how many quests to pick per day
@@ -380,6 +391,7 @@ from units import (
     Castbound, CASTBOUND_LEVELS, C_CASTBOUND, C_CASTBOUND_DARK,
     CB_BLADE_DEFS, _cb_load_icon,
     C_CB_ZENITH, C_CB_ICE,
+    TheStrongest, _STRONGEST_LEVELS, C_STRONGEST, C_STRONGEST_DARK,
 )
 
 # ── Archer level 3 upgrade cost → 750 ────────────────────────────────────────
@@ -761,6 +773,7 @@ class AdminPanel:
                 ("Conduit",Conduit,C_CONDUIT),
                 ("CtrlPanel",ControlPanel,C_CTRLPANEL),
                 ("Castbound",Castbound,C_CASTBOUND),
+                ("Strongest",TheStrongest,C_STRONGEST),
             ]
             cols=8; cw=(pw-28)//cols; ch=100; gap=6
             start_x=px+10; start_y=content_top+6
@@ -2092,6 +2105,12 @@ class UI:
             result={"Damage":d,"Firerate":fr,"Range":r}
             if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
             return result
+        elif cls==TheStrongest:
+            if nxt>=len(_STRONGEST_LEVELS): return None
+            d,fr,r,_,hd=_STRONGEST_LEVELS[nxt]
+            result={"Damage":d,"Firerate":fr,"Range":r}
+            if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
+            return result
         return None
 
     def _outline_text(self, surf, text, font, pos, text_col, outline_col=(0,0,0), outline_px=2, center_x=False, center_y=False):
@@ -2490,7 +2509,7 @@ class UI:
 
             cls=type(u)
             nxt=self._get_next_stats(u)
-            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,HackerLaserTest:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS,Farm:FARM_LEVELS,Harvester:HARVESTER_LEVELS,Twitgunner:TWITGUN_LEVELS,Felyne:FELYNE_LEVELS,Conduit:CONDUIT_LEVELS,Castbound:CASTBOUND_LEVELS}
+            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,HackerLaserTest:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS,Farm:FARM_LEVELS,Harvester:HARVESTER_LEVELS,Twitgunner:TWITGUN_LEVELS,Felyne:FELYNE_LEVELS,Conduit:CONDUIT_LEVELS,Castbound:CASTBOUND_LEVELS,TheStrongest:_STRONGEST_LEVELS}
             lvl_list=levels_map.get(cls,[])
             if cls==Jester: lvl_list=JESTER_LEVELS
             total_lvls=len(lvl_list)
@@ -2967,6 +2986,17 @@ class UI:
                         stats.append(("zenith_unlock",   None, "Unlocks Zenith"))
                         stats.append(("starwrath_unlock", None, "Unlocks Star Wrath"))
                 if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
+            elif cls==TheStrongest:
+                hd_now  = u.hidden_detection
+                hd_next = bool(nxt and nxt.get("HidDet") and not hd_now)
+                stats = []
+                if hd_now: stats.append(("HidDet","Hidden Detection",None))
+                stats += [
+                    ("Damage",   u.damage,              nxt.get("Damage")   if nxt else None),
+                    ("Firerate", f"{u.firerate:.3f}",    f"{nxt['Firerate']:.3f}" if nxt else None),
+                    ("Range",    u.range_tiles,           nxt.get("Range")   if nxt else None),
+                ]
+                if hd_next: stats.append(("HidDet_unlock", None, "Hidden Detection"))
             else:
                 stats=[(k,v,None) for k,v in u.get_info().items()]
 
@@ -4971,16 +5001,50 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
                              (cx + 1 * P2 - P2 // 2, cy - 6 * P2 - P2 // 2, P2, P2))
 
             # Звёздный пылевой хвост
-            random.seed(int(t * 12))
+            _rng_tail = random.Random(int(t * 12))
             for _ in range(3):
-                tx2 = cx + random.randint(-10, 10)
-                ty2 = cy + random.randint(22, 40)
-                tr2 = random.randint(1, 3)
-                ta  = random.randint(60, 140)
+                tx2 = cx + _rng_tail.randint(-10, 10)
+                ty2 = cy + _rng_tail.randint(22, 40)
+                tr2 = _rng_tail.randint(1, 3)
+                ta  = _rng_tail.randint(60, 140)
                 ts2 = pygame.Surface((tr2 * 2, tr2 * 2), pygame.SRCALPHA)
                 pygame.draw.circle(ts2, (80, 160, 255, ta), (tr2, tr2), tr2)
                 surf.blit(ts2, (tx2 - tr2, ty2 - tr2))
-            random.seed()
+
+    elif unit_name == "The Strongest":
+        # ── Pulsing dark crimson aura ─────────────────────────────────────────
+        pulse = abs(math.sin(t * 2.5))
+        aura_r = sc(30) + int(pulse * sc(5))
+        aura_s = pygame.Surface((aura_r * 2, aura_r * 2), pygame.SRCALPHA)
+        aura_a = int(pulse * 55 + 18)
+        pygame.draw.circle(aura_s, (200, 20, 20, aura_a), (aura_r, aura_r), aura_r)
+        surf.blit(aura_s, (cx - aura_r, cy - aura_r))
+        # ── Body ─────────────────────────────────────────────────────────────
+        pygame.draw.circle(surf, C_STRONGEST_DARK, (cx, cy), sc(27))
+        pygame.draw.circle(surf, C_STRONGEST,      (cx, cy), sc(22))
+        # Inner shimmer
+        hi_a = int(55 + abs(math.sin(t * 1.8)) * 45)
+        hi_s = pygame.Surface((sc(20), sc(20)), pygame.SRCALPHA)
+        pygame.draw.circle(hi_s, (255, 100, 100, hi_a), (sc(10), sc(10)), sc(8))
+        surf.blit(hi_s, (cx - sc(10), cy - sc(10)))
+        # ── Tattoo dots (4 gold dots — Sukuna markings) ───────────────────────
+        for ddx, ddy in [(-sc(8), -sc(6)), (sc(8), -sc(6)), (-sc(8), sc(4)), (sc(8), sc(4))]:
+            pygame.draw.circle(surf, (10, 0, 0),            (cx + ddx, cy + ddy), max(1, sc(3)))
+            pygame.draw.circle(surf, (255, 200, 50),        (cx + ddx, cy + ddy), max(1, sc(2)))
+        # ── 4 eyes (two pairs) ────────────────────────────────────────────────
+        for ex, ey, ew, eh in [(-sc(10), -sc(11), sc(7), sc(5)),
+                                (sc(3),  -sc(11), sc(7), sc(5)),
+                                (-sc(10), sc(3),  sc(7), sc(4)),
+                                (sc(3),   sc(3),  sc(7), sc(4))]:
+            pygame.draw.ellipse(surf, (255, 220, 200), (cx + ex, cy + ey, ew, eh))
+        # slit pupils
+        blink = max(1, int(sc(3) * abs(math.sin(t * 0.3))) + 1)
+        for px2, py2 in [(-sc(9), -sc(10)), (sc(4), -sc(10)), (-sc(9), sc(4)), (sc(4), sc(4))]:
+            pygame.draw.ellipse(surf, (10, 0, 0), (cx + px2, cy + py2, sc(5), blink))
+        # ── Grin ──────────────────────────────────────────────────────────────
+        mouth_rect = pygame.Rect(cx - sc(11), cy + sc(11), sc(22), sc(12))
+        pygame.draw.arc(surf, (10, 0, 0),    mouth_rect, math.pi, 0, max(2, sp(4)))
+        pygame.draw.arc(surf, (255, 80, 80), mouth_rect, math.pi, 0, max(1, sp(2)))
 
     else:
         # Fallback: colored circle with unit's color
@@ -5833,13 +5897,13 @@ class CreditsScreen:
     def _draw(self):
         surf = self.screen
         surf.fill(C_BG)
-        import random, math
-        random.seed(33)
+        import math
+        # Stars bg
+        _rng_bg = random.Random(33)
         for _ in range(160):
-            sx = random.randint(0, SCREEN_W); sy = random.randint(0, SCREEN_H)
+            sx = _rng_bg.randint(0, SCREEN_W); sy = _rng_bg.randint(0, SCREEN_H)
             br = int(abs(math.sin(self.t * 1.0 + sx * 0.012)) * 150 + 50)
             pygame.draw.circle(surf, (br, br, br), (sx, sy), 1)
-        random.seed()
 
         # Header
         pygame.draw.rect(surf, C_PANEL, (0, 0, SCREEN_W, 70))
@@ -6143,13 +6207,11 @@ class AchievementsScreen:
         surf.fill(C_BG)
 
         # Stars bg
-        import random, math
-        random.seed(99)
+        _rng_bg = random.Random(99)
         for _ in range(160):
-            sx = random.randint(0, SCREEN_W); sy = random.randint(0, SCREEN_H)
+            sx = _rng_bg.randint(0, SCREEN_W); sy = _rng_bg.randint(0, SCREEN_H)
             br = int(abs(math.sin(self.t * 1.1 + sx * 0.013)) * 160 + 50)
             pygame.draw.circle(surf, (br, br, br), (sx, sy), 1)
-        random.seed()
 
         # Header
         pygame.draw.rect(surf, C_PANEL, (0, 0, SCREEN_W, 70))
@@ -6293,6 +6355,7 @@ SETTINGS = {
     "menu_style":     0,   # 0 = Void/Gothic, 1 = Modern/Blue
     "no_tower_details": False,  # simple colored circles instead of detailed tower art
     "upgrade_preview":  True,   # show translucent next-level range ring on Upgrade hover
+    "language":         "en",   # "en" or "ru"
 }
 
 
@@ -6391,6 +6454,7 @@ def save_settings():
 
 load_settings()
 game_core._COMPACT_NUMBERS = SETTINGS.get("compact_numbers", True)
+_set_lang(SETTINGS.get("language", "en"))
 
 def _apply_display_mode_startup():
     """Apply saved windowed/resolution on startup — only if non-default."""
@@ -6957,7 +7021,7 @@ class ProfileScreen:
 
 
 class SettingsScreen:
-    _TABS = ["AUDIO", "GRAPHICS", "DISPLAY"]
+    _TABS = ["AUDIO", "GRAPHICS", "DISPLAY", "LANGUAGE"]
 
     def __init__(self, screen, save_data):
         self.screen    = screen
@@ -6967,7 +7031,7 @@ class SettingsScreen:
         self._drag_music = False
         self._drag_sfx   = False
         self._tab        = 0
-        self._tab_anim   = [0.0, 0.0, 0.0]   # hover lerp per tab
+        self._tab_anim   = [0.0, 0.0, 0.0, 0.0]   # hover lerp per tab
         self._toggle_hover = {}               # key -> 0..1
 
         cx = SCREEN_W // 2
@@ -6995,28 +7059,28 @@ class SettingsScreen:
 
         # ── GRAPHICS toggles ──────────────────────────────────────────────────
         self._gfx_toggles = [
-            ("colored_range",     "Colored Range Rings"),
-            ("screen_shake",      "Screen Shake"),
-            ("particles",         "Particles & Effects"),
-            ("show_damage",       "Damage / Money Numbers"),
-            ("compact_numbers",   "Compact Numbers  (1k)"),
-            ("show_grid",         "Show Grid"),
-            ("show_fps",          "Show FPS"),
-            ("show_range_always", "Always Show Range"),
-            ("low_quality",       "Low Detail Mode"),
-            ("unlock_fps",        "Unlock FPS"),
-            ("no_tower_details",  "No Tower Details"),
-            ("upgrade_preview",   "Upgrade Preview Range"),
+            ("colored_range",     _t("settings.colored_range")),
+            ("screen_shake",      _t("settings.screen_shake")),
+            ("particles",         _t("settings.particles")),
+            ("show_damage",       _t("settings.show_damage")),
+            ("compact_numbers",   _t("settings.compact_numbers")),
+            ("show_grid",         _t("settings.show_grid")),
+            ("show_fps",          _t("settings.show_fps")),
+            ("show_range_always", _t("settings.show_range_always")),
+            ("low_quality",       _t("settings.low_quality")),
+            ("unlock_fps",        _t("settings.unlock_fps")),
+            ("no_tower_details",  _t("settings.no_tower_details")),
+            ("upgrade_preview",   _t("settings.upgrade_preview")),
         ]
         self._aud_toggles = [
-            ("music_muted", "Mute Music"),
-            ("sfx_muted",   "Mute SFX"),
+            ("music_muted", _t("settings.mute_music")),
+            ("sfx_muted",   _t("settings.mute_sfx")),
         ]
         self._misc_toggles = [
-            ("auto_skip",            "Auto Skip"),
-            ("sell_confirm",         "Confirm Before Sell"),
-            ("fast_forward_default", "Auto X2 Speed"),
-            ("linux_mode",           "Linux Mode"),
+            ("auto_skip",            _t("settings.auto_skip")),
+            ("sell_confirm",         _t("settings.sell_confirm")),
+            ("fast_forward_default", _t("settings.fast_forward")),
+            ("linux_mode",           _t("settings.linux_mode")),
         ]
         self._toggle_rects_cache = {}
 
@@ -7039,6 +7103,12 @@ class SettingsScreen:
         self.btn_style_vertical = pygame.Rect(_sx0 + (_sw + 10)*2, self._card.y + 370, _sw, 48)
         self.btn_style_gothic   = pygame.Rect(_sx0 + (_sw + 10)*3, self._card.y + 370, _sw, 48)
 
+        # ── LANGUAGE buttons ──────────────────────────────────────────────────
+        _lbw = 260; _lbh = 64; _lg = 30
+        _lx0 = cx - (_lbw * 2 + _lg) // 2
+        self.btn_lang_en = pygame.Rect(_lx0,           self._card.y + 120, _lbw, _lbh)
+        self.btn_lang_ru = pygame.Rect(_lx0 + _lbw + _lg, self._card.y + 120, _lbw, _lbh)
+
         # ── Back button ───────────────────────────────────────────────────────
         self.btn_back = pygame.Rect(cx - 110, SCREEN_H - 64, 220, 44)
 
@@ -7049,6 +7119,33 @@ class SettingsScreen:
     # ── Slider helpers ────────────────────────────────────────────────────────
     def _music_bar(self): return self._bar_music
     def _sfx_bar(self):   return self._bar_sfx
+
+    def _rebuild_toggle_labels(self):
+        """Rebuild toggle label strings after language change."""
+        self._gfx_toggles = [
+            ("colored_range",     _t("settings.colored_range")),
+            ("screen_shake",      _t("settings.screen_shake")),
+            ("particles",         _t("settings.particles")),
+            ("show_damage",       _t("settings.show_damage")),
+            ("compact_numbers",   _t("settings.compact_numbers")),
+            ("show_grid",         _t("settings.show_grid")),
+            ("show_fps",          _t("settings.show_fps")),
+            ("show_range_always", _t("settings.show_range_always")),
+            ("low_quality",       _t("settings.low_quality")),
+            ("unlock_fps",        _t("settings.unlock_fps")),
+            ("no_tower_details",  _t("settings.no_tower_details")),
+            ("upgrade_preview",   _t("settings.upgrade_preview")),
+        ]
+        self._aud_toggles = [
+            ("music_muted", _t("settings.mute_music")),
+            ("sfx_muted",   _t("settings.mute_sfx")),
+        ]
+        self._misc_toggles = [
+            ("auto_skip",            _t("settings.auto_skip")),
+            ("sell_confirm",         _t("settings.sell_confirm")),
+            ("fast_forward_default", _t("settings.fast_forward")),
+            ("linux_mode",           _t("settings.linux_mode")),
+        ]
 
     def _set_music_vol(self, mx):
         bar = self._bar_music
@@ -7133,6 +7230,17 @@ class SettingsScreen:
             if self.btn_style_modern.collidepoint(pos):   SETTINGS["menu_style"] = 1; return
             if self.btn_style_vertical.collidepoint(pos): SETTINGS["menu_style"] = 2; return
             if self.btn_style_gothic.collidepoint(pos):   SETTINGS["menu_style"] = 3; return
+        if self._tab == 3:
+            if self.btn_lang_en.collidepoint(pos):
+                SETTINGS["language"] = "en"; _set_lang("en")
+                self._toggle_rects_cache.clear()
+                self._rebuild_toggle_labels()
+                return
+            if self.btn_lang_ru.collidepoint(pos):
+                SETTINGS["language"] = "ru"; _set_lang("ru")
+                self._toggle_rects_cache.clear()
+                self._rebuild_toggle_labels()
+                return
         _ARCH_KEYS = {"linux_mode"}
         for rect, key, _ in self._get_tab_toggles(self._tab):
             if rect.collidepoint(pos):
@@ -7323,9 +7431,11 @@ class SettingsScreen:
         surf.blit(hs, hs.get_rect(center=(cx, 41)))
 
         # ── Tab bar ───────────────────────────────────────────────────────────
-        _TAB_ACCENTS = [(70, 140, 255), (60, 200, 140), (160, 120, 255)]
-        _TAB_ICONS   = [">>", ">>", ">>"]
-        for i, (tr, lbl) in enumerate(zip(self._tab_rects, self._TABS)):
+        _TAB_ACCENTS = [(70, 140, 255), (60, 200, 140), (160, 120, 255), (255, 180, 60)]
+        _TAB_ICONS   = [">>", ">>", ">>", ">>"]
+        _TAB_LABELS  = [_t("settings.tab.audio"), _t("settings.tab.graphics"),
+                        _t("settings.tab.display"), _t("settings.tab.language")]
+        for i, (tr, lbl) in enumerate(zip(self._tab_rects, _TAB_LABELS)):
             active = (i == self._tab)
             hov    = tr.collidepoint(mx, my)
             acc    = _TAB_ACCENTS[i]
@@ -7378,17 +7488,17 @@ class SettingsScreen:
             acc = _TAB_ACCENTS[0]
 
             # Music
-            self._draw_section_header(surf, "MUSIC", acc, lx, card.y + 30, w_inner)
+            self._draw_section_header(surf, _t("settings.music_volume").upper(), acc, lx, card.y + 30, w_inner)
             self._draw_slider(surf, self._bar_music,
                               SETTINGS["music_volume"], SETTINGS["music_muted"],
-                              "Music Volume", acc)
+                              _t("settings.music_volume"), acc)
 
             # SFX
             sfx_acc = _TAB_ACCENTS[1]
-            self._draw_section_header(surf, "SOUND EFFECTS", sfx_acc, lx, card.y + 150, w_inner)
+            self._draw_section_header(surf, _t("settings.sfx_volume").upper(), sfx_acc, lx, card.y + 150, w_inner)
             self._draw_slider(surf, self._bar_sfx,
                               SETTINGS["sfx_volume"], SETTINGS["sfx_muted"],
-                              "SFX Volume", sfx_acc)
+                              _t("settings.sfx_volume"), sfx_acc)
 
             # Other toggles
             other_y = self._bar_sfx.bottom + 36
@@ -7400,7 +7510,7 @@ class SettingsScreen:
         # ══ GRAPHICS tab ══════════════════════════════════════════════════════
         elif self._tab == 1:
             acc = _TAB_ACCENTS[1]
-            self._draw_section_header(surf, "VISUAL OPTIONS", acc, lx, card.y + 22, w_inner)
+            self._draw_section_header(surf, _t("settings.gfx.section"), acc, lx, card.y + 22, w_inner)
             for rect, key, lbl in self._get_tab_toggles(1):
                 self._draw_toggle(surf, rect, lbl, SETTINGS[key])
 
@@ -7410,31 +7520,72 @@ class SettingsScreen:
             is_windowed = SETTINGS.get("windowed", False)
 
             # Window mode
-            self._draw_section_header(surf, "WINDOW MODE", acc, lx, card.y + 32, w_inner)
+            self._draw_section_header(surf, _t("settings.display.section"), acc, lx, card.y + 32, w_inner)
             for btn, label, active in [
-                (self.btn_windowed,   "Windowed",  is_windowed),
-                (self.btn_fullscreen, "Fullscreen", not is_windowed),
+                (self.btn_windowed,   _t("settings.windowed"),   is_windowed),
+                (self.btn_fullscreen, _t("settings.fullscreen"), not is_windowed),
             ]:
                 self._draw_option_btn(surf, btn, label, active, acc, mx, my)
 
             # Resolution
-            self._draw_section_header(surf, "RESOLUTION", acc, lx, card.y + 158, w_inner)
+            self._draw_section_header(surf, _t("settings.resolution"), acc, lx, card.y + 158, w_inner)
             cur_res = SETTINGS.get("resolution", "1920x1080")
             for rb, res in zip(self._res_btns, _RESOLUTIONS):
                 self._draw_option_btn(surf, rb, res, res == cur_res, (60, 200, 140), mx, my)
 
             hint_f = pygame.font.SysFont("segoeui", 13)
-            hint_s = hint_f.render("Changes apply immediately. Restart may be needed.", True, (60, 68, 100))
+            hint_s = hint_f.render(_t("settings.res_hint"), True, (60, 68, 100))
             surf.blit(hint_s, hint_s.get_rect(center=(card.centerx, card.y + 262)))
 
             # Menu style
-            self._draw_section_header(surf, "MENU STYLE", acc, lx, card.y + 330, w_inner)
-            _STYLE_LABELS = ["Void", "Modern", "Vertical", "Gothic"]
+            self._draw_section_header(surf, _t("settings.menu_style"), acc, lx, card.y + 330, w_inner)
+            _STYLE_LABELS = [_t("settings.style.void"), _t("settings.style.modern"),
+                             _t("settings.style.vertical"), _t("settings.style.gothic")]
             _style_btns   = [self.btn_style_void, self.btn_style_modern,
                              self.btn_style_vertical, self.btn_style_gothic]
             cur_style = SETTINGS.get("menu_style", 0)
             for idx2, (s_btn, s_lbl) in enumerate(zip(_style_btns, _STYLE_LABELS)):
                 self._draw_option_btn(surf, s_btn, s_lbl, cur_style == idx2, acc, mx, my)
+
+        # ══ LANGUAGE tab ══════════════════════════════════════════════════════
+        elif self._tab == 3:
+            acc = _TAB_ACCENTS[3]
+            self._draw_section_header(surf, _t("settings.lang.section"), acc, lx, card.y + 40, w_inner)
+
+            cur_lang = SETTINGS.get("language", "en")
+            _LANG_OPTS = [
+                (self.btn_lang_en, "en", "🇬🇧  English"),
+                (self.btn_lang_ru, "ru", "🇷🇺  Русский"),
+            ]
+            for l_btn, l_code, l_label in _LANG_OPTS:
+                _active = (cur_lang == l_code)
+                _hov    = l_btn.collidepoint(mx, my)
+                _l_bg   = pygame.Surface((l_btn.w, l_btn.h), pygame.SRCALPHA)
+                if _active:
+                    pygame.draw.rect(_l_bg, (*acc, 55), (0, 0, l_btn.w, l_btn.h), border_radius=14)
+                    surf.blit(_l_bg, l_btn.topleft)
+                    pygame.draw.rect(surf, acc, l_btn, 2, border_radius=14)
+                    # active glow strip
+                    _gs = pygame.Surface((l_btn.w - 20, 3), pygame.SRCALPHA)
+                    for _gx in range(l_btn.w - 20):
+                        _gf = abs(_gx - (l_btn.w - 20) / 2) / ((l_btn.w - 20) / 2)
+                        pygame.draw.line(_gs, (*acc, int(200 * (1 - _gf ** 2))), (_gx, 0), (_gx, 2))
+                    surf.blit(_gs, (l_btn.x + 10, l_btn.bottom - 2))
+                else:
+                    _bg_c = (35, 38, 65, 220) if _hov else (22, 24, 42, 200)
+                    pygame.draw.rect(_l_bg, _bg_c, (0, 0, l_btn.w, l_btn.h), border_radius=14)
+                    surf.blit(_l_bg, l_btn.topleft)
+                    _brd = (90, 100, 150) if _hov else (55, 60, 95)
+                    pygame.draw.rect(surf, _brd, l_btn, 1, border_radius=14)
+                _lf = pygame.font.SysFont("segoeui", 26, bold=True)
+                _tc = (230, 245, 255) if _active else (int(110 + _hov * 60), int(120 + _hov * 60), int(165 + _hov * 55))
+                _ls = _lf.render(l_label, True, _tc)
+                surf.blit(_ls, _ls.get_rect(center=l_btn.center))
+
+            # Hint
+            _hf2 = pygame.font.SysFont("segoeui", 14)
+            _hs2 = _hf2.render(_t("settings.lang.hint"), True, (60, 70, 105))
+            surf.blit(_hs2, _hs2.get_rect(center=(card.centerx, self.btn_lang_en.bottom + 28)))
 
         # ── Back button ───────────────────────────────────────────────────────
         hov = self.btn_back.collidepoint(mx, my)
@@ -7483,21 +7634,21 @@ class SettingsScreen:
             _f_hint  = pygame.font.SysFont("segoeui", 13)
 
             # Надпись категории сверху (как в Subnautica — маленькие капсы)
-            _cat = _f_head.render("SYSTEM  //  LINUX MODE", True, (0, 160, 220))
+            _cat = _f_head.render(_t("linux.category"), True, (0, 160, 220))
             surf.blit(_cat, _cat.get_rect(centerx=SCREEN_W // 2, top=CY + 18))
 
             # Горизонтальный разделитель под категорией
             pygame.draw.line(surf, (0, 80, 140), (CX + 24, CY + 36), (CX + CW - 24, CY + 36), 1)
 
             # Заголовок
-            _title_s = _f_title.render("Совместимость не гарантирована", True, (200, 230, 255))
+            _title_s = _f_title.render(_t("linux.title"), True, (200, 230, 255))
             surf.blit(_title_s, _title_s.get_rect(centerx=SCREEN_W // 2, top=CY + 48))
 
             # Основной текст — лаконично, без буллетов
             _body_lines = [
-                "Режим разработан для Arch Linux + KDE Plasma + Wayland.",
-                "На других системах поведение может отличаться.",
-                "Для применения изменений перезапустите игру.",
+                _t("linux.line1"),
+                _t("linux.line2"),
+                _t("linux.line3"),
             ]
             _ty = CY + 106
             for _bl in _body_lines:
@@ -7526,11 +7677,11 @@ class SettingsScreen:
                 _shine.fill((255, 255, 255, 14))
                 surf.blit(_shine, (btn.x + 1, btn.y + 1))
 
-            _btn_lbl = _f_title.render("ПРОДОЛЖИТЬ", True, (200, 240, 255) if _hov else (140, 200, 240))
+            _btn_lbl = _f_title.render(_t("linux.continue"), True, (200, 240, 255) if _hov else (140, 200, 240))
             surf.blit(_btn_lbl, _btn_lbl.get_rect(center=btn.center))
 
             # Подсказка под кнопкой
-            _hint_s = _f_hint.render("нажмите для продолжения", True, (40, 90, 130))
+            _hint_s = _f_hint.render(_t("linux.click_hint"), True, (40, 90, 130))
             surf.blit(_hint_s, _hint_s.get_rect(centerx=SCREEN_W // 2, top=btn.bottom + 8))
 
 
@@ -8108,13 +8259,12 @@ class ShopScreen:
         mx, my = pygame.mouse.get_pos()
 
         # Stars background
-        random.seed(55)
+        _rng_bg = random.Random(55)
         for i in range(220):
-            sx = random.randint(0, SCREEN_W)
-            sy = random.randint(0, SCREEN_H)
+            sx = _rng_bg.randint(0, SCREEN_W)
+            sy = _rng_bg.randint(0, SCREEN_H)
             br = int(abs(math.sin(t * 0.7 + i * 0.4)) * 120 + 40)
             pygame.draw.circle(surf, (br, br, min(255, br + 40)), (sx, sy), 1)
-        random.seed()
 
         # Header bar
         pygame.draw.rect(surf, (14, 18, 32), (0, 0, SCREEN_W, 70))
@@ -9421,15 +9571,14 @@ class MainMenu:
         mx, my = pygame.mouse.get_pos()
 
         # ── Animated background ───────────────────────────────────────────────
-        random.seed(77)
+        _rng_bg = random.Random(77)
         for i in range(280):
-            sx = random.randint(0, SCREEN_W)
-            sy = random.randint(0, SCREEN_H)
+            sx = _rng_bg.randint(0, SCREEN_W)
+            sy = _rng_bg.randint(0, SCREEN_H)
             phase = sx * 0.007 + i * 0.3
             br = int(abs(math.sin(t * 0.8 + phase)) * 140 + 40)
             size = 1 if i % 3 != 0 else 2
             pygame.draw.circle(surf, (br, br, min(255, br + 30)), (sx, sy), size)
-        random.seed()
 
         # ── Decorative line ───────────────────────────────────────────────────
         line_y = 230
@@ -10146,9 +10295,15 @@ class QuestsScreen:
                 n = len(unlocked); total = len(ACHIEVEMENT_DEFS)
                 extra = f"Progress: {n} / {total}" if status in ("active","done") else None
             elif qid == "all_towers":
-                _owned = list(self.save_data.get("owned_units", []))
-                n_owned = len(set(_owned))
-                total_t = len({u["name"] for u in ALL_UNITS_POOL})
+                _owned_q = set(self.save_data.get("owned_units", []))
+                _owned_q.discard("Golden Cowboy")
+                _owned_q.discard("Felyne")
+                _owned_q.update(["Cowboy", "Twitgunner"])
+                if self.save_data.get("frostcelerator_unlocked"):
+                    _owned_q.add("Frostcelerator")
+                _req_t = {u["name"] for u in ALL_UNITS_POOL} - {"hacker_laser_effects_test"}
+                n_owned = len(_owned_q & _req_t)
+                total_t = len(_req_t)
                 extra = f"Progress: {n_owned} / {total_t} towers" if status in ("active","done") else None
             elif qid == "max_skilltree":
                 st = self.save_data.get("skill_tree", {})
@@ -10280,8 +10435,20 @@ class CastboundDialog:
         all_ach_done = len(unlocked_ach) >= len(ACHIEVEMENT_DEFS)
 
         _owned_raw = list(self.save_data.get("owned_units", []))
-        _all_towers = {u["name"] for u in ALL_UNITS_POOL}
-        all_towers_done = _all_towers.issubset(set(_owned_raw))
+        # Apply the same auto-unlock rules as _owned_units() so the quest check
+        # sees Cowboy, Twitgunner etc. even if they aren't written to the save yet.
+        _owned_effective = set(_owned_raw)
+        _owned_effective.discard("Golden Cowboy")
+        if "Felyne" in _owned_effective:
+            _owned_effective.discard("Felyne")
+            _owned_effective.add("Red Ball")
+        _owned_effective.update(["Cowboy", "Twitgunner"])
+        if self.save_data.get("frostcelerator_unlocked"):
+            _owned_effective.add("Frostcelerator")
+        # Exclude dev/test towers that are never purchasable from the required set
+        _EXCLUDED_FROM_QUEST = {"hacker_laser_effects_test"}
+        _all_towers = {u["name"] for u in ALL_UNITS_POOL} - _EXCLUDED_FROM_QUEST
+        all_towers_done = _all_towers.issubset(_owned_effective)
 
         st = self.save_data.get("skill_tree", {})
         # "max skill tree" = every defined skill is at a non-zero level.
@@ -10343,7 +10510,7 @@ class CastboundDialog:
                 self._advance_quest("max_skilltree")
                 self._start_nag("Nice collection. Max out your skill tree.")
             else:
-                n = len(set(_owned_raw) & _all_towers); total = len(_all_towers)
+                n = len(_owned_effective & _all_towers); total = len(_all_towers)
                 self._start_nag(f"You only have {n}/{total} towers. Get more.")
 
         elif qs == "max_skilltree":
@@ -10619,6 +10786,7 @@ ALL_UNITS_POOL = [
     {"name": "Harvester",   "rarity": "epic"},
     {"name": "Control Panel", "rarity": "apex"},
     {"name": "Castbound",    "rarity": "singularity"},
+    {"name": "The Strongest", "rarity": "early_access"},
 
 ]
 
@@ -10656,6 +10824,7 @@ UNIT_SHOP_PRICES = {
     "Harvester":   5000,
     "Control Panel": None,   # Early Access — free to unlock
     "Castbound":     None,   # не продаётся — открывается за убийство Moon Lord
+    "The Strongest": None,   # Early Access — free
 }
 
 # ── Base stats for detail panel ───────────────────────────────────────────────
@@ -10693,6 +10862,7 @@ UNIT_BASE_STATS = {
     "Control Panel":  {"cost": 5000, "limit": 1,  "damage": 0,    "firerate": 0.0,  "range": 6,  "income": None},
     "hacker_laser_effects_test": {"cost": 7500, "limit": 1, "damage": 9999, "firerate": 9.9, "range": 20, "income": None},
     "Castbound":      {"cost": 400,  "limit": 5,  "damage": 4,    "firerate": 0.8,  "range": 6.2,"income": None},
+    "The Strongest":  {"cost": 600,  "limit": 5,  "damage": 4,    "firerate": 1.2,  "range": 5.7,"income": None},
 }
 
 # ── Tower descriptions — fill in your own later ───────────────────────────────
@@ -10728,6 +10898,7 @@ UNIT_DESCRIPTIONS = {
     "Control Panel":  "A remote support station. Use 'Remote Control' to buff a nearby tower with boosted Range, Damage, or Firerate for a chosen duration.",
     "hacker_laser_effects_test": "??? ERROR 404 UNIT NOT FOUND ???",
     "Castbound":      "\"The culmination of a journey forged into the ultimate tower\"",
+    "The Strongest":  "Scale of the Dragon",
 }
 
 class LoadoutScreen:
@@ -10808,6 +10979,8 @@ class LoadoutScreen:
             owned = list(owned) + ["Cowboy"]
         # Migrate old Golden Cowboy save entries to Cowboy
         owned = ["Cowboy" if u == "Golden Cowboy" else u for u in owned]
+        # Migrate old Felyne save entries to Red Ball
+        owned = ["Red Ball" if u == "Felyne" else u for u in owned]
 
         # Rubber Duck — разблокирован по умолчанию
         # Harvester — требует покупки за 5000 монет
@@ -10816,6 +10989,9 @@ class LoadoutScreen:
             owned = list(owned) + ["Twitgunner"]
         # Control Panel unlocked via shards (apex rarity)
         # Rubber Duck — покупается за 1300 монет
+        # The Strongest — Early Access, free for EA owners
+        if self.save_data.get("early_access_purchased") and "The Strongest" not in owned:
+            owned = list(owned) + ["The Strongest"]
 
         return owned
 
@@ -11058,6 +11234,7 @@ class LoadoutScreen:
             "Hallow Punk": C_HALLOWPUNK,   "Spotlight Tech": C_SPOTLIGHT,
             "Jester":   C_JESTER,
             "Harvester": C_HARVESTER,
+            "The Strongest": C_STRONGEST,
         }
 
         # Slot-select hint arrow
@@ -11150,6 +11327,7 @@ class LoadoutScreen:
                 "Korzhik": Felyne, "Conduit": Conduit,
                 "Control Panel": ControlPanel, "ControlPanel": ControlPanel,
                 "Castbound": Castbound,
+                "The Strongest": TheStrongest,
             }
             _cls_ld = _name_to_cls_ld.get(uname)
             _static = UNIT_BASE_STATS.get(uname, {})
@@ -11188,27 +11366,28 @@ class LoadoutScreen:
             # Layout: LEFT = name + stats flush to left edge, tower visual centered horizontally
             TEXT_X  = PANEL_X + 10   # text starts at left edge of panel
 
-            # ── Tower name & rarity — top-left ───────────────────────────────
+            # ── Tower name & class — top-left ───────────────────────────────
+            _UNIT_CLASS = {
+                "Assassin": "Offense", "Militant": "Offense", "Twitgunner": "Offense",
+                "Farm": "Support", "Freezer": "Defense", "Gladiator": "Offense",
+                "Cowboy": "Offense", "Commando": "Offense", "Lifestealer": "Offense",
+                "Swarmer": "Offense", "Frost Blaster": "Defense", "Sledger": "Offense",
+                "Toxic Gunner": "Offense", "Spotlight Tech": "Support", "Rubber Duck": "Offense",
+                "Conduit": "Defense", "Archer": "Defense", "Red Ball": "Offense",
+                "Slasher": "Offense", "Hallow Punk": "Defense", "Snowballer": "Defense",
+                "Accelerator": "Offense", "Frostcelerator": "Support", "Warlock": "Offense",
+                "Caster": "Defense", "Harvester": "Defense", "Korzhik": "Defense",
+                "Jester": "Support", "Control Panel": "Support", "Castbound": "Defense",
+                "The Strongest": "Offense",
+            }
+            _unit_class = _UNIT_CLASS.get(uname, "")
             name_f = pygame.font.SysFont("segoeui", 26, bold=True)
-            rar_f  = pygame.font.SysFont("segoeui", 17, bold=True)
+            cls_f  = pygame.font.SysFont("segoeui", 17, bold=True)
             name_s = name_f.render(uname, True, C_WHITE)
-            if rarity == "apex":
-                rar_s = _render_gradient_text(rd["label"], rar_f, _APEX_GRAD_COLORS)
-                surf.blit(name_s, (TEXT_X, PANEL_Y + 10))
-                surf.blit(rar_s,  (TEXT_X, PANEL_Y + 10 + name_s.get_height() + 3))
-            elif rarity == "singularity":
-                rar_s = rar_f.render(rd["label"], True, (0, 0, 0))
-                surf.blit(name_s, (TEXT_X, PANEL_Y + 10))
-                _ry = PANEL_Y + 10 + name_s.get_height() + 3
-                for _ox, _oy in [(-2,0),(2,0),(0,-2),(0,2),(-1,-1),(1,-1),(-1,1),(1,1)]:
-                    _ro = rar_f.render(rd["label"], True, (200, 0, 255))
-                    surf.blit(_ro, (TEXT_X + _ox, _ry + _oy))
-                surf.blit(rar_s, (TEXT_X, _ry))
-            else:
-                _lbl3 = rd.get("label", rarity.replace("_"," ").title() if "_" in rarity else rarity.capitalize())
-                rar_s  = rar_f.render(_lbl3, True, rd["text_col"])
-                surf.blit(name_s, (TEXT_X, PANEL_Y + 10))
-                surf.blit(rar_s,  (TEXT_X, PANEL_Y + 10 + name_s.get_height() + 3))
+            cls_s  = cls_f.render(_unit_class, True, C_WHITE)
+            surf.blit(name_s, (TEXT_X, PANEL_Y + 10))
+            surf.blit(cls_s,  (TEXT_X, PANEL_Y + 10 + name_s.get_height() + 3))
+            rar_s = cls_s  # keep rar_s alias so STAT_Y0 calc below still works
 
             # ── STATS — icon + value rows, left-aligned ───────────────────────
             stat_f  = pygame.font.SysFont("segoeui", 18, bold=True)
@@ -11216,15 +11395,22 @@ class LoadoutScreen:
             ROW_H   = 32
             STAT_Y0 = PANEL_Y + 10 + name_s.get_height() + rar_s.get_height() + 16
 
-            stat_defs = [
-                ("money_ico",    "cost",     "{}"),
-                ("limit_ico",    "limit",    "{}"),
-                ("damage_ico",   "damage",   "{}"),
-                ("firerate_ico", "firerate", "{:.2f}"),
-                ("range_ico",    "range",    "{}"),
-            ]
-            if stats.get("income") is not None:
-                stat_defs.append(("money_ico", "income", "${}"))
+            if uname == "Farm":
+                stat_defs = [
+                    ("money_ico", "cost",   "{}"),
+                    ("limit_ico", "limit",  "{}"),
+                    ("money_ico", "income", "{}"),
+                ]
+            else:
+                stat_defs = [
+                    ("money_ico",    "cost",     "{}"),
+                    ("limit_ico",    "limit",    "{}"),
+                    ("damage_ico",   "damage",   "{}"),
+                    ("firerate_ico", "firerate", "{:.2f}"),
+                    ("range_ico",    "range",    "{}"),
+                ]
+                if stats.get("income") is not None:
+                    stat_defs.append(("money_ico", "income", "${}"))
 
             for ri, (ico_name, key, fmt) in enumerate(stat_defs):
                 sy = STAT_Y0 + ri * ROW_H
@@ -11704,7 +11890,8 @@ class Game:
                         "Control Panel": ControlPanel,
                         "ControlPanel": ControlPanel,
                         "CtrlPanel": ControlPanel,
-                        "Castbound": Castbound}
+                        "Castbound": Castbound,
+                        "The Strongest": TheStrongest}
         _loadout = self.save_data.get("loadout", ["Assassin", "Accelerator", None, None, None])
         while len(_loadout) < 5: _loadout.append(None)
         self.ui.SLOT_TYPES = [_name_to_cls.get(n) if n else None for n in _loadout]
@@ -11784,10 +11971,10 @@ class Game:
             for _gy in range(0, SLOT_AREA_Y, TILE):
                 pygame.draw.line(_grid_surf, (255, 255, 255, 18), (0, _gy), (SCREEN_W, _gy))
             surf.blit(_grid_surf, (0, 0))
-        random.seed(42)
+        _rng_map = random.Random(42)
         if not SETTINGS.get("low_quality", False):
             for _ in range(300):
-                gx=random.randint(0,SCREEN_W); gy=random.randint(55,SLOT_AREA_Y-10)
+                gx=_rng_map.randint(0,SCREEN_W); gy=_rng_map.randint(55,SLOT_AREA_Y-10)
                 on_any_path=False
                 path=get_map_path()
                 for pi in range(len(path)-1):
@@ -11802,7 +11989,6 @@ class Game:
                         if mny<=gy<=mxy and mnx<=gx<=mxx: on_any_path=True; break
                 if not on_any_path:
                     pygame.draw.circle(surf,(32,44,32),(gx+ox,gy+oy),2)
-        random.seed()
 
         if game_core.CURRENT_MAP=="zigzag":
             path=get_map_path()
@@ -12208,7 +12394,6 @@ class Game:
                                 if r.collidepoint(ev.pos):
                                     cid = c["id"]
                                     if cid == "remove_tower" and self.units:
-                                        import random
                                         self.units.remove(random.choice(self.units))
                                     elif cid == "range_down":
                                         self.draft_mod_range_duration += 5
@@ -12217,7 +12402,6 @@ class Game:
                                     elif cid == "half_money":
                                         self.money //= 2
                                     elif cid == "level_down" and self.units:
-                                        import random
                                         u = random.choice(self.units)
                                         if u.level > 0:
                                             u.level -= 1
@@ -12355,7 +12539,6 @@ class Game:
                         self.waves_to_next_draft -= 1
                         if self.waves_to_next_draft <= 0:
                             self.draft_active = True
-                            import random
                             self.draft_cards = random.sample(_DRAFT_CARDS, 2)
                             self.waves_to_next_draft = random.randint(1, 4)
 
@@ -13562,13 +13745,12 @@ class Game:
                 if ((_jqt_ms + phase_ms) % blink_period) < (blink_period // 2):
                     continue
                 _seed_val = (id(e) + qi * 31 + int(_jqt * 8)) % 1000
-                random.seed(_seed_val)
-                scatter_r = e.radius + random.randint(8, 20)
-                scatter_a = math.radians(random.randint(0, 359))
-                random.seed()
+                _rng_q = random.Random(_seed_val)
+                scatter_r = e.radius + _rng_q.randint(8, 20)
+                scatter_a = math.radians(_rng_q.randint(0, 359))
                 qx = cx2 + int(math.cos(scatter_a) * scatter_r)
                 qy = cy2 + int(math.sin(scatter_a) * scatter_r)
-                q_col = random.choice([(230, 120, 255), (255, 80, 220), (200, 60, 255)])
+                q_col = _rng_q.choice([(230, 120, 255), (255, 80, 220), (200, 60, 255)])
                 qs2 = _qf2.render("?", True, q_col)
                 qs2.set_alpha(min(255, ca2 + 60))
                 self.screen.blit(qs2, qs2.get_rect(center=(qx, qy)))
@@ -13730,13 +13912,12 @@ class Game:
                     if ((_conf_ms + phase_ms2) % blink_p2) < (blink_p2 // 2):
                         continue
                     _seed2 = (id(e) + i * 29 + int(_conf_t * 8)) % 1000
-                    random.seed(_seed2)
-                    sc_r = e.radius + random.randint(8, 20)
-                    sc_a = math.radians(random.randint(0, 359))
-                    random.seed()
+                    _rng_q2 = random.Random(_seed2)
+                    sc_r = e.radius + _rng_q2.randint(8, 20)
+                    sc_a = math.radians(_rng_q2.randint(0, 359))
                     qx = cx2 + int(math.cos(sc_a) * sc_r)
                     qy = cy2 + int(math.sin(sc_a) * sc_r)
-                    q_c = random.choice([(220, 100, 255), (255, 60, 200), (190, 50, 255)])
+                    q_c = _rng_q2.choice([(220, 100, 255), (255, 60, 200), (190, 50, 255)])
                     qs2 = qf2.render("?", True, q_c)
                     qs2.set_alpha(ca3)
                     self.screen.blit(qs2, qs2.get_rect(center=(qx, qy)))
@@ -13871,7 +14052,8 @@ class Game:
                 
                 # Description
                 import textwrap
-                words = textwrap.wrap(c["desc"], width=24)
+                _desc_text = _t(c.get("desc_key", "")) if c.get("desc_key") else c.get("desc", "")
+                words = textwrap.wrap(_desc_text, width=24)
                 for line_idx, line in enumerate(words):
                     ls = desc_f.render(line, True, (200, 200, 200))
                     self.screen.blit(ls, ls.get_rect(centerx=r.centerx, top=r.top + 100 + line_idx * 28))
@@ -14105,7 +14287,7 @@ if __name__ == "__main__":
                 # Launch Moon Lord fight immediately after dialog closes
                 try:
                     _ml_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                            "moon_lord_fight.py")
+                                            "assets", "moon_lord_fight.py")
                     import importlib.util as _ml_ilu
                     _ml_spec = _ml_ilu.spec_from_file_location("moon_lord_fight", _ml_path)
                     _ml_mod = _ml_ilu.module_from_spec(_ml_spec)

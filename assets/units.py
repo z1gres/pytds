@@ -9341,6 +9341,562 @@ class Felyne(Unit):
         return info
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# The Strongest  —  Early Access Offense Tower  (Sukuna reference)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+C_STRONGEST      = (180,  30,  30)   # deep crimson
+C_STRONGEST_DARK = ( 60,   5,   5)
+C_STRONGEST_ACC  = (255, 200,  50)   # gold accent (markings)
+
+# Stats copied from Korzhik (FELYNE_LEVELS) levels 0-5 (no lv6)
+#                  dmg  firerate  range_tiles  cost    hidden
+_STRONGEST_LEVELS = [
+    (4,    1.2,   5.7,  None,   False),   # lv0
+    (6,    1.0,   6.0,   350,   False),   # lv1
+    (8,    1.0,   6.0,  1000,   True),    # lv2
+    (20,   1.0,   7.0,  2000,   True),    # lv3
+    (25,   0.7,   7.0,  7500,   True),    # lv4
+    (75,   0.7,   7.5, 12500,   True),    # lv5  (max)
+]
+
+
+class _SlashEffect:
+    """Sukuna-style × slash mark: white with black outline, random angle,
+    smoothly fades in then fades out, spawned directly on the enemy.
+    No bullets — pure visual.
+    """
+    DURATION   = 0.50   # total life in seconds
+    FADE_IN    = 0.10   # fraction of DURATION spent fading in
+    MAX_LEN    = 44     # max half-length of each slash arm (pixels)
+
+    def __init__(self, x, y):
+        self.x     = x
+        self.y     = y
+        self.angle = random.uniform(0, math.pi)   # random tilt
+        self.t     = 0.0
+        self.alive = True
+
+    def update(self, dt):
+        self.t += dt
+        if self.t >= self.DURATION:
+            self.alive = False
+
+    def draw(self, surf):
+        if not self.alive:
+            return
+        prog = self.t / self.DURATION            # 0 → 1 over lifetime
+
+        # Alpha: fade in during first 20%, then fade out
+        fade_in_end = self.FADE_IN
+        if prog < fade_in_end:
+            alpha = int(prog / fade_in_end * 255)
+        else:
+            alpha = int((1.0 - (prog - fade_in_end) / (1.0 - fade_in_end)) * 255)
+        alpha = max(0, min(255, alpha))
+
+        # Slash length: grows during fade-in, stays full afterwards
+        half_len = int(self.MAX_LEN * min(1.0, prog / max(fade_in_end, 0.001)))
+
+        cx, cy = int(self.x), int(self.y)
+        a      = self.angle
+        a2     = a + math.pi / 2   # perpendicular arm
+
+        def _arm(angle, length):
+            """Return (x1,y1), (x2,y2) for a line of 2*length centered at cx,cy."""
+            return (
+                (cx + int(math.cos(angle) * length),
+                 cy + int(math.sin(angle) * length)),
+                (cx - int(math.cos(angle) * length),
+                 cy - int(math.sin(angle) * length)),
+            )
+
+        # Draw each arm with black outline then white core
+        outline_w = max(2, int(5 * (1.0 - prog * 0.5)))
+        core_w    = max(1, outline_w - 2)
+
+        for angle in (a, a2):
+            p1, p2 = _arm(angle, half_len)
+            # black outline
+            pygame.draw.line(surf, (0, 0, 0, alpha), p1, p2, outline_w + 2)
+            # white core
+            pygame.draw.line(surf, (255, 255, 255, alpha), p1, p2, core_w)
+
+        # Central dot (white)
+        cr = max(2, outline_w - 1)
+        pygame.draw.circle(surf, (0, 0, 0, alpha),       (cx, cy), cr + 1)
+        pygame.draw.circle(surf, (255, 255, 255, alpha), (cx, cy), cr)
+
+
+class TheStrongest(Unit):
+    """Sukuna-reference tower — instant slash attacks that leave × marks on enemies."""
+    PLACE_COST = 600
+    COLOR      = C_STRONGEST
+    NAME       = "The Strongest"
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._slashes  = []   # _SlashEffect instances
+        self._anim_t   = 0.0
+        self._apply_level()
+
+    def _apply_level(self):
+        row = _STRONGEST_LEVELS[self.level]
+        self.damage, self.firerate, self.range_tiles, _, self.hidden_detection = row
+        self.cd_left = 0.0
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(_STRONGEST_LEVELS): return None
+        return _STRONGEST_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(_STRONGEST_LEVELS):
+            self.level = nxt; self._apply_level()
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t += dt
+        if self.cd_left > 0:
+            self.cd_left -= dt
+
+        # Update slash effects
+        for s in self._slashes: s.update(dt)
+        self._slashes = [s for s in self._slashes if s.alive]
+
+        # Instant attack: no bullet travel, damage + slash spawned immediately
+        if self.cd_left <= 0:
+            targets = self._get_targets(enemies, 1)
+            if targets:
+                self.cd_left = self.firerate
+                t0 = targets[0]
+                t0.take_damage(self.damage)
+                self.total_damage += self.damage
+                self._slashes.append(_SlashEffect(t0.x, t0.y))
+
+    def draw(self, surf):
+        cx, cy = int(self.px), int(self.py)
+        t = self._anim_t
+
+        # ── Slash effects ──────────────────────────────────────────────────────
+        for s in self._slashes: s.draw(surf)
+
+        # ── Pulsing dark aura ──────────────────────────────────────────────────
+        pulse = abs(math.sin(t * 2.5))
+        aura_r = 30 + int(pulse * 6)
+        aura_s = pygame.Surface((aura_r * 2 + 4, aura_r * 2 + 4), pygame.SRCALPHA)
+        aura_a = int(pulse * 60 + 20)
+        pygame.draw.circle(aura_s, (200, 20, 20, aura_a), (aura_r + 2, aura_r + 2), aura_r)
+        surf.blit(aura_s, (cx - aura_r - 2, cy - aura_r - 2))
+
+        # ── Shadow ─────────────────────────────────────────────────────────────
+        shadow = pygame.Surface((54, 18), pygame.SRCALPHA)
+        pygame.draw.ellipse(shadow, (20, 5, 5, 70), (0, 0, 54, 18))
+        surf.blit(shadow, (cx - 27, cy + 22))
+
+        # ── Body ───────────────────────────────────────────────────────────────
+        pygame.draw.circle(surf, C_STRONGEST_DARK, (cx, cy), 27)
+        pygame.draw.circle(surf, C_STRONGEST,      (cx, cy), 22)
+
+        # Inner shimmer
+        hi_a = int(60 + abs(math.sin(t * 1.8)) * 45)
+        hi   = pygame.Surface((22, 22), pygame.SRCALPHA)
+        pygame.draw.circle(hi, (255, 100, 100, hi_a), (8, 8), 8)
+        surf.blit(hi, (cx - 17, cy - 17))
+
+        # ── Sukuna tattoo marks: four gold dots ────────────────────────────────
+        for ddx, ddy in [(-8, -6), (8, -6), (-8, 4), (8, 4)]:
+            pygame.draw.circle(surf, (10, 0, 0),     (cx + ddx, cy + ddy), 3)
+            pygame.draw.circle(surf, C_STRONGEST_ACC,(cx + ddx, cy + ddy), 2)
+
+        # ── Four eyes (two pairs) — Sukuna reference ──────────────────────────
+        # Upper pair
+        pygame.draw.ellipse(surf, (255, 220, 200), (cx - 10, cy - 11, 7, 5))
+        pygame.draw.ellipse(surf, (255, 220, 200), (cx + 3,  cy - 11, 7, 5))
+        blink = max(1, int(3 * abs(math.sin(t * 0.3))) + 1)
+        pygame.draw.ellipse(surf, (10, 0, 0), (cx - 9,  cy - 10, 5, blink))
+        pygame.draw.ellipse(surf, (10, 0, 0), (cx + 4,  cy - 10, 5, blink))
+        # Lower pair
+        pygame.draw.ellipse(surf, (255, 220, 200), (cx - 10, cy + 3, 7, 4))
+        pygame.draw.ellipse(surf, (255, 220, 200), (cx + 3,  cy + 3, 7, 4))
+        blink2 = max(1, int(2 * abs(math.sin(t * 0.3))) + 1)
+        pygame.draw.ellipse(surf, (10, 0, 0), (cx - 9,  cy + 4, 5, blink2))
+        pygame.draw.ellipse(surf, (10, 0, 0), (cx + 4,  cy + 4, 5, blink2))
+
+        # ── Sinister grin ─────────────────────────────────────────────────────
+        mouth_rect = pygame.Rect(cx - 11, cy + 11, 22, 12)
+        pygame.draw.arc(surf, (10, 0, 0),    mouth_rect, math.pi, 0, 4)
+        pygame.draw.arc(surf, (255, 80, 80), mouth_rect, math.pi, 0, 2)
+
+        # ── Gold horns at lv3+ ────────────────────────────────────────────────
+        if self.level >= 3:
+            horn_pts_l = [(cx - 8, cy - 22), (cx - 14, cy - 36), (cx - 4, cy - 26)]
+            horn_pts_r = [(cx + 8, cy - 22), (cx + 14, cy - 36), (cx + 4, cy - 26)]
+            pygame.draw.polygon(surf, C_STRONGEST_ACC, horn_pts_l)
+            pygame.draw.polygon(surf, C_STRONGEST_ACC, horn_pts_r)
+
+        # ── Level pips ────────────────────────────────────────────────────────
+        if self.level > 0:
+            for i in range(min(self.level, 5)):
+                pygame.draw.circle(surf, (255, 80, 80), (cx - 12 + i * 6, cy + 34), 3)
+
+        # ── Hidden detection indicator ─────────────────────────────────────────
+        if self.hidden_detection:
+            eye_s = pygame.Surface((14, 10), pygame.SRCALPHA)
+            pygame.draw.ellipse(eye_s, (255, 255, 120, 220), (0, 0, 14, 10))
+            pygame.draw.circle(eye_s, (50, 20, 0), (7, 5), 3)
+            surf.blit(eye_s, (cx + 13, cy - 20))
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (220, 30, 30, 18),  (r, r), r)
+        pygame.draw.circle(s, (255, 60, 60, 60),  (r, r), r, 2)
+        old_clip = surf.get_clip()
+        surf.set_clip(pygame.Rect(0, 0, SCREEN_W, SLOT_AREA_Y))
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+        surf.set_clip(old_clip)
+
+    def get_info(self):
+        info = {}
+        if self.hidden_detection:
+            info["HidDet"] = "Hidden Detection"
+        info["Damage"]   = self.damage
+        info["Firerate"] = f"{self.firerate:.3f}"
+        info["Range"]    = self.range_tiles
+        return info
+
+
+
+C_STRONGEST      = (180,  30,  30)   # deep crimson
+C_STRONGEST_DARK = ( 60,   5,   5)
+C_STRONGEST_ACC  = (255, 200,  50)   # gold accent (markings)
+
+# Stats copied from Korzhik (FELYNE_LEVELS) levels 0-5 (no lv6)
+#                  dmg  firerate  range_tiles  cost    hidden
+_STRONGEST_LEVELS = [
+    (4,    1.2,   5.7,  None,   False),   # lv0
+    (6,    1.0,   6.0,   350,   False),   # lv1
+    (8,    1.0,   6.0,  1000,   True),    # lv2
+    (20,   1.0,   7.0,  2000,   True),    # lv3
+    (25,   0.7,   7.0,  7500,   True),    # lv4
+    (75,   0.7,   7.5, 12500,   True),    # lv5  (max)
+]
+
+
+class _SlashEffect:
+    """Sukuna-style slash mark - follows enemy, white with black outline, tapered ends."""
+    DURATION = 0.35   # seconds - быстрее
+    
+    # Переиспользуемый surface для всех эффектов
+    _shared_surf = None
+
+    def __init__(self, x, y, angle, target=None):
+        self.x     = x
+        self.y     = y
+        self.angle = random.uniform(0, math.pi * 2)  # Random angle
+        self.t     = 0.0
+        self.alive = True
+        self.target = target  # Враг, за которым следует разрез
+
+    def update(self, dt):
+        self.t += dt
+        if self.t >= self.DURATION:
+            self.alive = False
+        
+        # Следуем за врагом
+        if self.target and self.target.alive:
+            self.x = self.target.x
+            self.y = self.target.y
+
+    def draw(self, surf):
+        if not self.alive:
+            return
+        
+        # Создаем shared surface один раз
+        if _SlashEffect._shared_surf is None or _SlashEffect._shared_surf.get_size() != surf.get_size():
+            _SlashEffect._shared_surf = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
+        
+        prog = self.t / self.DURATION  # 0 → 1
+        
+        # Быстрое появление, быстрое исчезание
+        if prog < 0.2:
+            alpha = int((prog / 0.2) * 255)
+        else:
+            alpha = int((1.0 - (prog - 0.2) / 0.8) * 255)
+        
+        # Короче разрез
+        half_len = 35  # Фиксированная длина
+        
+        cx, cy = int(self.x), int(self.y)
+        a = self.angle
+
+        # Координаты концов линии
+        x1 = cx + int(math.cos(a) * half_len)
+        y1 = cy + int(math.sin(a) * half_len)
+        x2 = cx - int(math.cos(a) * half_len)
+        y2 = cy - int(math.sin(a) * half_len)
+
+        # Очищаем shared surface
+        _SlashEffect._shared_surf.fill((0, 0, 0, 0))
+        
+        # Рисуем заостренный разрез (треугольником по краям)
+        # Создаем точки для полигона с заострением
+        perp_a = a + math.pi / 2  # Перпендикуляр
+        
+        # Ширина в центре
+        center_width = 3
+        
+        # Точки полигона (заостренный с обоих концов)
+        points = [
+            (x1, y1),  # Острый конец 1
+            (cx + int(math.cos(perp_a) * center_width), cy + int(math.sin(perp_a) * center_width)),  # Центр верх
+            (x2, y2),  # Острый конец 2
+            (cx - int(math.cos(perp_a) * center_width), cy - int(math.sin(perp_a) * center_width)),  # Центр низ
+        ]
+        
+        # Черная обводка (толще)
+        outline_points = [
+            (x1, y1),
+            (cx + int(math.cos(perp_a) * (center_width + 2)), cy + int(math.sin(perp_a) * (center_width + 2))),
+            (x2, y2),
+            (cx - int(math.cos(perp_a) * (center_width + 2)), cy - int(math.sin(perp_a) * (center_width + 2))),
+        ]
+        pygame.draw.polygon(_SlashEffect._shared_surf, (0, 0, 0, alpha), outline_points)
+        
+        # Белая полоска
+        pygame.draw.polygon(_SlashEffect._shared_surf, (255, 255, 255, alpha), points)
+        
+        # Яркая центральная линия для эффекта
+        pygame.draw.line(_SlashEffect._shared_surf, (255, 255, 255, min(255, alpha + 80)), 
+                        (x1, y1), (x2, y2), 1)
+        
+        # Рисуем все за один раз
+        surf.blit(_SlashEffect._shared_surf, (0, 0))
+
+
+class _StrongestBullet:
+    """Invisible instant-hit projectile — spawns a SlashEffect on the target."""
+    SPEED = 9999.0  # Instant hit
+
+    def __init__(self, ox, oy, target, damage, slash_pool):
+        self.x = float(ox); self.y = float(oy)
+        self._target  = target
+        dx = target.x - ox; dy = target.y - oy
+        d  = math.hypot(dx, dy) or 1
+        self.vx = dx / d * self.SPEED
+        self.vy = dy / d * self.SPEED
+        self.damage     = damage
+        self.alive      = True
+        self._slash_pool = slash_pool   # list to append effects to
+        # angle of travel
+        self._angle = math.atan2(dy, dx)
+        # Instant hit on creation
+        self._instant_hit(target, slash_pool)
+
+    def _instant_hit(self, target, slash_pool):
+        """Apply damage and spawn slash effect instantly."""
+        if target and target.alive:
+            target.take_damage(self.damage)
+            # Spawn slash mark at enemy position with random angle, following the enemy
+            slash_pool.append(_SlashEffect(target.x, target.y, 0, target=target))
+        self.alive = False
+
+    def update(self, dt, enemies):
+        # No longer needed - instant hit
+        pass
+
+    def draw(self, surf):
+        # No visible projectile
+        pass
+
+
+class TheStrongest(Unit):
+    """Sukuna-reference tower — fires crimson slashes that leave × marks on enemies."""
+    PLACE_COST = 600
+    COLOR      = C_STRONGEST
+    NAME       = "The Strongest"
+
+    def __init__(self, px, py):
+        super().__init__(px, py)
+        self._bullets  = []
+        self._slashes  = []   # _SlashEffect instances
+        self._anim_t   = 0.0
+        self._apply_level()
+
+    def _apply_level(self):
+        row = _STRONGEST_LEVELS[self.level]
+        self.damage, self.firerate, self.range_tiles, _, self.hidden_detection = row
+        self.cd_left = 0.0
+
+    def upgrade_cost(self):
+        nxt = self.level + 1
+        if nxt >= len(_STRONGEST_LEVELS): return None
+        return _STRONGEST_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt = self.level + 1
+        if nxt < len(_STRONGEST_LEVELS):
+            self.level = nxt; self._apply_level()
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t += dt
+        if self.cd_left > 0:
+            self.cd_left -= dt
+
+        # Update slash effects
+        for s in self._slashes: s.update(dt)
+        self._slashes = [s for s in self._slashes if s.alive]
+
+        # Update bullets
+        for b in self._bullets: b.update(dt, enemies)
+        rng_px = self.range_tiles * TILE
+        self._bullets = [b for b in self._bullets
+                         if b.alive and math.hypot(b.x - self.px, b.y - self.py) <= rng_px + 60]
+
+        if self.cd_left <= 0:
+            targets = self._get_targets(enemies, 1)
+            if targets:
+                self.cd_left = self.firerate
+                t0 = targets[0]
+                self._bullets.append(
+                    _StrongestBullet(self.px, self.py, t0, self.damage, self._slashes)
+                )
+                self.total_damage += self.damage
+
+    def draw(self, surf):
+        cx, cy = int(self.px), int(self.py)
+        t = self._anim_t
+
+        # ── Slash effects (drawn first, behind tower) ──────────────────────────
+        for s in self._slashes: s.draw(surf)
+
+        # ── Pulsing dark crimson aura (оптимизировано) ─────────────────────────
+        pulse = abs(math.sin(t * 3.0))
+        aura_r = 32 + int(pulse * 8)
+        aura_a = int(pulse * 80 + 30)
+        
+        # Используем один surface для ауры
+        aura_size = aura_r * 2 + 8
+        aura_s = pygame.Surface((aura_size, aura_size), pygame.SRCALPHA)
+        center = aura_size // 2
+        # Двойное свечение
+        pygame.draw.circle(aura_s, (150, 10, 10, aura_a // 2), (center, center), aura_r + 4)
+        pygame.draw.circle(aura_s, (220, 20, 20, aura_a), (center, center), aura_r)
+        surf.blit(aura_s, (cx - center, cy - center))
+
+        # ── Shadow (оптимизировано) ────────────────────────────────────────────
+        shadow_w, shadow_h = 60, 20
+        shadow = pygame.Surface((shadow_w, shadow_h), pygame.SRCALPHA)
+        pygame.draw.ellipse(shadow, (20, 5, 5, 90), (0, 0, shadow_w, shadow_h))
+        surf.blit(shadow, (cx - shadow_w // 2, cy + 24))
+
+        # ── Body (более темный и угрожающий) ───────────────────────────────────
+        pygame.draw.circle(surf, (15, 5, 5), (cx, cy), 28)
+        pygame.draw.circle(surf, C_STRONGEST_DARK, (cx, cy), 26)
+        pygame.draw.circle(surf, C_STRONGEST, (cx, cy), 22)
+
+        # Inner shimmer (оптимизировано - один surface)
+        hi_a = int(80 + abs(math.sin(t * 2.2)) * 60)
+        hi_size = 24
+        hi = pygame.Surface((hi_size, hi_size), pygame.SRCALPHA)
+        pygame.draw.circle(hi, (255, 80, 80, hi_a), (hi_size // 2, hi_size // 2), 10)
+        surf.blit(hi, (cx - hi_size // 2, cy - hi_size // 2))
+
+        # ── Sukuna markings: four black dots ───────────────────────────────────
+        dot_positions = [(-9, -7), (9, -7), (-9, 5), (9, 5)]
+        for dx, dy in dot_positions:
+            pygame.draw.circle(surf, (5, 0, 0), (cx + dx, cy + dy), 4)
+            pygame.draw.circle(surf, C_STRONGEST_ACC, (cx + dx, cy + dy), 3)
+            pygame.draw.circle(surf, (255, 100, 100), (cx + dx, cy + dy), 1)
+
+        # ── Eyes — four eyes (Sukuna reference) ────────────────────────────────
+        eye_pulse = abs(math.sin(t * 0.4))
+        pupil_h = max(1, int(4 * eye_pulse) + 1)
+        pupil_h2 = max(1, int(3 * eye_pulse) + 1)
+        
+        # Upper pair
+        pygame.draw.ellipse(surf, (255, 230, 210), (cx - 11, cy - 12, 8, 6))
+        pygame.draw.ellipse(surf, (255, 230, 210), (cx + 3, cy - 12, 8, 6))
+        pygame.draw.ellipse(surf, (10, 0, 0), (cx - 10, cy - 11, 6, pupil_h))
+        pygame.draw.ellipse(surf, (10, 0, 0), (cx + 4, cy - 11, 6, pupil_h))
+        pygame.draw.ellipse(surf, (180, 20, 20), (cx - 9, cy - 10, 4, max(1, pupil_h - 1)))
+        pygame.draw.ellipse(surf, (180, 20, 20), (cx + 5, cy - 10, 4, max(1, pupil_h - 1)))
+        
+        # Lower pair
+        pygame.draw.ellipse(surf, (255, 230, 210), (cx - 11, cy + 2, 8, 5))
+        pygame.draw.ellipse(surf, (255, 230, 210), (cx + 3, cy + 2, 8, 5))
+        pygame.draw.ellipse(surf, (10, 0, 0), (cx - 10, cy + 3, 6, pupil_h2))
+        pygame.draw.ellipse(surf, (10, 0, 0), (cx + 4, cy + 3, 6, pupil_h2))
+        pygame.draw.ellipse(surf, (180, 20, 20), (cx - 9, cy + 4, 4, max(1, pupil_h2 - 1)))
+        pygame.draw.ellipse(surf, (180, 20, 20), (cx + 5, cy + 4, 4, max(1, pupil_h2 - 1)))
+
+        # ── Mouth — wide sinister grin ─────────────────────────────────────────
+        mouth_rect = pygame.Rect(cx - 12, cy + 10, 24, 14)
+        pygame.draw.arc(surf, (5, 0, 0), mouth_rect, math.pi, 0, 5)
+        pygame.draw.arc(surf, (255, 60, 60), mouth_rect, math.pi, 0, 3)
+        # Teeth
+        for i in range(5):
+            tooth_x = cx - 10 + i * 5
+            pygame.draw.line(surf, (240, 240, 240), (tooth_x, cy + 14), (tooth_x, cy + 17), 1)
+
+        # ── Gold crown / horns (power indicator) ───────────────────────────────
+        if self.level >= 3:
+            horn_pts_l = [(cx - 9, cy - 23), (cx - 16, cy - 38), (cx - 5, cy - 27)]
+            horn_pts_r = [(cx + 9, cy - 23), (cx + 16, cy - 38), (cx + 5, cy - 27)]
+            # Shadow
+            pygame.draw.polygon(surf, (80, 20, 20), horn_pts_l)
+            pygame.draw.polygon(surf, (80, 20, 20), horn_pts_r)
+            # Main color
+            pygame.draw.polygon(surf, C_STRONGEST_ACC, [(p[0] - 1, p[1]) for p in horn_pts_l])
+            pygame.draw.polygon(surf, C_STRONGEST_ACC, [(p[0] + 1, p[1]) for p in horn_pts_r])
+            # Highlight
+            pygame.draw.polygon(surf, (255, 180, 100), 
+                              [(p[0] - 1, p[1] - 1) for p in horn_pts_l[:2]] + [horn_pts_l[2]], 2)
+            pygame.draw.polygon(surf, (255, 180, 100), 
+                              [(p[0] + 1, p[1] - 1) for p in horn_pts_r[:2]] + [horn_pts_r[2]], 2)
+
+        # ── Level pips ─────────────────────────────────────────────────────────
+        if self.level > 0:
+            for i in range(min(self.level, 5)):
+                px_off = cx - 12 + i * 6
+                pygame.draw.circle(surf, (80, 20, 20), (px_off, cy + 35), 4)
+                pygame.draw.circle(surf, (255, 100, 100), (px_off, cy + 35), 3)
+                pygame.draw.circle(surf, (255, 180, 180), (px_off, cy + 35), 1)
+
+        # ── Hidden detection indicator (оптимизировано) ────────────────────────
+        if self.hidden_detection:
+            eye_w, eye_h = 16, 12
+            eye_s = pygame.Surface((eye_w, eye_h), pygame.SRCALPHA)
+            pygame.draw.ellipse(eye_s, (255, 255, 140, 240), (0, 0, eye_w, eye_h))
+            pygame.draw.circle(eye_s, (60, 20, 0), (eye_w // 2, eye_h // 2), 4)
+            pygame.draw.circle(eye_s, (180, 40, 0), (eye_w // 2, eye_h // 2), 2)
+            surf.blit(eye_s, (cx + 14, cy - 22))
+
+        # ── Bullets ───────────────────────────────────────────────────────────
+        for b in self._bullets: b.draw(surf)
+
+    def draw_range(self, surf):
+        r = int(self.range_tiles * TILE)
+        s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (220, 30, 30, 18),  (r, r), r)
+        pygame.draw.circle(s, (255, 60, 60, 60),  (r, r), r, 2)
+        # Clip range circle to game area (above slot bar) so it doesn't cover UI
+        old_clip = surf.get_clip()
+        surf.set_clip(pygame.Rect(0, 0, SCREEN_W, SLOT_AREA_Y))
+        surf.blit(s, (int(self.px) - r, int(self.py) - r))
+        surf.set_clip(old_clip)
+
+    def get_info(self):
+        info = {}
+        if self.hidden_detection:
+            info["HidDet"] = "Hidden Detection"
+        info["Damage"]   = self.damage
+        info["Firerate"] = f"{self.firerate:.3f}"
+        info["Range"]    = self.range_tiles
+        return info
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Control Panel  —  Early Access Support Tower
 # ═══════════════════════════════════════════════════════════════════════════════
 
