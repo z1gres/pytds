@@ -486,10 +486,10 @@ class MysteryEnemy(Enemy):
 
 # ── Mega Slow: 1600 HP, Slow*0.85 speed (~24), 5% armor ──────────────────────
 class MegaSlowEnemy(Enemy):
-    DISPLAY_NAME="Mega Slow"; BASE_HP=1900; BASE_SPEED=int(28*0.85); ARMOR=0.05; KILL_REWARD=600
+    DISPLAY_NAME="Mega Slow"; BASE_HP=4500; BASE_SPEED=int(28*0.85); ARMOR=0.05; KILL_REWARD=600
     def __init__(self, wave=1):
         super().__init__(wave)
-        self.hp=1900; self.maxhp=1900
+        self.hp=4500; self.maxhp=4500
         self.speed=self.BASE_SPEED; self.radius=30
     def draw(self, surf, hovered=False, detected=False):
         bob=math.sin(self._bob*0.4); cx,cy=int(self.x),int(self.y+bob)
@@ -1740,6 +1740,118 @@ class FrostSpirit(Enemy):
         if hovered: self._hover_label(surf)
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Void Reaver — HARDCORE final boss (wave 50)
+#   Attacks (effects applied in game.py per-frame handler):
+#     • Void Pulse   — periodic screen-wide tower stun (telegraphed by a ring)
+#     • Tendril Lash — short-range tower stun around the boss
+#     • Reaver's Harvest — summons a pack of corrupted minions
+#     • Phase Shield — at 66% and 33% HP becomes invulnerable for a few seconds
+#                       and surges forward (must be out-damaged between phases)
+# ══════════════════════════════════════════════════════════════════════════════
+class VoidReaver(Enemy):
+    DISPLAY_NAME="Void Reaver"; BASE_HP=420000; BASE_SPEED=6; KILL_REWARD=0
+    ARMOR=0.08
+    def __init__(self, wave=1):
+        super().__init__(1)
+        self.hp=420000; self.maxhp=420000
+        self.speed=self.BASE_SPEED
+        self._base_speed=self.BASE_SPEED
+        self.radius=60
+        self._rot=0.0
+        self._stun_immune=True
+        self.SLOW_RESISTANCE=0.5
+        # ability cooldowns — the actual effects are applied in game.py
+        self._void_pulse_timer=random.uniform(12,16)
+        self._tendril_timer=random.uniform(7,10)
+        self._summon_timer=random.uniform(14,18)
+        # phase shield (invulnerability) at HP thresholds
+        self._phase_thresholds=[0.66, 0.33]
+        self._shield_active=False
+        self._shield_t=0.0
+        self._shield_dur=3.5
+        # visual: expanding void-pulse ring
+        self._pulse_anim=0.0
+        self._pulse_r=0.0
+
+    def take_damage(self, dmg):
+        if self._shield_active:
+            return  # invulnerable while a phase shield is up
+        super().take_damage(dmg)
+
+    def trigger_pulse_visual(self):
+        self._pulse_anim=0.9
+        self._pulse_r=0.0
+
+    def update(self, dt):
+        self._rot += dt*40
+        self._void_pulse_timer -= dt
+        self._tendril_timer    -= dt
+        self._summon_timer     -= dt
+        # Phase shield: trigger once per threshold crossed
+        if not self._shield_active and self._phase_thresholds:
+            if self.hp/self.maxhp <= self._phase_thresholds[0]:
+                self._phase_thresholds.pop(0)
+                self._shield_active=True
+                self._shield_t=self._shield_dur
+                self.speed=self._base_speed*2.2   # speed surge during the phase
+        if self._shield_active:
+            self._shield_t -= dt
+            if self._shield_t <= 0:
+                self._shield_active=False
+                self.speed=self._base_speed
+        # visual pulse ring expansion
+        if self._pulse_anim > 0:
+            self._pulse_anim -= dt
+            self._pulse_r += dt*420
+        return super().update(dt)
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*0.4); cx,cy=int(self.x),int(self.y+bob)
+        # Expanding void-pulse ring (telegraph for the screen-wide stun)
+        if self._pulse_anim>0 and self._pulse_r>4:
+            r=int(self._pulse_r)
+            a=max(0,int(self._pulse_anim/0.9*160))
+            ps=pygame.Surface((r*2+8,r*2+8),pygame.SRCALPHA)
+            pygame.draw.circle(ps,(150,40,230,a),(r+4,r+4),r,6)
+            pygame.draw.circle(ps,(220,140,255,a//2),(r+4,r+4),max(1,r-10),3)
+            surf.blit(ps,(cx-r-4,cy-r-4))
+        # Dark void aura
+        s=pygame.Surface((300,300),pygame.SRCALPHA)
+        pulse=int(abs(math.sin(self._rot/45))*70)+50
+        pygame.draw.circle(s,(80,20,140,pulse),(150,150),140)
+        pygame.draw.circle(s,(30,5,60,pulse),(150,150),110)
+        surf.blit(s,(cx-150,cy-150))
+        # Swirling tendrils
+        for i in range(6):
+            a=math.radians(self._rot + i*60)
+            r0=self.radius+4; r1=self.radius+26
+            ax=cx+int(math.cos(a)*r0); ay=cy+int(math.sin(a)*r0)
+            bx=cx+int(math.cos(a)*r1); by=cy+int(math.sin(a)*r1)
+            pygame.draw.line(surf,(150,60,220),(ax,ay),(bx,by),5)
+            pygame.draw.circle(surf,(210,150,255),(bx,by),5)
+        # Body
+        pygame.draw.circle(surf,(120,40,200),(cx,cy),self.radius+8,8)
+        pygame.draw.circle(surf,(60,15,110),(cx,cy),self.radius)
+        pygame.draw.circle(surf,(15,2,30),(cx,cy),self.radius-12)
+        # Glowing void core (eye)
+        core_p=int(abs(math.sin(self._rot/30))*60)+150
+        core_p=max(0,min(255,core_p))
+        pygame.draw.circle(surf,(core_p,80,255),(cx,cy),14)
+        pygame.draw.circle(surf,(255,230,255),(cx,cy),6)
+        pygame.draw.circle(surf,(200,120,255),(cx,cy),self.radius,4)
+        # Phase shield dome
+        if self._shield_active:
+            dr=self.radius+18
+            dome=pygame.Surface((dr*2+4,dr*2+4),pygame.SRCALPHA)
+            da=int(abs(math.sin(self._rot/12))*60)+90
+            pygame.draw.circle(dome,(150,80,255,da),(dr+2,dr+2),dr,5)
+            pygame.draw.circle(dome,(110,50,200,50),(dr+2,dr+2),dr)
+            surf.blit(dome,(cx-dr-2,cy-dr-2))
+        self._draw_hp_bar(surf,130,14,(200,120,255))
+        if hovered: self._hover_label(surf)
+
+
 # ── Frosty breaker pool ────────────────────────────────────────────────────────
 FROST_MYSTERY_POOL_SNOWY  = SnowyEnemy
 FROST_MYSTERY_POOL_FROZEN = FrozenEnemy
@@ -1910,6 +2022,12 @@ class WaveManager:
         37: (180, 19), 38: (185, 19), 39: (185, 19),
         40: (None, None),
     }
+    _HARDCORE_WAVE_TIMES = {
+        **{w: (60, 19) for w in range(1, 36)},       # 1-35:  1:00
+        **{w: (75, 19) for w in range(36, 42)},      # 36-41: 1:15
+        **{w: (90, 19) for w in range(42, 50)},      # 42-49: 1:30 (endgame gauntlet)
+        50: (None, None),                             # 50: Void Reaver — no auto-timer
+    }
 
     def __init__(self, wave_data=None, max_waves=None):
         self.wave_data = wave_data if wave_data is not None else WAVE_DATA
@@ -1947,6 +2065,8 @@ class WaveManager:
             tbl = self._FALLEN_WAVE_TIMES
         elif self._mode == "frosty":
             tbl = self._FROSTY_WAVE_TIMES
+        elif self._mode == "hardcore":
+            tbl = self._HARDCORE_WAVE_TIMES
         else:
             tbl = self._EASY_WAVE_TIMES
         return tbl.get(wave_num, (60, 19))  # default 60s, skip at 19s
@@ -2930,4 +3050,21 @@ HARDCORE_WAVE_DATA = [
     # ── True endgame (41-50) ──────────────────────────────────────────────────
     ([(CorruptedFallen, 12), (MegaSlowEnemy, 6), (GiantBossEnemy, 4),
       (MysteryEnemy, 5), (SlowKingEnemy, 4)],                               0, 0),                              # 41 Slow King
+    ([(CorruptedFallen, 10), (GiantBossEnemy, 5), (MysteryBossEnemy, 10),
+      (SlowKingEnemy, 2)],                                                  0, 0),                              # 42
+    ([(FallenTitanEnemy, 2), (FallenReaper, 3), (CorruptedFallen, 12),
+      (HiddenBoss, 6)],                                                     0, 0),                              # 43
+    ([(GiantBossEnemy, 6), (MegaSlowEnemy, 6), (MysteryBossEnemy, 12),
+      (FallenRusher, 10)],                                                  0, 0),                              # 44
+    ([(SlowKingEnemy, 4), (FallenTitanEnemy, 3), (CorruptedFallen, 14),
+      (GraveDigger, 1)],                                                    0, 0),                              # 45 Grave Digger
+    ([(GiantBossEnemy, 8), (MysteryBossEnemy, 14), (FallenReaper, 4),
+      (InvisibleEnemy, 12)],                                                0, 0),                              # 46
+    ([(FallenTitanEnemy, 4), (SlowKingEnemy, 5), (CorruptedFallen, 16),
+      (HiddenBoss, 8)],                                                     0, 0),                              # 47
+    ([(GiantBossEnemy, 8), (GraveDigger, 2), (MysteryBossEnemy, 16),
+      (FallenRusher, 12), (MegaSlowEnemy, 6)],                              0, 0),                              # 48
+    ([(FallenTitanEnemy, 5), (SlowKingEnemy, 6), (GiantBossEnemy, 6),
+      (CorruptedFallen, 18), (FallenReaper, 4), (HiddenBoss, 10)],          0, 0),                              # 49 Final gauntlet
+    ([(VoidReaver, 1), (CorruptedFallen, 8), (FallenTitanEnemy, 2)],        0, 0),                              # 50 VOID REAVER
 ]

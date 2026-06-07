@@ -9348,15 +9348,18 @@ C_STRONGEST      = (180,  30,  30)   # deep crimson
 C_STRONGEST_DARK = ( 60,   5,   5)
 C_STRONGEST_ACC  = (255, 200,  50)   # gold accent (markings)
 
-# Stats copied from Korzhik (FELYNE_LEVELS) levels 0-5 (no lv6)
+# The Strongest — burst "executioner" identity, NOT a Korzhik clone.
+# It has no orbital sentries, so it trades AoE/multi-target for hard, precise
+# single-target instant slashes that never miss. DPS per level (single target):
+#   lv0 8.2 · lv1 15 · lv2 25 · lv3 49 · lv4 93 · lv5 200 — strong 1v1, zero AoE.
 #                  dmg  firerate  range_tiles  cost    hidden
 _STRONGEST_LEVELS = [
-    (4,    1.2,   5.7,  None,   False),   # lv0
-    (6,    1.0,   6.0,   350,   False),   # lv1
-    (8,    1.0,   6.0,  1000,   True),    # lv2
-    (20,   1.0,   7.0,  2000,   True),    # lv3
-    (25,   0.7,   7.0,  7500,   True),    # lv4
-    (75,   0.7,   7.5, 12500,   True),    # lv5  (max)
+    (9,    1.10,  5.7,  None,   False),   # lv0
+    (15,   1.00,  6.0,   400,   False),   # lv1
+    (24,   0.95,  6.3,  1100,   True),    # lv2  — gains Hidden Detection
+    (42,   0.85,  6.8,  2400,   True),    # lv3
+    (70,   0.75,  7.2,  7000,   True),    # lv4
+    (130,  0.65,  7.7, 13500,   True),    # lv5  (max)
 ]
 
 
@@ -9571,107 +9574,132 @@ C_STRONGEST      = (180,  30,  30)   # deep crimson
 C_STRONGEST_DARK = ( 60,   5,   5)
 C_STRONGEST_ACC  = (255, 200,  50)   # gold accent (markings)
 
-# Stats copied from Korzhik (FELYNE_LEVELS) levels 0-5 (no lv6)
+# The Strongest — burst "executioner" identity, NOT a Korzhik clone.
+# It has no orbital sentries, so it trades AoE/multi-target for hard, precise
+# single-target instant slashes that never miss. DPS per level (single target):
+#   lv0 8.2 · lv1 15 · lv2 25 · lv3 49 · lv4 93 · lv5 200 — strong 1v1, zero AoE.
 #                  dmg  firerate  range_tiles  cost    hidden
 _STRONGEST_LEVELS = [
-    (4,    1.2,   5.7,  None,   False),   # lv0
-    (6,    1.0,   6.0,   350,   False),   # lv1
-    (8,    1.0,   6.0,  1000,   True),    # lv2
-    (20,   1.0,   7.0,  2000,   True),    # lv3
-    (25,   0.7,   7.0,  7500,   True),    # lv4
-    (75,   0.7,   7.5, 12500,   True),    # lv5  (max)
+    (9,    1.10,  5.7,  None,   False),   # lv0
+    (15,   1.00,  6.0,   400,   False),   # lv1
+    (24,   0.95,  6.3,  1100,   True),    # lv2  — gains Hidden Detection
+    (42,   0.85,  6.8,  2400,   True),    # lv3
+    (70,   0.75,  7.2,  7000,   True),    # lv4
+    (130,  0.65,  7.7, 13500,   True),    # lv5  (max)
 ]
 
 
 class _SlashEffect:
-    """Sukuna-style slash mark - follows enemy, white with black outline, tapered ends."""
-    DURATION = 0.35   # seconds - быстрее
-    
+    """Sukuna 'Cleave' style crimson cross-slash — follows the enemy. Two crossing
+    tapered blades (×) with a white-hot core over a red cursed-energy glow, an
+    impact flash, and a burst of sparks. Pure visual, no bullets."""
+    DURATION = 0.42   # seconds
+
     # Переиспользуемый surface для всех эффектов
     _shared_surf = None
 
     def __init__(self, x, y, angle, target=None):
-        self.x     = x
-        self.y     = y
-        self.angle = random.uniform(0, math.pi * 2)  # Random angle
-        self.t     = 0.0
-        self.alive = True
-        self.target = target  # Враг, за которым следует разрез
+        self.x      = x
+        self.y      = y
+        self.angle  = random.uniform(0, math.pi)   # tilt of the ×
+        self.t      = 0.0
+        self.alive  = True
+        self.target = target                       # враг, за которым следует разрез
+        # Лёгкая асимметрия — каждый разрез выглядит "от руки"
+        self.len1   = random.uniform(36, 48)
+        self.len2   = random.uniform(30, 44)
+        self.skew   = random.uniform(-0.28, 0.28)  # отклонение второй полосы от 90°
+        # Искры, разлетающиеся из точки удара
+        self._sparks = []
+        for _ in range(7):
+            sa = random.uniform(0, math.pi * 2)
+            sp = random.uniform(70, 200)
+            self._sparks.append((math.cos(sa) * sp, math.sin(sa) * sp,
+                                 random.uniform(0.12, 0.30)))
 
     def update(self, dt):
         self.t += dt
         if self.t >= self.DURATION:
             self.alive = False
-        
         # Следуем за врагом
         if self.target and self.target.alive:
             self.x = self.target.x
             self.y = self.target.y
 
+    @staticmethod
+    def _blade(surf, cx, cy, angle, half_len, alpha):
+        """Нарисовать одну заострённую полосу: красное свечение → корпус → белое ядро."""
+        ca, sa = math.cos(angle), math.sin(angle)
+        pa = angle + math.pi / 2
+        cpa, spa = math.cos(pa), math.sin(pa)
+        x1, y1 = cx + ca * half_len, cy + sa * half_len
+        x2, y2 = cx - ca * half_len, cy - sa * half_len
+
+        def poly(w):
+            return [
+                (int(x1), int(y1)),
+                (int(cx + cpa * w), int(cy + spa * w)),
+                (int(x2), int(y2)),
+                (int(cx - cpa * w), int(cy - spa * w)),
+            ]
+
+        # Внешнее красное свечение проклятой энергии (широкое, мягкое)
+        pygame.draw.polygon(surf, (255, 30, 30, int(alpha * 0.40)), poly(10))
+        # Багровый корпус
+        pygame.draw.polygon(surf, (255, 70, 70, int(alpha * 0.80)), poly(5))
+        # Бело-горячее ядро
+        pygame.draw.polygon(surf, (255, 240, 240, alpha), poly(2))
+        # Бритвенно-острая центральная линия
+        pygame.draw.line(surf, (255, 255, 255, min(255, alpha + 60)),
+                         (int(x1), int(y1)), (int(x2), int(y2)), 1)
+
     def draw(self, surf):
         if not self.alive:
             return
-        
-        # Создаем shared surface один раз
-        if _SlashEffect._shared_surf is None or _SlashEffect._shared_surf.get_size() != surf.get_size():
+
+        # Создаём shared surface один раз
+        if (_SlashEffect._shared_surf is None
+                or _SlashEffect._shared_surf.get_size() != surf.get_size()):
             _SlashEffect._shared_surf = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
-        
+        buf = _SlashEffect._shared_surf
+        buf.fill((0, 0, 0, 0))
+
         prog = self.t / self.DURATION  # 0 → 1
-        
-        # Быстрое появление, быстрое исчезание
-        if prog < 0.2:
-            alpha = int((prog / 0.2) * 255)
+        # Резкое появление, плавное затухание
+        if prog < 0.15:
+            alpha = int((prog / 0.15) * 255)
         else:
-            alpha = int((1.0 - (prog - 0.2) / 0.8) * 255)
-        
-        # Короче разрез
-        half_len = 35  # Фиксированная длина
-        
+            alpha = int((1.0 - (prog - 0.15) / 0.85) * 255)
+        alpha = max(0, min(255, alpha))
+
         cx, cy = int(self.x), int(self.y)
-        a = self.angle
 
-        # Координаты концов линии
-        x1 = cx + int(math.cos(a) * half_len)
-        y1 = cy + int(math.sin(a) * half_len)
-        x2 = cx - int(math.cos(a) * half_len)
-        y2 = cy - int(math.sin(a) * half_len)
+        # Полосы вылетают на полную длину почти мгновенно
+        grow = min(1.0, prog / 0.12)
+        a1 = self.angle
+        a2 = self.angle + math.pi / 2 + self.skew
+        self._blade(buf, cx, cy, a1, self.len1 * grow, alpha)
+        self._blade(buf, cx, cy, a2, self.len2 * grow, alpha)
 
-        # Очищаем shared surface
-        _SlashEffect._shared_surf.fill((0, 0, 0, 0))
-        
-        # Рисуем заостренный разрез (треугольником по краям)
-        # Создаем точки для полигона с заострением
-        perp_a = a + math.pi / 2  # Перпендикуляр
-        
-        # Ширина в центре
-        center_width = 3
-        
-        # Точки полигона (заостренный с обоих концов)
-        points = [
-            (x1, y1),  # Острый конец 1
-            (cx + int(math.cos(perp_a) * center_width), cy + int(math.sin(perp_a) * center_width)),  # Центр верх
-            (x2, y2),  # Острый конец 2
-            (cx - int(math.cos(perp_a) * center_width), cy - int(math.sin(perp_a) * center_width)),  # Центр низ
-        ]
-        
-        # Черная обводка (толще)
-        outline_points = [
-            (x1, y1),
-            (cx + int(math.cos(perp_a) * (center_width + 2)), cy + int(math.sin(perp_a) * (center_width + 2))),
-            (x2, y2),
-            (cx - int(math.cos(perp_a) * (center_width + 2)), cy - int(math.sin(perp_a) * (center_width + 2))),
-        ]
-        pygame.draw.polygon(_SlashEffect._shared_surf, (0, 0, 0, alpha), outline_points)
-        
-        # Белая полоска
-        pygame.draw.polygon(_SlashEffect._shared_surf, (255, 255, 255, alpha), points)
-        
-        # Яркая центральная линия для эффекта
-        pygame.draw.line(_SlashEffect._shared_surf, (255, 255, 255, min(255, alpha + 80)), 
-                        (x1, y1), (x2, y2), 1)
-        
-        # Рисуем все за один раз
-        surf.blit(_SlashEffect._shared_surf, (0, 0))
+        # Вспышка удара — яркое кольцо, которое расширяется и гаснет
+        if prog < 0.35:
+            f  = 1.0 - prog / 0.35
+            fr = int(8 + (1.0 - f) * 24)
+            fa = int(f * 210)
+            pygame.draw.circle(buf, (255, 120, 120, fa // 2), (cx, cy), fr, 2)
+            pygame.draw.circle(buf, (255, 255, 255, fa), (cx, cy), max(2, int(fr * 0.4)))
+
+        # Искры, разлетающиеся наружу
+        for vx, vy, life in self._sparks:
+            if self.t < life:
+                sf = self.t / life
+                sx = int(cx + vx * self.t)
+                sy = int(cy + vy * self.t)
+                pygame.draw.circle(buf, (255, 190, 130, int((1.0 - sf) * 230)),
+                                   (sx, sy), max(1, int(3 * (1.0 - sf))))
+
+        # Рисуем всё за один blit
+        surf.blit(buf, (0, 0))
 
 
 class _StrongestBullet:

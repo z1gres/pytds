@@ -306,6 +306,7 @@ from enemies import (
     FallenGuardianEnemy,
     WAVE_DATA, FALLEN_WAVE_DATA, FALLEN_MAX_WAVES,
     HARDCORE_WAVE_DATA, HARDCORE_MAX_WAVES,
+    VoidReaver,
     BREAKER_POOL, FALLEN_BREAKER_POOL,
     WaveManager,
     # Frosty enemies
@@ -794,6 +795,7 @@ class AdminPanel:
                 if name=="Accelerator": draw_accel_icon(surf,cx2+cw//2,cy2+28,t,size=20)
                 elif name=="Frostcel.": draw_frost_icon(surf,cx2+cw//2,cy2+28,t,size=20)
                 elif name=="Castbound": _draw_tower_icon(surf,"Castbound",cx2+cw//2,cy2+26,t,size=32)
+                elif name=="RubberDuck": _draw_tower_icon(surf,"Rubber Duck",cx2+cw//2,cy2+28,t,size=24)
 
                 else:
                     pygame.draw.circle(surf,(16,12,28),(cx2+cw//2,cy2+28),20)
@@ -1028,6 +1030,16 @@ class UI:
         # Skip button rect — top-left area, right of wave counter
         skp_x, skp_y = self.ui_layout.get("skip", (8, 54))
         self._skip_btn = pygame.Rect(skp_x, skp_y, 120, 28)
+        # Wave navigator overlay
+        self.wave_nav_visible = False
+        self.wave_nav_scroll  = 0
+        self.wave_nav_jump    = None   # pending "jump to wave N" request for the Game loop
+        self._wave_nav_max_scroll = 0
+        self._wave_nav_btn   = pygame.Rect(0, 0, 0, 0)
+        self._wave_nav_close = pygame.Rect(0, 0, 0, 0)
+        self._wave_nav_panel = pygame.Rect(0, 0, 0, 0)
+        self._wave_nav_content = pygame.Rect(0, 0, 0, 0)
+        self._wave_nav_rows  = []
     def _build_slots(self):
         slots=[]; gap=8
         total_w=5*SLOT_W+4*gap
@@ -1041,6 +1053,24 @@ class UI:
         if self.msg_timer>0: self.msg_timer-=dt
         self.t += dt
     def handle_click(self,pos,units,money,effects,enemies,wave=1,save_data=None,mode="easy",wave_mgr=None):
+        # ── Wave navigator overlay takes priority ────────────────────────────
+        if self.wave_nav_visible:
+            if self._wave_nav_close.collidepoint(pos):
+                self.wave_nav_visible = False
+                return 0
+            if self._wave_nav_content.collidepoint(pos):
+                for rect, wnum in self._wave_nav_rows:
+                    if rect.collidepoint(pos):
+                        self.wave_nav_jump = wnum     # Game loop performs the warp
+                        self.wave_nav_visible = False
+                        return 0
+            if not self._wave_nav_panel.collidepoint(pos):
+                self.wave_nav_visible = False
+            return 0
+        if self._wave_nav_btn.collidepoint(pos):
+            self.wave_nav_visible = True
+            self.wave_nav_scroll = 0
+            return 0
         # ── Remote Control UI takes priority ─────────────────────────────────
         if getattr(self, '_rc_open', False):
             return self.handle_rc_click(pos, money)
@@ -1087,8 +1117,12 @@ class UI:
         if sn_r and sn_r.collidepoint(pos):
 
             return 0
-        # Speed button
+        # Speed button — requires the Timescale Pass to change speed
         if self._speed_btn.collidepoint(pos):
+            if not self.save_data.get("timescale_pass", False):
+                self._speed_idx = 2  # locked at 1x
+                self.show_msg("Timescale Pass required to change speed! (Shop -> Passes)", 3.0)
+                return 0
             self._speed_idx = (self._speed_idx + 1) % len(self._SPEED_STEPS)
             return 0
         # Admin panel — available in sandbox and admin-mode restarts
@@ -1866,6 +1900,10 @@ class UI:
             _draw_tower_icon(surf, "Korzhik", cx, cy, pygame.time.get_ticks()*0.001, size=30)
         elif isinstance(u, Castbound):
             _draw_tower_icon(surf, "Castbound", cx, cy, pygame.time.get_ticks()*0.001, size=30)
+        elif isinstance(u, TheStrongest):
+            _draw_tower_icon(surf, "The Strongest", cx, cy, pygame.time.get_ticks()*0.001, size=30)
+        elif isinstance(u, RubberDuck):
+            _draw_tower_icon(surf, "Rubber Duck", cx, cy, pygame.time.get_ticks()*0.001, size=30)
         else:
             pygame.draw.circle(surf,(70,40,100),(cx,cy),28)
             pygame.draw.circle(surf,u.COLOR,(cx,cy),22)
@@ -2126,6 +2164,84 @@ class UI:
         surf.blit(s_in, (x, y))
         return pygame.Rect(x, y, s_in.get_width(), s_in.get_height())
 
+    def _draw_boss_bar(self, surf, x, y, w, h, frac, label, fill_col, font, t):
+        """Polished boss HP bar: pill frame, gradient fill, top gloss, an animated
+        shine sweep, quarter-scale ticks and a danger pulse when the boss is low."""
+        frac   = max(0.0, min(1.0, frac))
+        base   = tuple(int(c) for c in fill_col[:3])
+        bright = tuple(min(255, c + 80) for c in base)
+        dark   = tuple(int(c * 0.40) for c in base)
+        rad    = h // 2
+
+        # ── Drop shadow ──────────────────────────────────────────────────────
+        sh = pygame.Surface((w + 12, h + 12), pygame.SRCALPHA)
+        pygame.draw.rect(sh, (0, 0, 0, 110), (6, 7, w, h), border_radius=rad)
+        surf.blit(sh, (x - 6, y - 5))
+
+        # ── Outer frame + dark inner track ───────────────────────────────────
+        pygame.draw.rect(surf, (8, 8, 12),   (x - 3, y - 3, w + 6, h + 6), border_radius=rad + 3)
+        pygame.draw.rect(surf, (26, 26, 34), (x, y, w, h),                 border_radius=rad)
+
+        fw = int(w * frac)
+        if fw > 1:
+            fw = max(fw, rad + 2)   # keep the rounded cap visible at low HP
+            # vertical gradient fill (bright top → dark bottom), masked to a pill
+            grad = pygame.Surface((fw, h), pygame.SRCALPHA)
+            for i in range(h):
+                tt = i / max(1, h - 1)
+                grad_col = (int(bright[0] + (dark[0] - bright[0]) * tt),
+                            int(bright[1] + (dark[1] - bright[1]) * tt),
+                            int(bright[2] + (dark[2] - bright[2]) * tt))
+                pygame.draw.line(grad, grad_col, (0, i), (fw, i))
+            mask = pygame.Surface((fw, h), pygame.SRCALPHA)
+            pygame.draw.rect(mask, (255, 255, 255, 255), (0, 0, fw, h), border_radius=rad)
+            grad.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            surf.blit(grad, (x, y))
+
+            # top gloss highlight
+            gloss = pygame.Surface((fw, h), pygame.SRCALPHA)
+            pygame.draw.rect(gloss, (255, 255, 255, 60), (2, 2, max(1, fw - 4), max(1, h // 2 - 1)),
+                             border_radius=rad)
+            surf.blit(gloss, (x, y))
+
+            # animated diagonal shine sweep (clipped to the fill)
+            old_clip = surf.get_clip()
+            surf.set_clip(pygame.Rect(x, y, fw, h))
+            sweep_w = 26
+            phase = ((t * 0.6) % 1.6) / 1.6           # 0..1 with a brief pause
+            sx = x + int(phase * (fw + sweep_w * 2)) - sweep_w
+            band = pygame.Surface((sweep_w, h), pygame.SRCALPHA)
+            for i in range(sweep_w):
+                a = int(70 * (1 - abs(i - sweep_w / 2) / (sweep_w / 2)))
+                if a > 0:
+                    pygame.draw.line(band, (255, 255, 255, a), (i, 0), (i, h))
+            surf.blit(band, (sx, y))
+            surf.set_clip(old_clip)
+
+        # ── Quarter-scale ticks for readability ──────────────────────────────
+        tick = pygame.Surface((w, h), pygame.SRCALPHA)
+        for k in (0.25, 0.5, 0.75):
+            tx2 = int(w * k)
+            pygame.draw.line(tick, (0, 0, 0, 70),       (tx2, 3),     (tx2, h - 3), 1)
+            pygame.draw.line(tick, (255, 255, 255, 22), (tx2 + 1, 3), (tx2 + 1, h - 3), 1)
+        surf.blit(tick, (x, y))
+
+        # ── Border + low-HP danger pulse ─────────────────────────────────────
+        if frac <= 0.30:
+            pulse = abs(math.sin(t * 6.0))
+            bcol  = (255, int(55 + pulse * 70), int(55 + pulse * 45))
+            bw    = 2 + int(pulse * 1.6)
+        else:
+            bcol = bright
+            bw   = 2
+        pygame.draw.rect(surf, bcol, (x, y, w, h), bw, border_radius=rad)
+
+        # ── Label (skull + name + hp) with a soft outline ────────────────────
+        lcx, lcy = x + w // 2, y + h // 2
+        for dx, dy in ((-1, -1), (1, -1), (-1, 1), (1, 1), (0, -1), (0, 1)):
+            txt(surf, label, (lcx + dx, lcy + dy), (0, 0, 0), font, center=True)
+        txt(surf, label, (lcx, lcy), (245, 245, 250), font, center=True)
+
     def draw(self,surf,units,money,wave_mgr,player_hp,player_maxhp,enemies,
              boss_enemy=None,extra_boss_bars=None,fallen_boss_bars=None,mode="easy"):
         wave=wave_mgr.wave
@@ -2147,16 +2263,6 @@ class UI:
         self._outline_text(surf, "Wave:", f_lbl, (wx, wy), C_WHITE, outline_px=2)
         lbl_rect_w = f_lbl.render("Wave:", True, C_WHITE).get_width()
         self._outline_text(surf, wave_str, f_val, (wx + lbl_rect_w//2, wy + 22), C_WHITE, outline_px=3, center_x=True)
-
-        if mode == "hardcore":
-            _hc_t = pygame.time.get_ticks() * 0.001
-            _pr = min(255, int(180 + abs(math.sin(_hc_t * 2)) * 60))
-            _hf = pygame.font.SysFont("consolas", 14, bold=True)
-            _hs = _hf.render("☠ HARDCORE BETA", True, (_pr, 50, 50))
-            _hbg = pygame.Rect(wx, wy + 52, _hs.get_width() + 10, 16)
-            pygame.draw.rect(surf, (30, 5, 5), _hbg, border_radius=3)
-            pygame.draw.rect(surf, (120, 20, 20), _hbg, 1, border_radius=3)
-            surf.blit(_hs, (_hbg.x + 5, _hbg.y + 1))
 
         # Base Health (HP bar)
         bx_hp, by_hp_raw = getattr(self, "ui_layout", {}).get("hp", (SCREEN_W//2 - 200, 20))
@@ -2215,42 +2321,26 @@ class UI:
             self._skip_yes_rect = pygame.Rect(-200, -200, 1, 1)
             self._skip_no_rect = pygame.Rect(-200, -200, 1, 1)
         bar_y=by_hp+51
+        _bt = pygame.time.get_ticks() * 0.001
+        bbw=560; bbh=38; bbx=(SCREEN_W-bbw)//2
         if boss_enemy and boss_enemy.alive:
-            bbx=200; bby=bar_y; bbw=SCREEN_W-400; bbh=24
-            pygame.draw.rect(surf,(20,20,20),(bbx-2,bby-2,bbw+4,bbh+4),border_radius=5)
-            pygame.draw.rect(surf,C_HP_BG,(bbx,bby,bbw,bbh),border_radius=4)
             r2=max(0,boss_enemy.hp/boss_enemy.maxhp)
-            pygame.draw.rect(surf,(60,200,60),(bbx,bby,int(bbw*r2),bbh),border_radius=4)
-            pygame.draw.rect(surf,(140,255,140),(bbx,bby,bbw,bbh),2,border_radius=4)
-            txt(surf,f"☠ GRAVE DIGGER   {int(boss_enemy.hp)}/{boss_enemy.maxhp}",
-                (bbx+bbw//2,bby+12),(140,255,140),font_sm,center=True)
-            bar_y+=28
+            self._draw_boss_bar(surf, bbx, bar_y, bbw, bbh, r2,
+                f"☠ GRAVE DIGGER   {int(boss_enemy.hp)}/{boss_enemy.maxhp}",
+                (60,200,60), font_sm, _bt)
+            bar_y+=bbh+10
         if extra_boss_bars:
             for label,hp,maxhp,col in extra_boss_bars:
-                bbx=200; bby=bar_y; bbw=SCREEN_W-400; bbh=24
-                pygame.draw.rect(surf,(20,20,20),(bbx-2,bby-2,bbw+4,bbh+4),border_radius=4)
-                pygame.draw.rect(surf,C_HP_BG,(bbx,bby,bbw,bbh),border_radius=3)
                 r2=max(0,hp/maxhp) if maxhp>0 else 0
-                pygame.draw.rect(surf,col,(bbx,bby,int(bbw*r2),bbh),border_radius=3)
-                pygame.draw.rect(surf,(min(255,col[0]+80),min(255,col[1]+80),min(255,col[2]+80)),(bbx,bby,bbw,bbh),2,border_radius=3)
-                txt(surf,f"{label}  {int(hp)}/{int(maxhp)}",(bbx+bbw//2,bby+12),(240,240,240),font_sm,center=True)
-                bar_y+=28
+                self._draw_boss_bar(surf, bbx, bar_y, bbw, bbh, r2,
+                    f"{label}   {int(hp)}/{int(maxhp)}", col, font_sm, _bt)
+                bar_y+=bbh+10
         if fallen_boss_bars:
             for label,hp,maxhp,col in fallen_boss_bars:
-                bbx=200; bby=bar_y; bbw=SCREEN_W-400; bbh=26
-                pygame.draw.rect(surf,(20,20,20),(bbx-2,bby-2,bbw+4,bbh+4),border_radius=5)
-                pygame.draw.rect(surf,(40,10,60),(bbx,bby,bbw,bbh),border_radius=4)
                 r2=max(0,hp/maxhp) if maxhp>0 else 0
-                pygame.draw.rect(surf,col,(bbx,bby,int(bbw*r2),bbh),border_radius=4)
-                pygame.draw.rect(surf,(min(255,col[0]+60),min(255,col[1]+60),min(255,col[2]+60)),(bbx,bby,bbw,bbh),2,border_radius=4)
-                # Pick readable text color against the bar fill.
-                lum = 0.2126*col[0] + 0.7152*col[1] + 0.0722*col[2]
-                tcol = (15, 15, 20) if lum > 150 else (245, 245, 250)
-                # tiny outline for extra contrast
-                msg = f"☠ {label}   {int(hp)}/{int(maxhp)}"
-                txt(surf, msg, (bbx+bbw//2+1, bby+13+1), (0,0,0), font_sm, center=True)
-                txt(surf, msg, (bbx+bbw//2,   bby+13),   tcol,     font_sm, center=True)
-                bar_y+=30
+                self._draw_boss_bar(surf, bbx, bar_y, bbw, bbh, r2,
+                    f"☠ {label}   {int(hp)}/{int(maxhp)}", col, font_sm, _bt)
+                bar_y+=bbh+10
                 
         # ── Skip UI ────────────────────────────────────────────────────────
         can_skip = getattr(wave_mgr, 'can_skip', lambda: False)()
@@ -2396,35 +2486,31 @@ class UI:
                 r_inner = 28
                 t = pygame.time.get_ticks() * 0.001
                 _is_castbound = UType.NAME == "Castbound"
-                # Shadow ring (skip for Castbound)
-                if not _is_castbound:
-                    pygame.draw.circle(surf, (10, 10, 18), (cx2, icon_cy), r_outer + 3)
-                # Draw detailed icon on a sub-surface
+                # Towers whose icon is a full sprite/animation — no circular backdrop
+                _no_bg = UType.NAME in ("Castbound", "Rubber Duck")
                 icon_sz = r_inner
                 _cb_sz = int(icon_sz * 1.8) if _is_castbound else icon_sz
-                _surf_r = r_outer*2+6
-                _ic_surf = pygame.Surface((_surf_r*2, _surf_r*2), pygame.SRCALPHA)
-                _ic_cx = _surf_r; _ic_cy = _surf_r
-                # Dark base circle behind icon (skip for Castbound — no bg)
-                if not _is_castbound:
+                if _no_bg:
+                    # Draw icon directly onto surf — no shadow ring, no base circle.
+                    _draw_tower_icon(surf, UType.NAME, cx2, icon_cy, t, size=_cb_sz)
+                    if unavailable:
+                        # Dim the whole card (rounded rect), not a circle.
+                        dim_s2 = pygame.Surface((slot.w, slot.h), pygame.SRCALPHA)
+                        pygame.draw.rect(dim_s2, (0, 0, 0, 120), (0, 0, slot.w, slot.h), border_radius=12)
+                        surf.blit(dim_s2, (slot.x, slot.y))
+                else:
+                    # Shadow ring + dark base circle behind the icon
+                    pygame.draw.circle(surf, (10, 10, 18), (cx2, icon_cy), r_outer + 3)
+                    _surf_r = r_outer*2+6
+                    _ic_surf = pygame.Surface((_surf_r*2, _surf_r*2), pygame.SRCALPHA)
+                    _ic_cx = _surf_r; _ic_cy = _surf_r
                     pygame.draw.circle(_ic_surf, tuple(max(0, c-60) for c in UType.COLOR),
                                        (_ic_cx, _ic_cy), r_outer)
-                if not _is_castbound:
+                    _draw_tower_icon(_ic_surf, UType.NAME, _ic_cx, _ic_cy, t, size=_cb_sz)
                     if unavailable:
-                        _draw_tower_icon(_ic_surf, UType.NAME, _ic_cx, _ic_cy, t, size=_cb_sz)
                         dim_s = pygame.Surface((_surf_r*2, _surf_r*2), pygame.SRCALPHA)
                         pygame.draw.circle(dim_s, (0,0,0,140), (_ic_cx,_ic_cy), r_outer)
                         _ic_surf.blit(dim_s, (0,0))
-                    else:
-                        _draw_tower_icon(_ic_surf, UType.NAME, _ic_cx, _ic_cy, t, size=_cb_sz)
-                if _is_castbound:
-                    # Draw Castbound icon directly onto surf — no sub-surface bg
-                    _draw_tower_icon(surf, UType.NAME, cx2, icon_cy, t, size=_cb_sz)
-                    if unavailable:
-                        dim_s2 = pygame.Surface((slot.w, slot.h), pygame.SRCALPHA)
-                        pygame.draw.circle(dim_s2, (0,0,0,140), (cx2 - slot.x, icon_cy - slot.y), _cb_sz)
-                        surf.blit(dim_s2, (slot.x, slot.y))
-                else:
                     surf.blit(_ic_surf, (cx2 - _surf_r, icon_cy - _surf_r))
 
                 # Name
@@ -2453,10 +2539,12 @@ class UI:
         # ── Speed button (left of loadout) ───────────────────────────────────
         spd_val = self._SPEED_STEPS[self._speed_idx]
         spd_btn = self._speed_btn
+        spd_locked = not self.save_data.get("timescale_pass", False)
         mx_s, my_s = pygame.mouse.get_pos()
         hov_spd = spd_btn.collidepoint(mx_s, my_s)
-        # Color by speed: slow=blue, normal=gray, fast=orange/red
-        if spd_val < 1.0:   spd_accent = (60, 140, 255)
+        # Color by speed: slow=blue, normal=gray, fast=orange/red; muted when locked
+        if spd_locked:     spd_accent = (90, 80, 120)
+        elif spd_val < 1.0:   spd_accent = (60, 140, 255)
         elif spd_val == 1.0: spd_accent = (80, 90, 120)
         else:               spd_accent = (255, 140, 40)
         spd_bg = tuple(min(255, c + (20 if hov_spd else 0)) for c in (18, 22, 38))
@@ -2468,7 +2556,10 @@ class UI:
         elif spd_val == 0.50: spd_lbl = "x0.50"
         spd_s1 = pygame.font.SysFont("segoeui", 11).render("SPEED", True, (120, 130, 160))
         spd_s2 = pygame.font.SysFont("consolas", 20, bold=True).render(spd_lbl, True, spd_accent)
-        spd_s3 = pygame.font.SysFont("segoeui", 10).render("click to cycle", True, (80, 90, 110))
+        if spd_locked:
+            spd_s3 = pygame.font.SysFont("segoeui", 10).render("🔒 Pass required", True, (150, 110, 110))
+        else:
+            spd_s3 = pygame.font.SysFont("segoeui", 10).render("click to cycle", True, (80, 90, 110))
         surf.blit(spd_s1, spd_s1.get_rect(centerx=spd_btn.centerx, top=spd_btn.y + 8))
         surf.blit(spd_s2, spd_s2.get_rect(centerx=spd_btn.centerx, centery=spd_btn.centery + 6))
         surf.blit(spd_s3, spd_s3.get_rect(centerx=spd_btn.centerx, bottom=spd_btn.bottom - 6))
@@ -3715,6 +3806,95 @@ class UI:
         if getattr(self, '_rc_open', False):
             self._draw_rc_panel(surf, money)
 
+        # ── Wave navigator: toggle button + overlay (gated by setting) ────────
+        if SETTINGS.get("wave_navigator", False):
+            self._draw_wave_nav_button(surf)
+            if self.wave_nav_visible:
+                self._draw_wave_navigator(surf, wave_mgr)
+        else:
+            self._wave_nav_btn = pygame.Rect(0, 0, 0, 0)
+            self.wave_nav_visible = False
+
+    def _draw_wave_nav_button(self, surf):
+        """Small toggle button (top-left, under the wave counter) for the navigator."""
+        bx, by = self.ui_layout.get("wavenav", (8, 88))
+        self._wave_nav_btn = pygame.Rect(bx, by, 120, 26)
+        mx, my = pygame.mouse.get_pos()
+        hov = self._wave_nav_btn.collidepoint(mx, my) or self.wave_nav_visible
+        col = (70, 90, 150) if hov else (40, 52, 84)
+        pygame.draw.rect(surf, (8, 10, 16), self._wave_nav_btn.inflate(4, 4), border_radius=7)
+        pygame.draw.rect(surf, col, self._wave_nav_btn, border_radius=6)
+        pygame.draw.rect(surf, (110, 140, 210), self._wave_nav_btn, 2, border_radius=6)
+        txt(surf, "WAVES", self._wave_nav_btn.center, C_WHITE, font_md, center=True)
+
+    def _draw_wave_navigator(self, surf, wave_mgr):
+        """Scrollable overlay listing each wave's enemy composition."""
+        self._wave_nav_rows = []
+        draw_rect_alpha(surf, (0, 0, 0), (0, 0, SCREEN_W, SCREEN_H), 175)
+        pw = min(760, SCREEN_W - 80); ph = min(600, SCREEN_H - 120)
+        px = (SCREEN_W - pw) // 2; py = (SCREEN_H - ph) // 2
+        self._wave_nav_panel = pygame.Rect(px, py, pw, ph)
+        draw_rect_alpha(surf, (14, 16, 26), (px, py, pw, ph), 252, 14)
+        pygame.draw.rect(surf, (70, 84, 124), (px, py, pw, ph), 2, border_radius=14)
+        n = wave_mgr.max_waves
+        txt(surf, "WAVE NAVIGATOR", (px + pw // 2, py + 22), C_WHITE, font_lg, center=True)
+        txt(surf, f"current: wave {wave_mgr.wave}/{n}", (px + 16, py + 16), (150, 200, 150), font_sm)
+        # close button
+        self._wave_nav_close = pygame.Rect(px + pw - 36, py + 12, 24, 24)
+        mx, my = pygame.mouse.get_pos()
+        ccol = (180, 70, 70) if self._wave_nav_close.collidepoint(mx, my) else (120, 44, 44)
+        pygame.draw.rect(surf, ccol, self._wave_nav_close, border_radius=5)
+        txt(surf, "X", self._wave_nav_close.center, C_WHITE, font_md, center=True)
+        # content
+        content_top = py + 46; content_h = ph - 70
+        row_h = 60; gap = 6
+        self._wave_nav_content = pygame.Rect(px + 6, content_top, pw - 12, content_h)
+        self._wave_nav_max_scroll = max(0, n * (row_h + gap) - content_h)
+        if self.wave_nav_scroll > self._wave_nav_max_scroll:
+            self.wave_nav_scroll = self._wave_nav_max_scroll
+        if self.wave_nav_scroll < 0:
+            self.wave_nav_scroll = 0
+        old = surf.get_clip()
+        surf.set_clip(pygame.Rect(px + 6, content_top, pw - 12, content_h))
+        for w in range(1, n + 1):
+            ry = content_top + (w - 1) * (row_h + gap) - self.wave_nav_scroll
+            rect = pygame.Rect(px + 12, ry, pw - 24, row_h)
+            self._wave_nav_rows.append((rect, w))
+            if ry + row_h < content_top or ry > content_top + content_h:
+                continue
+            cur = (w == wave_mgr.wave); done = (w < wave_mgr.wave)
+            bg = (38, 54, 40) if cur else ((16, 18, 24) if done else (22, 26, 38))
+            pygame.draw.rect(surf, bg, rect, border_radius=8)
+            pygame.draw.rect(surf, (90, 220, 90) if cur else (48, 56, 78), rect, 2, border_radius=8)
+            lbl_col = C_GOLD if cur else ((120, 130, 150) if done else C_WHITE)
+            txt(surf, f"Wave {w}", (rect.x + 12, rect.y + 9), lbl_col, font_md)
+            if done:
+                txt(surf, "cleared", (rect.right - 14, rect.y + 11), (90, 160, 90), font_sm, right=True)
+            elif cur:
+                txt(surf, "< now", (rect.right - 14, rect.y + 11), (120, 230, 120), font_sm, right=True)
+            # composition chips
+            groups = []
+            if 1 <= w < len(wave_mgr.wave_data) and wave_mgr.wave_data[w]:
+                groups = wave_mgr.wave_data[w][0]
+            chx = rect.x + 14; chy = rect.y + 32
+            if not groups:
+                txt(surf, "(no enemies)", (chx, chy), (110, 110, 130), font_sm)
+            else:
+                for cls, count in groups:
+                    name = getattr(cls, 'DISPLAY_NAME', cls.__name__)
+                    boss = getattr(cls, 'BASE_HP', 0) >= 1500
+                    chip = f"{count}x {name}"
+                    cw = font_sm.size(chip)[0] + 14
+                    if chx + cw > rect.right - 12:
+                        txt(surf, "...", (chx, chy), (180, 180, 200), font_sm); break
+                    pygame.draw.rect(surf, (60, 28, 64) if boss else (30, 36, 52),
+                                     (chx, chy - 1, cw, 18), border_radius=5)
+                    txt(surf, chip, (chx + 7, chy), (255, 150, 255) if boss else (200, 212, 232), font_sm)
+                    chx += cw + 6
+        surf.set_clip(old)
+        txt(surf, "click a wave to jump to it   -   scroll to browse   -   X / ESC to close",
+            (px + pw // 2, py + ph - 14), (140, 150, 172), font_sm, center=True)
+
     # ─────────────────────────────────────────────────────────────────────────
     # Remote Control (ControlPanel ability) overlay UI
     # ─────────────────────────────────────────────────────────────────────────
@@ -4694,16 +4874,34 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
             pygame.draw.ellipse(surf, C_SWARMER, (bx3 - sp(4), by3 - sp(2), sp(8), sp(5)))
 
     elif unit_name == "Rubber Duck":
-        # Duck: yellow circle with orange beak
-        pygame.draw.circle(surf, C_DUCK_DARK, (cx, cy), sc(27))
-        pygame.draw.circle(surf, C_DUCK, (cx, cy), sc(21))
-        pygame.draw.circle(surf, (255, 240, 80), (cx, cy), sc(21), sp(2))
-        # Beak (triangle pointing right)
-        beak = [(cx + sc(18), cy), (cx + sc(28), cy - sc(5)), (cx + sc(28), cy + sc(5))]
-        pygame.draw.polygon(surf, (255, 140, 0), beak)
-        # Eye
-        pygame.draw.circle(surf, (20, 20, 20), (cx + sc(8), cy - sc(10)), sp(4))
-        pygame.draw.circle(surf, (255, 255, 255), (cx + sc(7), cy - sc(11)), sp(2))
+        # Matches the in-game RubberDuck.draw(): oval body + round head + bill +
+        # eye, floating on a wavy water ring, with a gentle bob.
+        ox = cx - sc(7)            # shift left so the head/bill silhouette centres
+        bob = int(math.sin(t * 3.0) * sc(2))
+        oy = cy + sc(2) + bob
+        # Wavy water ring under the duck
+        rr = sc(28)
+        if rr > 2:
+            ws = pygame.Surface((rr * 2 + 4, rr + 4), pygame.SRCALPHA)
+            wa = int(abs(math.sin(t * 2.0)) * 30 + 22)
+            pygame.draw.ellipse(ws, (80, 180, 255, wa), (0, 0, rr * 2 + 4, rr))
+            surf.blit(ws, (ox - rr - 2, cy + sc(6)))
+        # Body
+        pygame.draw.ellipse(surf, C_DUCK_DARK, (ox - sc(22), oy - sc(10), sc(44), sc(26)))
+        pygame.draw.ellipse(surf, C_DUCK,      (ox - sc(20), oy - sc(8),  sc(40), sc(22)))
+        # Head
+        pygame.draw.circle(surf, C_DUCK_DARK, (ox + sc(14), oy - sc(12)), sc(14))
+        pygame.draw.circle(surf, C_DUCK,      (ox + sc(14), oy - sc(12)), sc(12))
+        # Bill
+        pygame.draw.ellipse(surf, (255, 160, 0), (ox + sc(22), oy - sc(14), sc(12), sc(6)))
+        # Eye (winks every ~3s, like in-game)
+        wink = (int(t) % 3 == 0) and ((t % 1.0) < 0.12)
+        if wink:
+            pygame.draw.line(surf, (0, 0, 0),
+                             (ox + sc(16), oy - sc(13)), (ox + sc(21), oy - sc(13)), sp(2))
+        else:
+            pygame.draw.circle(surf, (0, 0, 0),       (ox + sc(18), oy - sc(14)), sp(3))
+            pygame.draw.circle(surf, (255, 255, 255), (ox + sc(19), oy - sc(15)), sp(1))
 
     elif unit_name == "Harvester":
         # Base rings
@@ -5593,6 +5791,11 @@ class DifficultyMenu:
          "Icy battlefield. Multi-lane chaos.",
          ["HP: 200", "Starting cash: $700"],
          ("1500", (100, 210, 255))),
+        ("play_hardcore","HARDCORE","hc_ico",
+         (160, 60, 230),
+         "Relentless waves. No mercy.",
+         ["HP: 100", "Towers cost x1.4", "No skill tree"],
+         ("—", (190, 110, 255))),
         ("play_draft",   "DRAFT",   "draft_ico",
          (255, 60, 60),
          "Draft curses every few waves.",
@@ -5630,8 +5833,6 @@ class DifficultyMenu:
             cy_card + card_h + 28,
             btn_w, btn_h
         )
-        hc_w, hc_h = 180, 52
-        self.btn_hardcore = pygame.Rect(SCREEN_W - hc_w - 18, SCREEN_H - hc_h - 18, hc_w, hc_h)
 
     def run(self):
         clock = pygame.time.Clock()
@@ -5656,8 +5857,6 @@ class DifficultyMenu:
                             self.action = act
                     if self.btn_back.collidepoint(pos):
                         self.action = "back"
-                    if self.btn_hardcore.collidepoint(pos):
-                        self.action = "play_hardcore"
             self._draw()
             pygame.display.flip()
         return self.action
@@ -5694,14 +5893,27 @@ class DifficultyMenu:
         if raw is not None:
             try:
                 iw, ih = raw.get_size()
-                scale = max(r.w / iw, img_h / ih)
-                if ico_name == "draft_ico": scale *= 1.2
-                nw, nh = max(1, int(iw * scale)), max(1, int(ih * scale))
-                scaled = pygame.transform.smoothscale(raw, (nw, nh))
-                ox2 = (nw - r.w) // 2; oy2 = (nh - img_h) // 2
-                ox2 = max(0, min(ox2, nw - r.w))
-                oy2 = max(0, min(oy2, nh - img_h))
-                clip = scaled.subsurface((ox2, oy2, r.w, img_h))
+                if ico_name == "hc_ico":
+                    # "Contain" fit: show the whole icon, zoomed out, centred on an
+                    # accent backdrop (cover-cropping was clipping it off).
+                    fit = min(r.w / iw, img_h / ih) * 1.025  # 1.23 ÷ 1.2 — slightly smaller icon
+                    nw, nh = max(1, int(iw * fit)), max(1, int(ih * fit))
+                    scaled = pygame.transform.smoothscale(raw, (nw, nh))
+                    clip = pygame.Surface((r.w, img_h), pygame.SRCALPHA)
+                    for fi in range(img_h):
+                        frac = fi / img_h
+                        fc = tuple(int(c * (0.10 + frac * 0.22)) for c in accent)
+                        pygame.draw.line(clip, fc, (0, fi), (r.w, fi))
+                    clip.blit(scaled, ((r.w - nw) // 2, (img_h - nh) // 2))
+                else:
+                    scale = max(r.w / iw, img_h / ih)
+                    if ico_name == "draft_ico": scale *= 1.2
+                    nw, nh = max(1, int(iw * scale)), max(1, int(ih * scale))
+                    scaled = pygame.transform.smoothscale(raw, (nw, nh))
+                    ox2 = (nw - r.w) // 2; oy2 = (nh - img_h) // 2
+                    ox2 = max(0, min(ox2, nw - r.w))
+                    oy2 = max(0, min(oy2, nh - img_h))
+                    clip = scaled.subsurface((ox2, oy2, r.w, img_h))
                 img_mask = pygame.Surface((r.w, img_h), pygame.SRCALPHA)
                 pygame.draw.rect(img_mask, (255,255,255,255), (0,0,r.w,img_h),
                                  border_top_left_radius=16, border_top_right_radius=16)
@@ -5752,6 +5964,9 @@ class DifficultyMenu:
 
         # ── Text area ──
         text_y = r.y + img_h + 10
+        # Clip everything below the image to the card bounds so no text overflows.
+        _old_clip = surf.get_clip()
+        surf.set_clip(pygame.Rect(r.x, r.y + img_h, r.w, r.h - img_h))
 
         # Mode label
         lbl_f = pygame.font.SysFont("consolas", 22, bold=True)
@@ -5802,6 +6017,8 @@ class DifficultyMenu:
         else:
             surf.blit(rew_s, (rx + 5, ry))
 
+        surf.set_clip(_old_clip)
+
     def _draw(self):
         surf = self.screen
         _draw_menu_bg(surf, overlay_alpha=130)
@@ -5842,31 +6059,6 @@ class DifficultyMenu:
         back_f = pygame.font.SysFont("segoeui", 20, bold=True)
         back_s = back_f.render("← BACK", True, C_WHITE if hov_back else (160, 170, 200))
         surf.blit(back_s, back_s.get_rect(center=bb.center))
-
-        # ── HARDCORE BETA button — bottom right ───────────────────────────────
-        hc_btn = self.btn_hardcore
-        hc_hov = hc_btn.collidepoint(mx, my)
-        glow_alpha = int(abs(math.sin(t * 2.4)) * 60 + 30)
-        glow_surf = pygame.Surface((hc_btn.w + 24, hc_btn.h + 24), pygame.SRCALPHA)
-        pygame.draw.rect(glow_surf, (210, 40, 20, glow_alpha),
-                         (0, 0, hc_btn.w + 24, hc_btn.h + 24), border_radius=14)
-        surf.blit(glow_surf, (hc_btn.x - 12, hc_btn.y - 12))
-        hc_bg  = (100, 18, 8) if hc_hov else (72, 10, 4)
-        hc_brd = (255, 80, 30) if hc_hov else (int(160 + abs(math.sin(t * 2.4)) * 60), 40, 18)
-        pygame.draw.rect(surf, hc_bg,  hc_btn, border_radius=10)
-        pygame.draw.rect(surf, hc_brd, hc_btn, 2, border_radius=10)
-        sk_x = hc_btn.x + 12; sk_y = hc_btn.centery; sk_r = 10
-        pygame.draw.circle(surf, (230, 60, 30), (sk_x + sk_r, sk_y - 1), sk_r)
-        pygame.draw.rect(surf, (230, 60, 30), (sk_x + 2, sk_y + 6, sk_r * 2 - 4, 7), border_radius=2)
-        for ex2, ey2 in [(sk_x + sk_r - 4, sk_y - 3), (sk_x + sk_r + 4, sk_y - 3)]:
-            pygame.draw.circle(surf, hc_bg, (ex2, ey2), 3)
-        hc_f1 = pygame.font.SysFont("consolas", 18, bold=True)
-        hc_f2 = pygame.font.SysFont("segoeui",  12)
-        hc_lbl = hc_f1.render("HARDCORE", True, (255, 100, 60) if hc_hov else (210, 65, 30))
-        hc_sub = hc_f2.render("BETA", True, (255, 200, 50))
-        text_x = hc_btn.x + 36
-        surf.blit(hc_lbl, (text_x, hc_btn.y + 6))
-        surf.blit(hc_sub, (text_x, hc_btn.y + hc_lbl.get_height() + 4))
 
 
 
@@ -6355,6 +6547,7 @@ SETTINGS = {
     "menu_style":     0,   # 0 = Void/Gothic, 1 = Modern/Blue
     "no_tower_details": False,  # simple colored circles instead of detailed tower art
     "upgrade_preview":  True,   # show translucent next-level range ring on Upgrade hover
+    "wave_navigator":   False,  # show the in-game WAVES button (disables coin rewards while on)
     "language":         "en",   # "en" or "ru"
 }
 
@@ -7080,6 +7273,7 @@ class SettingsScreen:
             ("auto_skip",            _t("settings.auto_skip")),
             ("sell_confirm",         _t("settings.sell_confirm")),
             ("fast_forward_default", _t("settings.fast_forward")),
+            ("wave_navigator",       _t("settings.wave_navigator")),
             ("linux_mode",           _t("settings.linux_mode")),
         ]
         self._toggle_rects_cache = {}
@@ -7115,6 +7309,9 @@ class SettingsScreen:
         # ── Linux Mode warning modal state ───────────────────────────────────
         self._linux_warn_active = False   # показывать полноэкранное предупреждение
         self._linux_warn_btn    = pygame.Rect(SCREEN_W // 2 - 140, SCREEN_H - 160, 280, 52)
+        # ── Wave Navigator warning modal state ───────────────────────────────
+        self._navwarn_active = False
+        self._navwarn_btn    = pygame.Rect(SCREEN_W // 2 - 140, SCREEN_H // 2 + 90, 280, 52)
 
     # ── Slider helpers ────────────────────────────────────────────────────────
     def _music_bar(self): return self._bar_music
@@ -7144,6 +7341,7 @@ class SettingsScreen:
             ("auto_skip",            _t("settings.auto_skip")),
             ("sell_confirm",         _t("settings.sell_confirm")),
             ("fast_forward_default", _t("settings.fast_forward")),
+            ("wave_navigator",       _t("settings.wave_navigator")),
             ("linux_mode",           _t("settings.linux_mode")),
         ]
 
@@ -7205,6 +7403,11 @@ class SettingsScreen:
             if self._linux_warn_btn.collidepoint(pos):
                 self._linux_warn_active = False
             return
+        # ── Wave Navigator modal intercept ─────────────────────────────────────
+        if self._navwarn_active:
+            if self._navwarn_btn.collidepoint(pos):
+                self._navwarn_active = False
+            return
         if self.btn_back.collidepoint(pos):
             self.running = False; return
         for i, tr in enumerate(self._tab_rects):
@@ -7249,6 +7452,8 @@ class SettingsScreen:
                 if key == "linux_mode" and SETTINGS[key]:
                     _apply_arch_linux_fix()
                     self._linux_warn_active = True
+                if key == "wave_navigator" and SETTINGS[key]:
+                    self._navwarn_active = True   # warn: no rewards while enabled
                 self._toggle_rects_cache.pop(self._tab, None)
                 return
 
@@ -7684,6 +7889,49 @@ class SettingsScreen:
             _hint_s = _f_hint.render(_t("linux.click_hint"), True, (40, 90, 130))
             surf.blit(_hint_s, _hint_s.get_rect(centerx=SCREEN_W // 2, top=btn.bottom + 8))
 
+        # ── Wave Navigator warning modal ──────────────────────────────────────
+        if self._navwarn_active:
+            _dim = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            _dim.fill((6, 2, 0, 210))
+            surf.blit(_dim, (0, 0))
+
+            CW, CH = 640, 300
+            CX = SCREEN_W // 2 - CW // 2
+            CY = SCREEN_H // 2 - CH // 2
+            _card_s = pygame.Surface((CW, CH), pygame.SRCALPHA)
+            _card_s.fill((22, 12, 4, 248))
+            surf.blit(_card_s, (CX, CY))
+            for _gi, _ga in [(6, 18), (4, 30), (2, 55), (1, 90)]:
+                pygame.draw.rect(surf, (255, 160, 30, _ga),
+                                 (CX - _gi, CY - _gi, CW + _gi * 2, CH + _gi * 2), 1, border_radius=4 + _gi)
+            pygame.draw.rect(surf, (255, 180, 50), (CX, CY, CW, CH), 1, border_radius=4)
+            pygame.draw.line(surf, (255, 210, 80), (CX + 1, CY + 1), (CX + CW - 2, CY + 1))
+
+            _f_title = pygame.font.SysFont("segoeui", 28, bold=True)
+            _f_body  = pygame.font.SysFont("segoeui", 16)
+            _title_s = _f_title.render("⚠  " + _t("wavenav.title"), True, (255, 210, 120))
+            surf.blit(_title_s, _title_s.get_rect(centerx=SCREEN_W // 2, top=CY + 34))
+            pygame.draw.line(surf, (140, 90, 30), (CX + 24, CY + 78), (CX + CW - 24, CY + 78), 1)
+
+            _ty = CY + 100
+            for _key, _col in [("wavenav.line1", (200, 190, 175)),
+                               ("wavenav.line2", (255, 150, 110)),
+                               ("wavenav.line3", (200, 190, 175))]:
+                _bs = _f_body.render(_t(_key), True, _col)
+                surf.blit(_bs, _bs.get_rect(centerx=SCREEN_W // 2, top=_ty))
+                _ty += 30
+
+            btn = self._navwarn_btn
+            mx, my = pygame.mouse.get_pos()
+            _hov = btn.collidepoint(mx, my)
+            _btn_s = pygame.Surface((btn.w, btn.h), pygame.SRCALPHA)
+            _btn_s.fill((255, 150, 30, 200) if _hov else (160, 90, 20, 180))
+            surf.blit(_btn_s, btn.topleft)
+            pygame.draw.rect(surf, (255, 200, 60) if _hov else (200, 120, 40), btn, 1)
+            _btn_lbl = pygame.font.SysFont("segoeui", 20, bold=True).render(
+                _t("wavenav.continue"), True, (255, 240, 210) if _hov else (230, 200, 160))
+            surf.blit(_btn_lbl, _btn_lbl.get_rect(center=btn.center))
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Skin system
@@ -8080,22 +8328,24 @@ class ShopScreen:
         self.msg_timer = 3.0
 
     def _handle_passes_click(self, pos):
-        EA_PRICE = 50000
         for pass_id, btn in getattr(self, '_pass_buy_btns', []):
             if btn and btn.collidepoint(pos):
-                coins = self.save_data.get("coins", 0)
-                if pass_id == "early_access":
-                    if self.save_data.get("early_access_purchased", False):
-                        self.msg = "Early Access already owned!"; self.msg_timer = 2.5
-                    elif coins >= EA_PRICE:
-                        self.save_data["coins"] = coins - EA_PRICE
-                        self.save_data["early_access_purchased"] = True
-                        write_save(self.save_data)
-                        self.msg = "Early Access purchased!"
-                        self.msg_timer = 3.0
-                    else:
-                        self.msg = f"Need {fmt_num(EA_PRICE)} coins!"
-                        self.msg_timer = 2.5
+                pdef = next((p for p in self._PASSES if p["id"] == pass_id), None)
+                if not pdef or pdef["price"] is None:
+                    return
+                owned_key = pdef["owned_key"]
+                price     = pdef["price"]
+                coins     = self.save_data.get("coins", 0)
+                if owned_key and self.save_data.get(owned_key, False):
+                    self.msg = f"{pdef['name']} already owned!"; self.msg_timer = 2.5
+                elif coins >= price:
+                    self.save_data["coins"] = coins - price
+                    if owned_key:
+                        self.save_data[owned_key] = True
+                    write_save(self.save_data)
+                    self.msg = f"{pdef['name']} purchased!"; self.msg_timer = 3.0
+                else:
+                    self.msg = f"Need {fmt_num(price)} coins!"; self.msg_timer = 2.5
                 return
 
     # ── Pass definitions ──────────────────────────────────────────────────────
@@ -8116,6 +8366,24 @@ class ShopScreen:
                 "Early preview of new content",
             ],
             "owned_key": "early_access_purchased",
+        },
+        {
+            "id":       "timescale_pass",
+            "name":     "Timescale Pass",
+            "subtitle": "Control the flow of time in-game",
+            "price":    20000,
+            "currency": "coins",
+            "color":    (52,  40,  90),
+            "border":   (160, 120, 255),
+            "text":     (190, 160, 255),
+            "shimmer":  (215, 190, 255),
+            "icon":     "⏱",
+            "perks": [
+                "Unlocks the in-game SPEED button",
+                "Slow time down to 0.25x",
+                "Fast-forward up to 2.0x",
+            ],
+            "owned_key": "timescale_pass",
         },
     ]
 
@@ -10862,7 +11130,7 @@ UNIT_BASE_STATS = {
     "Control Panel":  {"cost": 5000, "limit": 1,  "damage": 0,    "firerate": 0.0,  "range": 6,  "income": None},
     "hacker_laser_effects_test": {"cost": 7500, "limit": 1, "damage": 9999, "firerate": 9.9, "range": 20, "income": None},
     "Castbound":      {"cost": 400,  "limit": 5,  "damage": 4,    "firerate": 0.8,  "range": 6.2,"income": None},
-    "The Strongest":  {"cost": 600,  "limit": 5,  "damage": 4,    "firerate": 1.2,  "range": 5.7,"income": None},
+    "The Strongest":  {"cost": 600,  "limit": 5,  "damage": 130,  "firerate": 0.65, "range": 7.7,"income": None},
 }
 
 # ── Tower descriptions — fill in your own later ───────────────────────────────
@@ -11766,6 +12034,7 @@ class Game:
         elif mode=="hardcore":
             self.wave_mgr=WaveManager(wave_data=HARDCORE_WAVE_DATA, max_waves=HARDCORE_MAX_WAVES)
             self.wave_mgr._mode="hardcore"
+            self.wave_mgr.spawn_interval=0.8   # tighter spawns than default 0.9 → more pressure
             self.player_hp=100; self.player_maxhp=100
             self.money=700
         else:
@@ -11800,8 +12069,8 @@ class Game:
         self.ui=UI(self.save_data)
         self.ui.admin_mode = admin_mode or (mode == "sandbox")
         self.ui.cost_mult = 1.4 if mode == "hardcore" else 1.0
-        # Apply fast-forward default setting
-        if SETTINGS.get("fast_forward_default", False):
+        # Apply fast-forward default setting (only if the Timescale Pass is owned)
+        if SETTINGS.get("fast_forward_default", False) and self.save_data.get("timescale_pass", False):
             self.ui._speed_idx = 4  # 2x speed (index 4 in _SPEED_STEPS)
         self._fallen_king_music_timer = None  # countdown until FallenKing spawns after music starts
         self._fallen_king_spawned = False
@@ -11833,6 +12102,9 @@ class Game:
         # Frosty wave-40: Frost Spirit music → delayed spawn
         self._frost_spirit_music_timer = None
         self._frost_spirit_spawned = False
+        # Hardcore wave-50: Void Reaver entrance flash
+        self._void_reaver_seen = False
+        self._void_flash = 0.0
         # generic scheduled spawns (for delayed summon abilities)
         self._scheduled_spawns = []  # [{"t":float,"cls":type,"x":float,"y":float,"wp":int,"fp":path|None,"from_wave":bool,"free_kill":bool}]
         # Achievement manager
@@ -11933,6 +12205,8 @@ class Game:
 
     def _give_wave_coins(self, wave_num):
         if self.mode not in ("easy", "fallen", "frosty", "infernal", "hardcore"): return
+        # Wave Navigator is a cheat (browse/jump waves) → no coin rewards while it's on.
+        if SETTINGS.get("wave_navigator", False): return
         if wave_num <= self._last_coin_wave: return
         waves_done = wave_num - self._last_coin_wave
         self._last_coin_wave = wave_num
@@ -11955,6 +12229,40 @@ class Game:
 
     def _apply_stun(self, unit, duration):
         unit._stun_timer = max(getattr(unit,"_stun_timer",0), duration)
+
+    def _do_wave_jump(self, w):
+        """Warp the run to wave w (from the wave navigator) and start spawning it."""
+        wm = self.wave_mgr
+        try:
+            w = max(1, min(int(w), wm.max_waves))
+        except (TypeError, ValueError):
+            return
+        # Wipe current enemies and any in-flight scheduled spawns
+        self.enemies = []
+        self._scheduled_spawns = []
+        # Reset boss bars / one-shot boss-spawn flags so boss waves replay cleanly
+        self._boss_enemy = None
+        self._fallen_boss_bars = {}
+        self._frosty_bossbar_seen = set()
+        self._fallen_king_spawned = False
+        self._frost_spirit_spawned = False
+        self._fallen_king_music_timer = None
+        self._frost_spirit_music_timer = None
+        self._void_reaver_seen = False
+        self._void_flash = 0.0
+        self._ceremony_flash_alpha = 0
+        self._wave_leaked = False
+        # Warp the wave manager: _start_wave() increments to w and builds its queue
+        wm.wave = w - 1
+        wm.state = "between"
+        wm._gd_spawned = False
+        wm._timer_expired = False
+        wm._lmoney_pay_pending = False
+        wm._lmoney_pending_wave = None
+        wm._lmoney_paid = True
+        wm._bonus_paid = True
+        wm._start_wave()
+        self.ui.show_msg(f"Jumped to wave {w}", 2.0)
 
     def _broadcast(self, data):
         pass
@@ -12227,6 +12535,11 @@ class Game:
                         else:
                             try: pygame.mixer.music.play(0, start=8.7)
                             except: pass
+                if ev.type == pygame.MOUSEWHEEL and self.ui.wave_nav_visible:
+                    self.ui.wave_nav_scroll = max(
+                        0, min(getattr(self.ui, '_wave_nav_max_scroll', 0),
+                               self.ui.wave_nav_scroll - ev.y * 45))
+                    continue
                 if ev.type == pygame.MOUSEWHEEL and self.admin_mode:
                     if self.ui.admin_panel.visible:
                         self.ui.admin_panel.handle_scroll(ev.y); continue
@@ -12257,7 +12570,9 @@ class Game:
                     continue
                 if ev.type == pygame.KEYDOWN and not self.game_over and not self.win:
                     if ev.key == pygame.K_ESCAPE:
-                        if self.ui._thorn_place_mode:
+                        if self.ui.wave_nav_visible:
+                            self.ui.wave_nav_visible = False
+                        elif self.ui._thorn_place_mode:
                             self.ui._thorn_place_mode  = False
                             self.ui._thorn_place_owner = None
                             self.ui.show_msg("Thorns placement cancelled.", 1.5)
@@ -12413,6 +12728,16 @@ class Game:
                                         self.wave_mgr.wave = max(1, self.wave_mgr.wave - 3)
                                         self.wave_mgr.state = "idle"
                                         self.wave_mgr._between_timer = 5.0
+                                        # Сброс флагов выплаты волны — иначе враги перестают спавниться
+                                        self.wave_mgr._lmoney_paid = False
+                                        self.wave_mgr._bonus_paid = False
+                                        self.wave_mgr._lmoney_pay_pending = False
+                                        self.wave_mgr._lmoney_pending_wave = None
+                                        # Очистить текущих врагов (они из "будущей" волны)
+                                        for _e in self.enemies:
+                                            _e.alive = False
+                                        self.enemies.clear()
+                                        self._scheduled_spawns = []
                                     elif cid == "zero_money":
                                         self.money = 0
                                     elif cid == "damage_5":
@@ -12512,6 +12837,12 @@ class Game:
                         if self.draft_mod_dmg5_timer <= 0:
                             self.draft_mod_dmg5_timer = 0
                             self._draft_state_hash += 1
+
+                # ── Wave navigator: jump-to-wave request from the GUI ──
+                _wjump = getattr(self.ui, 'wave_nav_jump', None)
+                if _wjump:
+                    self.ui.wave_nav_jump = None
+                    self._do_wave_jump(_wjump)
 
                 # ── Auto-skip: automatically skip prep/between timers if enabled ──
                 if SETTINGS.get("auto_skip", False):
@@ -12661,7 +12992,37 @@ class Game:
                         tgt=random.choice(self.units)
                         self._apply_stun(tgt, 2.5)
                         fm._snowball_timer=random.uniform(7,15)
-    
+
+                # VoidReaver abilities (hardcore final boss)
+                _vrs = [e for e in self.enemies if isinstance(e,VoidReaver) and e.alive]
+                if _vrs and not self._void_reaver_seen:
+                    self._void_reaver_seen = True
+                    self._void_flash = 255.0   # purple entrance flash
+                if self._void_flash > 0:
+                    self._void_flash = max(0.0, self._void_flash - dt * 300.0)
+                for vr in _vrs:
+                    # 1) Void Pulse — screen-wide tower stun (telegraphed by a ring)
+                    if getattr(vr, "_void_pulse_timer", 999) <= 0:
+                        vr._void_pulse_timer = random.uniform(12, 16)
+                        vr.trigger_pulse_visual()
+                        for u in self.units:
+                            self._apply_stun(u, 3.5)
+                    # 2) Tendril Lash — local stun within 220px
+                    if getattr(vr, "_tendril_timer", 999) <= 0:
+                        vr._tendril_timer = random.uniform(7, 10)
+                        for u in self.units:
+                            if math.hypot(u.px - vr.x, u.py - vr.y) <= 220:
+                                self._apply_stun(u, 3.0)
+                    # 3) Reaver's Harvest — summon a pack of corrupted minions
+                    if getattr(vr, "_summon_timer", 999) <= 0:
+                        vr._summon_timer = random.uniform(14, 18)
+                        for _ in range(5):
+                            Sp = random.choice((CorruptedFallen, FallenRusher, HiddenBoss))
+                            s2 = Sp(self.wave_mgr.wave); s2.free_kill = True
+                            s2.x = vr.x; s2.y = vr.y
+                            s2._wp_index = getattr(vr, '_wp_index', 1)
+                            self.enemies.append(s2)
+
                 # FallenKing: hero summon + sword lunge stun
                 for k in [e for e in self.enemies if isinstance(e,FallenKing) and e.alive]:
                     if k.should_summon_hero():
@@ -13259,6 +13620,11 @@ class Game:
                 fs_alive = [e for e in self.enemies if isinstance(e, FrostSpirit) and e.alive]
                 if fs_alive:
                     self._fallen_boss_bars[FrostSpirit] = fs_alive[0]
+
+                # Void Reaver: boss bar always (hardcore final boss)
+                vr_alive = [e for e in self.enemies if isinstance(e, VoidReaver) and e.alive]
+                if vr_alive:
+                    self._fallen_boss_bars[VoidReaver] = vr_alive[0]
     
                 # tf_test: always track 1M miniboss and TFK in boss bars regardless of mode
     
@@ -13954,6 +14320,7 @@ class Game:
                 FrostMage:         ("FROST MAGE",          (140,220,255)),
                 FrostHero:         ("FROST HERO",          (160,230,255)),
                 FrostSpirit:       ("FROST SPIRIT",        (220,248,255)),
+                VoidReaver:        ("VOID REAVER",         (180, 90,255)),
             }
         # ── Infernal boss bars ─────────────────────────────────────────────
         if _INFERNAL_AVAILABLE and self.mode == "infernal":
@@ -14003,6 +14370,12 @@ class Game:
             col=getattr(self,'_ceremony_flash_color',(255,255,255))
             fl=pygame.Surface((SCREEN_W,SCREEN_H))
             fl.fill(col); fl.set_alpha(self._ceremony_flash_alpha)
+            self.screen.blit(fl,(0,0))
+
+        # Void Reaver entrance flash (hardcore wave 50)
+        if getattr(self, '_void_flash', 0) > 0:
+            fl=pygame.Surface((SCREEN_W,SCREEN_H))
+            fl.fill((120,20,200)); fl.set_alpha(int(self._void_flash))
             self.screen.blit(fl,(0,0))
 
         # Draw stun indicator on stunned units
