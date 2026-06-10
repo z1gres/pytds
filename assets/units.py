@@ -110,7 +110,7 @@ class Unit:
         elif mode=="Farthest":   pool.sort(key=lambda e: -dist((e.x,e.y),(self.px,self.py)))
         return pool[:count]
 
-ASSASSIN_LEVELS=[(4.5,0.608,3,None),(6.5,0.508,3,450),(6.5,0.508,3,550),(16.5,0.358,3,1500),(28.5,0.358,4,2500)]
+ASSASSIN_LEVELS=[(4,0.6,3,None),(5,0.5,3,450),(6,0.5,3,550),(10,0.5,3,1500),(20,0.4,4,2500)]
 
 class Assassin(Unit):
     PLACE_COST=300; COLOR=C_ASSASSIN; NAME="Assassin"; _whirl_bonus=0
@@ -132,8 +132,8 @@ class Assassin(Unit):
         self.hidden_detection=(self.level>=1)
         if self.level>=2 and self.ability is None: self.ability=WhirlwindAbility(self)
         b=0
-        if self.level>=3: b+=15
-        if self.level>=4: b+=10
+        if self.level>=3: b+=10
+        if self.level>=4: b+=15
         self._whirl_bonus=b
 
     def upgrade_cost(self):
@@ -1620,16 +1620,17 @@ C_REDBALL      = (220, 40,  40)
 C_REDBALL_DARK = (120, 10,  10)
 
 # (damage, firerate, upgrade_cost)  — range is always 7
+# (damage, firerate, upgrade_cost, range_tiles)
 REDBALL_LEVELS = [
-    (12,  0.7, None),
-    (20,  0.8, 1000),
-    (35,  0.8, 1250),
-    (45,  0.6, 3000),
-    (100, 0.6, 4000),
+    (17,  0.6, None, 7),
+    (25,  0.6, 1500, 7),
+    (45,  0.6, 2400, 8),
+    (60,  0.6, 5300, 9),
+    (175, 0.5, 8500, 10),
 ]
 
 class RedBall(Unit):
-    PLACE_COST=1250; COLOR=C_REDBALL; NAME="Red Ball"; hidden_detection=False
+    PLACE_COST=2000; COLOR=C_REDBALL; NAME="Red Ball"; hidden_detection=False
     RANGE_TILES=7
 
     def __init__(self, px, py):
@@ -1644,8 +1645,8 @@ class RedBall(Unit):
         self._apply_level()
 
     def _apply_level(self):
-        d,fr,_=REDBALL_LEVELS[self.level]
-        self.damage=d; self.firerate=fr
+        d,fr,_,rng=REDBALL_LEVELS[self.level]
+        self.damage=d; self.firerate=fr; self.range_tiles=rng
         # hidden_detection unlocks at level 2 (3rd upgrade)
         self.hidden_detection = self.level >= 2
 
@@ -1769,6 +1770,559 @@ class RedBall(Unit):
         return {"Damage":self.damage,"Range":self.RANGE_TILES,
                 "Firerate":f"{self.firerate:.1f}",
                 "HidDet":"YES" if self.hidden_detection else "no"}
+
+
+# ── Railgunner ───────────────────────────────────────────────────────────────
+# Heavy long-range sniper. Charges up, then fires a straight rail beam that
+# pierces EVERY enemy along its path (up to `pierce`). Massive single-shot dmg.
+C_RAIL       = (160, 95,  245)
+C_RAIL_DARK  = (60,  30,  100)
+C_RAIL_CORE  = (235, 215, 255)
+
+# (damage, firerate, range_tiles, upgrade_cost, pierce, charge_time, hidden_detection)
+RAILGUNNER_LEVELS = [
+    ( 45, 2.5,  8, None,   2, 0.50, False),
+    ( 80, 2.4,  9, 1200,   3, 0.45, False),
+    (150, 2.2, 10, 2800,   4, 0.40, True),
+    (300, 2.0, 11, 6500,   4, 0.35, True),
+    (650, 1.8, 12, 15000,  5, 0.30, True),
+]
+
+class Railgunner(Unit):
+    PLACE_COST=1500; COLOR=C_RAIL; NAME="Railgunner"; hidden_detection=False
+    RAIL_WIDTH=16   # half-thickness (px) of the rail line for hit detection
+
+    def __init__(self, px, py):
+        super().__init__(px,py)
+        self._aim_angle=0.0
+        self._charging=False
+        self._charge_t=0.0
+        self._beam_t=0.0        # remaining visual beam time
+        self._beam_end=(px,py)  # cached muzzle->endpoint for drawing
+        self._anim_t=0.0
+        self._target=None
+        self._apply_level()
+
+    def _apply_level(self):
+        (self.damage,self.firerate,self.range_tiles,_,
+         self._pierce,self._charge_time,self.hidden_detection)=RAILGUNNER_LEVELS[self.level]
+
+    def upgrade_cost(self):
+        nxt=self.level+1
+        if nxt>=len(RAILGUNNER_LEVELS): return None
+        return RAILGUNNER_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt=self.level+1
+        if nxt<len(RAILGUNNER_LEVELS): self.level=nxt; self._apply_level()
+
+    def _line_targets(self):
+        """Enemies the rail (tower -> aim direction, length=range) passes through,
+        sorted by distance from the tower, capped at self._pierce."""
+        rng=self.range_tiles*TILE
+        ca,sa=math.cos(self._aim_angle),math.sin(self._aim_angle)
+        hits=[]
+        for e in self._last_enemies:
+            if not e.alive: continue
+            if e.IS_HIDDEN and not self.hidden_detection and not getattr(e,"_exposed",False): continue
+            rx=e.x-self.px; ry=e.y-self.py
+            proj=rx*ca+ry*sa                       # distance along the rail
+            if proj<0 or proj>rng: continue
+            perp=abs(rx*(-sa)+ry*ca)               # perpendicular offset
+            if perp>self.RAIL_WIDTH+getattr(e,"radius",14): continue
+            hits.append((proj,e))
+        hits.sort(key=lambda h:h[0])
+        return [e for _,e in hits[:self._pierce]]
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t+=dt
+        self._last_enemies=enemies
+        if self.cd_left>0: self.cd_left-=dt
+        if self._beam_t>0: self._beam_t-=dt
+
+        # Track first enemy in range for aiming
+        targets=self._get_targets(enemies,1)
+        if targets:
+            self._target=targets[0]
+            self._aim_angle=math.atan2(self._target.y-self.py,self._target.x-self.px)
+        else:
+            self._target=None
+
+        if self._charging:
+            self._charge_t-=dt
+            # keep aiming at a live target while charging
+            if self._target is not None:
+                self._aim_angle=math.atan2(self._target.y-self.py,self._target.x-self.px)
+            if self._charge_t<=0:
+                self._fire()
+            return
+
+        # Begin a new charge when ready and a target exists
+        if self.cd_left<=0 and self._target is not None:
+            self._charging=True
+            self._charge_t=self._charge_time
+
+    def _fire(self):
+        self._charging=False
+        self.cd_left=self.firerate
+        rng=self.range_tiles*TILE
+        ca,sa=math.cos(self._aim_angle),math.sin(self._aim_angle)
+        self._beam_end=(self.px+ca*rng, self.py+sa*rng)
+        self._beam_t=0.18
+        for e in self._line_targets():
+            e.take_damage(self.damage)
+            self.total_damage+=self.damage
+
+    def draw(self, surf):
+        cx,cy=int(self.px),int(self.py)
+        t=self._anim_t
+        a=self._aim_angle
+        ca,sa=math.cos(a),math.sin(a)
+
+        # ── Rail beam flash (fades out) ──
+        if self._beam_t>0:
+            frac=max(0.0,self._beam_t/0.18)
+            ex,ey=int(self._beam_end[0]),int(self._beam_end[1])
+            bs=pygame.Surface((SCREEN_W,SCREEN_H),pygame.SRCALPHA)
+            pygame.draw.line(bs,(160,95,245,int(120*frac)),(cx,cy),(ex,ey),18)
+            pygame.draw.line(bs,(200,160,255,int(180*frac)),(cx,cy),(ex,ey),8)
+            pygame.draw.line(bs,(*C_RAIL_CORE,int(240*frac)),(cx,cy),(ex,ey),3)
+            surf.blit(bs,(0,0))
+
+        # ── Aura ──
+        glow=pygame.Surface((70,70),pygame.SRCALPHA)
+        ga=int(abs(math.sin(t*2.5))*45+25)
+        pygame.draw.circle(glow,(150,90,240,ga),(35,35),32)
+        surf.blit(glow,(cx-35,cy-35))
+
+        # ── Body ──
+        pygame.draw.circle(surf,C_RAIL_DARK,(cx,cy),27)
+        pygame.draw.circle(surf,C_RAIL,(cx,cy),21)
+        pygame.draw.circle(surf,(210,190,255),(cx,cy),21,2)
+
+        # ── Long barrel (rotates to aim) ──
+        pa=a+math.pi/2
+        ox,oy=math.cos(pa),math.sin(pa)
+        bx1=cx+int(ca*8); by1=cy+int(sa*8)
+        bx2=cx+int(ca*40); by2=cy+int(sa*40)
+        # barrel rectangle
+        w=5
+        quad=[(bx1+int(ox*w),by1+int(oy*w)),(bx1-int(ox*w),by1-int(oy*w)),
+              (bx2-int(ox*w),by2-int(oy*w)),(bx2+int(ox*w),by2+int(oy*w))]
+        pygame.draw.polygon(surf,C_RAIL_DARK,quad)
+        pygame.draw.polygon(surf,C_RAIL,quad,2)
+
+        # ── Charge build-up at muzzle ──
+        if self._charging and self._charge_time>0:
+            cf=1.0-max(0.0,self._charge_t/self._charge_time)
+            mx,my=cx+int(ca*40),cy+int(sa*40)
+            cr=int(2+cf*7)
+            cs=pygame.Surface((cr*2+4,cr*2+4),pygame.SRCALPHA)
+            pygame.draw.circle(cs,(*C_RAIL_CORE,int(200*cf)),(cr+2,cr+2),cr)
+            pygame.draw.circle(cs,(200,160,255,int(120*cf)),(cr+2,cr+2),cr+2,2)
+            surf.blit(cs,(mx-cr-2,my-cr-2))
+
+        # ── Level pips ──
+        for i in range(self.level):
+            pygame.draw.circle(surf,C_RAIL_CORE,(cx-10+i*6,cy+36),3)
+
+    def draw_range(self, surf):
+        r=int(self.range_tiles*TILE)
+        s=pygame.Surface((r*2,r*2),pygame.SRCALPHA)
+        pygame.draw.circle(s,(255,255,255,22),(r,r),r)
+        pygame.draw.circle(s,(255,255,255,60),(r,r),r,2)
+        surf.blit(s,(int(self.px)-r,int(self.py)-r))
+
+    def get_info(self):
+        return {"Damage":self.damage,
+                "Firerate":f"{self.firerate:.2f}",
+                "Range":self.range_tiles,
+                "Pierce":("∞" if self._pierce>=999 else self._pierce),
+                "Charge":f"{self._charge_time:.2f}s",
+                "HidDet":"YES" if self.hidden_detection else "no"}
+
+
+# ── xw5yt ────────────────────────────────────────────────────────────────────
+# Early Access dev tower. 11 levels (0–10) with four abilities unlocking along
+# the way: an active Frenzy buff, a passive every-5th-hit slow, an active Blood
+# Nova explosion, and a level-10 upgrade that empowers Frenzy and Blood Nova.
+C_XW       = (205, 55, 120)
+C_XW_DARK  = (85,  15,  55)
+C_XW_ACC   = (255, 150, 200)
+
+# (damage, firerate, range_tiles, upgrade_cost)
+XW5YT_LEVELS = [
+    ( 15, 1.2,  8.0,  None),   # lv0
+    ( 25, 1.1,  8.0,  2200),   # lv1
+    ( 40, 1.0,  8.0,  4400),   # lv2
+    ( 65, 0.9,  8.5,  7200),   # lv3  + Frenzy (ability)
+    ( 90, 0.8, 10.0, 11200),   # lv4  + hidden detection
+    (120, 0.7, 11.0, 14500),   # lv5  + passive slow (every 5th hit)
+    (160, 0.6, 12.0, 22600),   # lv6
+    (210, 0.5, 12.5, 27000),   # lv7  + Blood Nova (ability3)
+    (280, 0.5, 12.5, 35000),   # lv8
+    (360, 0.5, 12.5, 38500),   # lv9
+    (500, 0.5, 12.5, 75000),   # lv10 + empowered Frenzy & Blood Nova
+]
+
+# Tuning constants
+_XW_FRENZY_DUR    = 10.0    # seconds of Frenzy buff
+_XW_FRENZY_CD     = 28.0    # Frenzy cooldown
+_XW_FRENZY_MULT   = 1.50    # +50% damage & firerate (×0.667 cooldown)
+_XW_FRENZY_MULT_X = 1.75    # lv10: +75% damage
+_XW_FRENZY_DOT    = 0.02    # Frenzy shots burn 2% of target max HP / second
+_XW_FRENZY_DOT_T  = 2.0     # how long that burn lingers per shot (refreshable)
+_XW_SLOW_EVERY    = 5       # passive: every Nth hit slows
+_XW_SLOW_PCT      = 0.30    # 30% slow
+_XW_SLOW_DUR      = 3.0     # for 3 seconds
+_XW_NOVA_CD       = 18.0    # Blood Nova cooldown
+_XW_NOVA_RADIUS   = 4.0     # tiles
+_XW_NOVA_MULT     = 3.0     # Blood Nova damage = damage × this
+_XW_FIELD_DUR     = 5.0     # lv10: burning field duration
+_XW_FIELD_DPS     = 0.10    # lv10: field burns 10% of max HP / second
+
+
+class _XwBloodNovaEffect:
+    """Expanding crimson shockwave ring for Blood Nova."""
+    def __init__(self, x, y, radius):
+        self.x=x; self.y=y; self.max_r=radius; self.r=0.0
+        self.alive=True; self._t=0.0; self.duration=0.45
+    def update(self, dt):
+        self._t+=dt
+        if self._t>=self.duration: self.alive=False; return
+        self.r=self.max_r*(self._t/self.duration)
+    def draw(self, surf):
+        if not self.alive: return
+        prog=self._t/self.duration; alpha=int(230*(1.0-prog)); r=int(self.r)
+        if r<2: return
+        s=pygame.Surface((r*2+4,r*2+4),pygame.SRCALPHA)
+        pygame.draw.circle(s,(200,30,70,alpha),     (r+2,r+2),r,4)
+        pygame.draw.circle(s,(120,10,40,alpha//3),  (r+2,r+2),r)
+        pygame.draw.circle(s,(255,140,180,alpha//2),(r+2,r+2),r,1)
+        surf.blit(s,(int(self.x)-r-2,int(self.y)-r-2))
+
+
+class _XwFrenzyAbility:
+    name="Frenzy"; cooldown=_XW_FRENZY_DUR  # placeholder, real cd set on activate
+    def __init__(self, owner):
+        self.owner=owner; self.cd_left=0.0; self.cooldown=_XW_FRENZY_CD
+    def update(self, dt):
+        if self.cd_left>0: self.cd_left-=dt
+    def ready(self): return self.cd_left<=0
+    def activate(self, enemies, effects):
+        if not self.ready(): return False
+        self.cd_left=self.cooldown
+        self.owner._start_frenzy(effects)
+        return True
+
+
+class _XwNovaAbility:
+    name="Blood Nova"
+    def __init__(self, owner):
+        self.owner=owner; self.cd_left=0.0; self.cooldown=_XW_NOVA_CD
+    def update(self, dt):
+        if self.cd_left>0: self.cd_left-=dt
+    def ready(self): return self.cd_left<=0
+    def activate(self, enemies, effects):
+        if not self.ready(): return False
+        self.cd_left=self.cooldown
+        self.owner._blood_nova(enemies, effects)
+        return True
+
+
+class xw5yt(Unit):
+    PLACE_COST=800; COLOR=C_XW; NAME="xw5yt"; hidden_detection=False
+
+    def __init__(self, px, py):
+        super().__init__(px,py)
+        self._anim_t=0.0
+        self._aim_angle=0.0
+        self._beam_target=None     # current beam target
+        self._hit_count=0          # for passive every-5th-hit slow
+        self._frenzy_timer=0.0
+        self._dmg_mult=1.0
+        self._fr_mult=1.0
+        self._field_timer=0.0
+        self._field_radius=0.0
+        self.ability=None          # Frenzy (lv3)
+        self.ability3=None         # Blood Nova (lv7)
+        self._apply_level()
+
+    def _apply_level(self):
+        self.damage,self.firerate,self.range_tiles,_=XW5YT_LEVELS[self.level]
+        # lv4: hidden detection
+        self.hidden_detection = self.level>=4
+        # lv3: Frenzy ability
+        if self.level>=3 and self.ability is None:
+            self.ability=_XwFrenzyAbility(self)
+        # lv7: Blood Nova ability
+        if self.level>=7 and self.ability3 is None:
+            self.ability3=_XwNovaAbility(self)
+
+    def upgrade_cost(self):
+        nxt=self.level+1
+        if nxt>=len(XW5YT_LEVELS): return None
+        return XW5YT_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt=self.level+1
+        if nxt<len(XW5YT_LEVELS): self.level=nxt; self._apply_level()
+
+    # ── Abilities ────────────────────────────────────────────────────────────
+    def _start_frenzy(self, effects):
+        self._frenzy_timer=_XW_FRENZY_DUR
+        dmg_mult=_XW_FRENZY_MULT_X if self.level>=10 else _XW_FRENZY_MULT
+        self._dmg_mult=dmg_mult
+        self._fr_mult=_XW_FRENZY_MULT  # always +50% firerate
+
+    def _blood_nova(self, enemies, effects):
+        r=_XW_NOVA_RADIUS*TILE
+        dmg=self.damage*self._dmg_mult*_XW_NOVA_MULT
+        for e in enemies:
+            if not e.alive: continue
+            if e.IS_HIDDEN and not self.hidden_detection and not getattr(e,"_exposed",False): continue
+            if dist((e.x,e.y),(self.px,self.py))<=r:
+                e.take_damage(dmg); self.total_damage+=dmg
+        effects.append(_XwBloodNovaEffect(self.px,self.py,r))
+        # lv10: leave a burning field
+        if self.level>=10:
+            self._field_timer=_XW_FIELD_DUR
+            self._field_radius=r
+
+    def _apply_slow(self, e):
+        if getattr(e,'SLOW_RESISTANCE',0.0)>=1.0:
+            return
+        orig=getattr(e,'_xw_orig_speed',None)
+        if orig is None: e._xw_orig_speed=e.speed; orig=e.speed
+        res=1.0-getattr(e,'SLOW_RESISTANCE',0.0)
+        e.speed=orig*(1.0-_XW_SLOW_PCT*res)
+        e._xw_slow_timer=_XW_SLOW_DUR*_dm()
+
+    def _tick_debuffs(self, enemies, dt):
+        for e in enemies:
+            if not e.alive: continue
+            # passive slow expiry
+            st=getattr(e,'_xw_slow_timer',0.0)
+            if st>0:
+                e._xw_slow_timer=st-dt
+                if e._xw_slow_timer<=0:
+                    orig=getattr(e,'_xw_orig_speed',None)
+                    if orig is not None: e.speed=orig
+                    e._xw_orig_speed=None
+            # frenzy DoT
+            dt_t=getattr(e,'_xw_dot_timer',0.0)
+            if dt_t>0:
+                e._xw_dot_timer=dt_t-dt
+                e.take_damage(getattr(e,'_xw_dot_dps',0.0)*dt)
+                self.total_damage+=getattr(e,'_xw_dot_dps',0.0)*dt
+        # lv10 burning field
+        if self._field_timer>0:
+            self._field_timer-=dt
+            r=self._field_radius
+            for e in enemies:
+                if not e.alive: continue
+                if dist((e.x,e.y),(self.px,self.py))<=r:
+                    fdmg=e.maxhp*_XW_FIELD_DPS*dt
+                    e.take_damage(fdmg); self.total_damage+=fdmg
+
+    def update(self, dt, enemies, effects, money):
+        self._anim_t+=dt
+        if self.cd_left>0: self.cd_left-=dt
+        if self.ability:  self.ability.update(dt)
+        if self.ability3: self.ability3.update(dt)
+
+        # Frenzy buff timer
+        if self._frenzy_timer>0:
+            self._frenzy_timer-=dt
+            if self._frenzy_timer<=0:
+                self._dmg_mult=1.0; self._fr_mult=1.0
+
+        # tick slows / DoTs / field
+        self._tick_debuffs(enemies, dt)
+
+        # aim & fire
+        targets=self._get_targets(enemies,1)
+        if not targets:
+            self._beam_target=None
+            return
+        t0=targets[0]
+        self._beam_target=t0   # continuous beam to current target
+        self._aim_angle=math.atan2(t0.y-self.py,t0.x-self.px)
+        if self.cd_left<=0:
+            self.cd_left=self.firerate/self._fr_mult
+            dmg=self.damage*self._dmg_mult
+            t0.take_damage(dmg); self.total_damage+=dmg
+            # Frenzy DoT — burn target for % of its max HP
+            if self._frenzy_timer>0:
+                t0._xw_dot_dps=t0.maxhp*_XW_FRENZY_DOT
+                t0._xw_dot_timer=_XW_FRENZY_DOT_T*_dm()
+            # passive: every 5th hit slows (lv5+)
+            if self.level>=5:
+                self._hit_count+=1
+                if self._hit_count>=_XW_SLOW_EVERY:
+                    self._hit_count=0
+                    self._apply_slow(t0)
+
+    def draw(self, surf):
+        cx,cy=int(self.px),int(self.py)
+        t=self._anim_t
+        lava=abs(math.sin(t*2.0))          # pulsing lava glow 0..1
+
+        # ── Burning field (lv10) ──
+        if self._field_timer>0:
+            r=int(self._field_radius)
+            fs=pygame.Surface((r*2,r*2),pygame.SRCALPHA)
+            fa=int(60+abs(math.sin(t*6))*40)
+            pygame.draw.circle(fs,(180,20,50,fa),(r,r),r)
+            pygame.draw.circle(fs,(255,80,120,120),(r,r),r,2)
+            surf.blit(fs,(cx-r,cy-r))
+
+        # ══════════ RITUAL CIRCLE ON THE GROUND ══════════
+        R=46
+        ring_s=pygame.Surface((R*2+8,R*2+8),pygame.SRCALPHA)
+        rc=R+4
+        # soft lava glow fill
+        pygame.draw.circle(ring_s,(180,15,25,int(22+lava*30)),(rc,rc),R)
+        base_a=int(110+lava*120)
+        # concentric circles
+        pygame.draw.circle(ring_s,(220,25,40,base_a),(rc,rc),R,2)
+        pygame.draw.circle(ring_s,(150,10,25,base_a),(rc,rc),R-5,1)
+        pygame.draw.circle(ring_s,(255,55,55,base_a),(rc,rc),int(R*0.62),2)
+        pygame.draw.circle(ring_s,(150,10,25,base_a),(rc,rc),int(R*0.50),1)
+        # pentagram inscribed in inner circle (5-point star, step 144°)
+        star_r=int(R*0.60); spts=[]
+        for i in range(5):
+            ang=math.radians(-90+i*144)
+            spts.append((rc+math.cos(ang)*star_r, rc+math.sin(ang)*star_r))
+        pygame.draw.lines(ring_s,(255,45,55,int(140+lava*110)),True,spts,2)
+        # runic ticks around the outer rim (slow rotation)
+        for i in range(24):
+            ang=math.radians(i*15+t*6)
+            x1=rc+math.cos(ang)*(R-1);  y1=rc+math.sin(ang)*(R-1)
+            x2=rc+math.cos(ang)*(R-5);  y2=rc+math.sin(ang)*(R-5)
+            pygame.draw.line(ring_s,(255,70,70,base_a),(x1,y1),(x2,y2),1)
+        surf.blit(ring_s,(cx-rc,cy-rc))
+        # lit candles at the star's vertices
+        for i in range(5):
+            ang=math.radians(-90+i*144)
+            cxp=int(cx+math.cos(ang)*star_r); cyp=int(cy+math.sin(ang)*star_r)
+            flick=abs(math.sin(t*9+i*2.1))
+            pygame.draw.circle(surf,(225,215,195),(cxp,cyp),2)
+            fl=pygame.Surface((12,12),pygame.SRCALPHA)
+            pygame.draw.circle(fl,(255,110,30,int(110+flick*120)),(6,6),3)
+            pygame.draw.circle(fl,(255,235,130,235),(6,5),1)
+            surf.blit(fl,(cxp-6,cyp-7))
+
+        # ══════════ MONUMENT TOWER (top-down, multi-tiered) ══════════
+        # cast shadow
+        sh=pygame.Surface((64,64),pygame.SRCALPHA)
+        pygame.draw.circle(sh,(0,0,0,90),(32,32),27)
+        surf.blit(sh,(cx-32,cy-32))
+        # stacked stone tiers (concentric, dark)
+        pygame.draw.circle(surf,(16,11,14),(cx,cy),27)
+        pygame.draw.circle(surf,(36,26,30),(cx,cy),24)
+        pygame.draw.circle(surf,(20,14,17),(cx,cy),20)
+        pygame.draw.circle(surf,(42,30,34),(cx,cy),17)
+        pygame.draw.circle(surf,(14,9,11),(cx,cy),13)
+        # crown of spikes around the top
+        for i in range(12):
+            ang=math.radians(i*30 - t*8)
+            bx=cx+math.cos(ang)*22; by=cy+math.sin(ang)*22
+            tx=cx+math.cos(ang)*30; ty=cy+math.sin(ang)*30
+            pa=ang+math.pi/2
+            p1=(bx+math.cos(pa)*3, by+math.sin(pa)*3)
+            p2=(bx-math.cos(pa)*3, by-math.sin(pa)*3)
+            pygame.draw.polygon(surf,(34,32,40),[p1,p2,(tx,ty)])
+            pygame.draw.polygon(surf,(95,22,32),[p1,p2,(tx,ty)],1)
+        # spiral chains stretched around the body
+        for ci in range(2):
+            chain_r=24-ci*5
+            for k in range(16):
+                ang=math.radians(k*22.5 + ci*11 - t*6)
+                x=cx+int(math.cos(ang)*chain_r); y=cy+int(math.sin(ang)*chain_r)
+                pygame.draw.circle(surf,(70,70,82),(x,y),2)
+                pygame.draw.circle(surf,(120,122,135),(x,y),2,1)
+        # vertical glowing runes down the centre
+        rune_a=int(150+lava*105)
+        for ry in range(-9,10,4):
+            pygame.draw.line(surf,(255,40,50),(cx,cy+ry-2),(cx,cy+ry+2),1)
+            pygame.draw.line(surf,(255,90,90),(cx-2,cy+ry),(cx+2,cy+ry),1)
+        # central emblem — flaming eye / brand (circle + vertical line)
+        em_r=int(9+lava*2); es=pygame.Surface((em_r*4,em_r*4),pygame.SRCALPHA); ec=em_r*2
+        pygame.draw.circle(es,(255,30,40,int(120+lava*120)),(ec,ec),em_r+3)
+        pygame.draw.circle(es,(35,0,5,255),(ec,ec),em_r)
+        pygame.draw.circle(es,(255,55,55),(ec,ec),em_r,2)
+        pygame.draw.line(es,(255,80,80),(ec,ec-em_r+1),(ec,ec+em_r-1),2)
+        pygame.draw.line(es,(255,225,205),(ec,ec-em_r+2),(ec,ec+em_r-2),1)
+        surf.blit(es,(cx-ec,cy-ec))
+        pygame.draw.circle(surf,(255,190,180),(cx,cy),2)
+
+        # ── Frenzy aura (extra blaze while empowered) ──
+        if self._frenzy_timer>0:
+            ga=int(abs(math.sin(t*8))*80+70)
+            glow=pygame.Surface((90,90),pygame.SRCALPHA)
+            pygame.draw.circle(glow,(255,30,50,ga),(45,45),40)
+            surf.blit(glow,(cx-45,cy-45))
+
+        # ══════════ THICK BLOOD-RED BEAM (Accelerator-style) ══════════
+        tgt=self._beam_target
+        if tgt is not None and getattr(tgt,'alive',False):
+            tx,ty=int(tgt.x),int(tgt.y)
+            flick=int(abs(math.sin(t*26))*4)
+            s2=pygame.Surface((SCREEN_W,SCREEN_H),pygame.SRCALPHA)
+            beam_layers=[
+                (26+flick,(120,0,12),  10),
+                (18,      (175,12,24), 32),
+                (12,      (220,30,40), 75),
+                (7,       (255,70,70), 150),
+                (3,       (255,150,140),225),
+                (1,       (255,235,225),248),
+            ]
+            for w,c,al in beam_layers:
+                pygame.draw.line(s2,(*c,al),(cx,cy),(tx,ty),w)
+            # blood-drip jitter overlay for a molten feel
+            seg_n=8; zz=[(cx,cy)]
+            for si in range(1,seg_n):
+                frac=si/seg_n
+                mx_=cx+(tx-cx)*frac; my_=cy+(ty-cy)*frac
+                px_=-(ty-cy); py_=(tx-cx); pl=max(1,math.hypot(px_,py_))
+                j=math.sin(t*24+si*1.7)*4
+                zz.append((mx_+px_/pl*j, my_+py_/pl*j))
+            zz.append((tx,ty))
+            pygame.draw.lines(s2,(255,90,90,90),False,zz,2)
+            surf.blit(s2,(0,0))
+            # impact burst at target
+            fr2=int(abs(math.sin(t*18))*8)+9
+            fs=pygame.Surface((fr2*2+10,fr2*2+10),pygame.SRCALPHA); fc=fr2+5
+            pygame.draw.circle(fs,(200,20,30,70), (fc,fc),fr2+5)
+            pygame.draw.circle(fs,(255,60,60,160),(fc,fc),fr2)
+            pygame.draw.circle(fs,(255,205,195,225),(fc,fc),max(1,fr2-5))
+            surf.blit(fs,(tx-fc,ty-fc))
+            # muzzle flare at the emblem
+            mz=pygame.Surface((22,22),pygame.SRCALPHA); mzr=int(abs(math.sin(t*22))*4)+5
+            pygame.draw.circle(mz,(255,70,70,170),(11,11),mzr)
+            pygame.draw.circle(mz,(255,220,210,230),(11,11),max(1,mzr-2))
+            surf.blit(mz,(cx-11,cy-11))
+
+        # ── Level pips ──
+        for i in range(self.level):
+            pygame.draw.circle(surf,(255,90,90),(cx-15+i*4,cy+40),2)
+
+    def draw_range(self, surf):
+        r=int(self.range_tiles*TILE)
+        s=pygame.Surface((r*2,r*2),pygame.SRCALPHA)
+        pygame.draw.circle(s,(255,255,255,22),(r,r),r)
+        pygame.draw.circle(s,(255,255,255,60),(r,r),r,2)
+        surf.blit(s,(int(self.px)-r,int(self.py)-r))
+
+    def get_info(self):
+        info={"Damage":self.damage,
+              "Firerate":f"{self.firerate:.2f}",
+              "Range":self.range_tiles,
+              "HidDet":"YES" if self.hidden_detection else "no"}
+        if self._frenzy_timer>0: info["Frenzy"]=f"{self._frenzy_timer:.1f}s"
+        return info
+
 
 
 CONSOLE_HELP=["help            - show all commands",
@@ -1980,8 +2534,8 @@ FREEZER_LEVELS = [
     (1.5, 0.9, 4.0, None, 0.05, 3.0),   # lv0
     (3.5, 0.7, 4.5, 300,  0.10, 3.0),   # lv1
     (6.5, 0.7, 5.0, 500,  0.10, 3.0),   # lv2
-    (8.5, 0.5, 5.5, 700,  0.12, 4.0),   # lv3
-    (13.5, 0.3, 6.0, 1200, 0.15, 5.0),  # lv4 (max)
+    (5, 0.5, 5.5, 700,  0.12, 4.0),   # lv3
+    (7, 0.5, 6.0, 1200, 0.15, 5.0),  # lv4 (max)
 ]
 
 class FreezerBullet:
@@ -3920,14 +4474,6 @@ class GoldenCowboy(Unit):
                 pygame.draw.line(surf, C_GCOWBOY_BRIM, (cx, cy), (bx_r, by_r), 5)
                 pygame.draw.line(surf, C_GCOWBOY,      (cx, cy), (bx_r, by_r), 3)
                 pygame.draw.circle(surf, C_GCOWBOY_STAR, (bx_r, by_r), 4)
-            # Coin/dollar flash text
-            frac = 1.0 - (self._spin_timer / max(self._spin_time, 0.001))
-            fa2 = int(max(0, 230 * (1 - frac * 1.8)))
-            if fa2 > 10:
-                mf = pygame.font.SysFont("segoeui", 15, bold=True)
-                ms = mf.render(f"+${self._income}", True, C_GCOWBOY_STAR)
-                ms.set_alpha(fa2)
-                surf.blit(ms, ms.get_rect(center=(cx, cy - 44)))
         else:
             # Revolver barrel — double-barrel look
             a  = self._aim_angle
@@ -3946,12 +4492,6 @@ class GoldenCowboy(Unit):
             # Grip ring
             pygame.draw.circle(surf, (160, 100, 20),
                                (cx + int(ca * 12), cy + int(sa * 12)), 4)
-
-        # === Cash shot counter ===
-        shots_left = self._cash_shot - self._shot_count
-        sf2 = pygame.font.SysFont("consolas", 11, bold=True)
-        cs2 = sf2.render(str(shots_left), True, C_GCOWBOY_STAR)
-        surf.blit(cs2, cs2.get_rect(center=(cx, cy - 52)))
 
         # === Level pips ===
         for i in range(self.level):
@@ -4431,7 +4971,7 @@ SPOTLIGHTTECH_LEVELS = [
     # lv3  +$12500  (+4 dmg, faster firerate, longer burn, bigger burn)
     (12, 0.208, 8.0, 12500, 4.2, 5, 4.0,  0.25, True,  0,    True),
     # lv4  +$20000  (bigger circle, burn 7, 6s, confusion every 1800 dmg, 7.5s cd)
-    (12, 0.208, 8.0, 20000, 5.0, 7, 6.0,  0.25, True,  1800, True),
+    (18, 0.208, 8.0, 20000, 5.0, 7, 6.0,  0.25, True,  1800, True),
 ]
 
 _SPOTLIGHT_BEAM_ROT_SPEED = 3.5   # radians/sec sweep speed
@@ -4659,7 +5199,7 @@ class SpotlightTech(Unit):
         surf.blit(ls, (lx - 10, ly - 10))
 
         # Confusion charge bar (lv4)
-        if self._conf_thresh > 0:
+        if False:
             frac_c = min(1.0, self._conf_accum / self._conf_thresh)
             cd_frac = max(0.0, 1.0 - self._conf_cd / _SPOTLIGHT_CONFUSE_CD) if self._conf_cd > 0 else 1.0
             bw = 44; bx3 = cx - bw // 2; by3 = cy - 44
@@ -9354,12 +9894,12 @@ C_STRONGEST_ACC  = (255, 200,  50)   # gold accent (markings)
 #   lv0 8.2 · lv1 15 · lv2 25 · lv3 49 · lv4 93 · lv5 200 — strong 1v1, zero AoE.
 #                  dmg  firerate  range_tiles  cost    hidden
 _STRONGEST_LEVELS = [
-    (9,    1.10,  5.7,  None,   False),   # lv0
-    (15,   1.00,  6.0,   400,   False),   # lv1
-    (24,   0.95,  6.3,  1100,   True),    # lv2  — gains Hidden Detection
-    (42,   0.85,  6.8,  2400,   True),    # lv3
-    (70,   0.75,  7.2,  7000,   True),    # lv4
-    (130,  0.65,  7.7, 13500,   True),    # lv5  (max)
+    (6,    1.30,  5.0,  None,   False),   # lv0
+    (10,   1.20,  5.3,   250,   False),   # lv1
+    (16,   1.10,  5.6,   600,   True),    # lv2  — gains Hidden Detection
+    (26,   1.00,  6.0,  1200,   True),    # lv3
+    (42,   0.90,  6.4,  3000,   True),    # lv4
+    (65,   0.80,  6.8,  6000,   True),    # lv5  (max)
 ]
 
 
@@ -9432,7 +9972,7 @@ class _SlashEffect:
 
 class TheStrongest(Unit):
     """Sukuna-reference tower — instant slash attacks that leave × marks on enemies."""
-    PLACE_COST = 600
+    PLACE_COST = 350
     COLOR      = C_STRONGEST
     NAME       = "The Strongest"
 
@@ -9580,12 +10120,12 @@ C_STRONGEST_ACC  = (255, 200,  50)   # gold accent (markings)
 #   lv0 8.2 · lv1 15 · lv2 25 · lv3 49 · lv4 93 · lv5 200 — strong 1v1, zero AoE.
 #                  dmg  firerate  range_tiles  cost    hidden
 _STRONGEST_LEVELS = [
-    (9,    1.10,  5.7,  None,   False),   # lv0
-    (15,   1.00,  6.0,   400,   False),   # lv1
-    (24,   0.95,  6.3,  1100,   True),    # lv2  — gains Hidden Detection
-    (42,   0.85,  6.8,  2400,   True),    # lv3
-    (70,   0.75,  7.2,  7000,   True),    # lv4
-    (130,  0.65,  7.7, 13500,   True),    # lv5  (max)
+    (6,    1.30,  5.0,  None,   False),   # lv0
+    (10,   1.20,  5.3,   250,   False),   # lv1
+    (16,   1.10,  5.6,   600,   True),    # lv2  — gains Hidden Detection
+    (26,   1.00,  6.0,  1200,   True),    # lv3
+    (42,   0.90,  6.4,  3000,   True),    # lv4
+    (65,   0.80,  6.8,  6000,   True),    # lv5  (max)
 ]
 
 
@@ -9740,7 +10280,7 @@ class _StrongestBullet:
 
 class TheStrongest(Unit):
     """Sukuna-reference tower — fires crimson slashes that leave × marks on enemies."""
-    PLACE_COST = 600
+    PLACE_COST = 350
     COLOR      = C_STRONGEST
     NAME       = "The Strongest"
 

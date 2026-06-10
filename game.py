@@ -64,7 +64,7 @@ from game_core import (
 # ── Unit limit overrides (applied on top of game_core defaults) ────────────────
 UNIT_LIMITS["Archer"]      = 8   # increased from default (was 6)
 UNIT_LIMITS["Militant"]    = 6   # new starter unit
-UNIT_LIMITS["Swarmer"]     = 14
+UNIT_LIMITS["Swarmer"]     = 10
 UNIT_LIMITS["Harvester"]   = 5   # placement limit per player
 UNIT_LIMITS["ToxicGunner"] = 5
 UNIT_LIMITS["Gladiator"]   = 6
@@ -75,6 +75,9 @@ UNIT_LIMITS["Conduit"]    = 3
 UNIT_LIMITS["ControlPanel"] = 1
 UNIT_LIMITS["Castbound"]   = 5
 UNIT_LIMITS["TheStrongest"] = 5
+UNIT_LIMITS["Spotlight Tech"] = 3
+UNIT_LIMITS["xw5yt"] = 2
+UNIT_LIMITS["Railgunner"] = 4
 
 GLOBAL_UNIT_LIMIT = 40   # max total towers per match
 
@@ -150,6 +153,10 @@ _DRAFT_CARDS = [
     {"id": "zero_money",   "title": "Bankruptcy", "desc_key": "draft.zero_money"},
     {"id": "damage_5",     "title": "Nerf Gun",   "desc_key": "draft.damage_5"},
     {"id": "all_jesters",  "title": "Circus",     "desc_key": "draft.all_jesters"},
+    {"id": "lose_hp",        "title": "Toll",        "desc": "Lose 30 HP right now."},
+    {"id": "level_down_all", "title": "Great Reset", "desc": "Every tower loses 1 level."},
+    {"id": "lose_money_pct", "title": "Robbery",     "desc": "Lose 40% of your money."},
+    {"id": "firerate_slow",  "title": "Sluggish",    "desc": "Towers fire 50% slower (permanent)."},
 ]
 
 _DAILY_COUNT = 3  # how many quests to pick per day
@@ -345,6 +352,10 @@ from units import (
     ArcherArrow, Archer, ARCHER_LEVELS,
     Farm, FARM_LEVELS,
     RedBall, REDBALL_LEVELS,
+    Railgunner, RAILGUNNER_LEVELS,
+    C_RAIL, C_RAIL_DARK, C_RAIL_CORE,
+    xw5yt, XW5YT_LEVELS,
+    C_XW, C_XW_DARK, C_XW_ACC,
     Freezer, FREEZER_LEVELS,
     FreezerBullet,
     FrostBlaster, FrostBlasterBullet, FROSTBLASTER_LEVELS,
@@ -775,6 +786,8 @@ class AdminPanel:
                 ("CtrlPanel",ControlPanel,C_CTRLPANEL),
                 ("Castbound",Castbound,C_CASTBOUND),
                 ("Strongest",TheStrongest,C_STRONGEST),
+                ("Railgunner",Railgunner,C_RAIL),
+                ("xw5yt",xw5yt,C_XW),
             ]
             cols=8; cw=(pw-28)//cols; ch=100; gap=6
             start_x=px+10; start_y=content_top+6
@@ -1904,6 +1917,60 @@ class UI:
             _draw_tower_icon(surf, "The Strongest", cx, cy, pygame.time.get_ticks()*0.001, size=30)
         elif isinstance(u, RubberDuck):
             _draw_tower_icon(surf, "Rubber Duck", cx, cy, pygame.time.get_ticks()*0.001, size=30)
+        elif isinstance(u, Railgunner):
+            t2=pygame.time.get_ticks()*0.001
+            ga_r=int(abs(math.sin(t2*2.5))*45+25)
+            glow_r=pygame.Surface((70,70),pygame.SRCALPHA)
+            pygame.draw.circle(glow_r,(150,90,240,ga_r),(35,35),32)
+            surf.blit(glow_r,(cx-35,cy-35))
+            pygame.draw.circle(surf,C_RAIL_DARK,(cx,cy),27)
+            pygame.draw.circle(surf,C_RAIL,(cx,cy),21)
+            pygame.draw.circle(surf,(210,190,255),(cx,cy),21,2)
+            # angled barrel
+            a2=math.radians(-25)
+            ca2,sa2=math.cos(a2),math.sin(a2)
+            pa2=a2+math.pi/2; ox2,oy2=math.cos(pa2),math.sin(pa2); w2=5
+            b1x,b1y=cx+int(ca2*8),cy+int(sa2*8)
+            b2x,b2y=cx+int(ca2*42),cy+int(sa2*42)
+            quad=[(b1x+int(ox2*w2),b1y+int(oy2*w2)),(b1x-int(ox2*w2),b1y-int(oy2*w2)),
+                  (b2x-int(ox2*w2),b2y-int(oy2*w2)),(b2x+int(ox2*w2),b2y+int(oy2*w2))]
+            pygame.draw.polygon(surf,C_RAIL_DARK,quad)
+            pygame.draw.polygon(surf,C_RAIL,quad,2)
+            pygame.draw.circle(surf,C_RAIL_CORE,(b2x,b2y),4)
+        elif isinstance(u, xw5yt):
+            t2=pygame.time.get_ticks()*0.001
+            lava2=abs(math.sin(t2*2.0))
+            # ground ritual ring
+            ring2=pygame.Surface((78,78),pygame.SRCALPHA)
+            pygame.draw.circle(ring2,(200,20,35,int(60+lava2*70)),(39,39),37,2)
+            sp2=[]
+            for i in range(5):
+                ang=math.radians(-90+i*144)
+                sp2.append((39+math.cos(ang)*22,39+math.sin(ang)*22))
+            pygame.draw.lines(ring2,(255,45,55,int(120+lava2*90)),True,sp2,2)
+            surf.blit(ring2,(cx-39,cy-39))
+            # tiered stone body
+            pygame.draw.circle(surf,(16,11,14),(cx,cy),27)
+            pygame.draw.circle(surf,(36,26,30),(cx,cy),22)
+            pygame.draw.circle(surf,(20,14,17),(cx,cy),17)
+            pygame.draw.circle(surf,(42,30,34),(cx,cy),13)
+            # spiked crown
+            for i in range(12):
+                ang=math.radians(i*30 - t2*8)
+                bx=cx+math.cos(ang)*22; by=cy+math.sin(ang)*22
+                tx=cx+math.cos(ang)*30; ty=cy+math.sin(ang)*30
+                pa=ang+math.pi/2
+                p1=(bx+math.cos(pa)*3,by+math.sin(pa)*3); p2=(bx-math.cos(pa)*3,by-math.sin(pa)*3)
+                pygame.draw.polygon(surf,(34,32,40),[p1,p2,(tx,ty)])
+                pygame.draw.polygon(surf,(95,22,32),[p1,p2,(tx,ty)],1)
+            # flaming-eye emblem
+            er=int(8+lava2*2)
+            es=pygame.Surface((er*4,er*4),pygame.SRCALPHA); ec=er*2
+            pygame.draw.circle(es,(255,30,40,int(130+lava2*110)),(ec,ec),er+3)
+            pygame.draw.circle(es,(35,0,5,255),(ec,ec),er)
+            pygame.draw.circle(es,(255,55,55),(ec,ec),er,2)
+            pygame.draw.line(es,(255,90,90),(ec,ec-er+1),(ec,ec+er-1),2)
+            surf.blit(es,(cx-ec,cy-ec))
         else:
             pygame.draw.circle(surf,(70,40,100),(cx,cy),28)
             pygame.draw.circle(surf,u.COLOR,(cx,cy),22)
@@ -1918,6 +1985,8 @@ class UI:
         elif cls==Lifestealer: levels=LIFESTEALER_LEVELS; cost_idx=3
         elif cls==Archer: levels=ARCHER_LEVELS; cost_idx=3
         elif cls==RedBall: levels=REDBALL_LEVELS; cost_idx=2
+        elif cls==Railgunner: levels=RAILGUNNER_LEVELS; cost_idx=3
+        elif cls==xw5yt: levels=XW5YT_LEVELS; cost_idx=3
         elif cls==Farm: levels=FARM_LEVELS; cost_idx=1
         elif cls==Freezer: levels=FREEZER_LEVELS; cost_idx=3
         elif cls==FrostBlaster: levels=FROSTBLASTER_LEVELS; cost_idx=3
@@ -1979,8 +2048,23 @@ class UI:
             return {"Damage":d,"Firerate":fr,"Range":r,"Penetration":mh,"HidDet":hd}
         elif cls==RedBall:
             if nxt>=len(REDBALL_LEVELS): return None
-            d,fr,_=REDBALL_LEVELS[nxt]
-            return {"Damage":d,"Firerate":fr}
+            d,fr,_,r=REDBALL_LEVELS[nxt]
+            return {"Damage":d,"Firerate":fr,"Range":r}
+        elif cls==Railgunner:
+            if nxt>=len(RAILGUNNER_LEVELS): return None
+            d,fr,r,_,pc,ct,hd=RAILGUNNER_LEVELS[nxt]
+            return {"Damage":d,"Firerate":fr,"Range":r,
+                    "Pierce":("∞" if pc>=999 else pc),
+                    "Charge":f"{ct:.2f}s","HidDet":hd}
+        elif cls==xw5yt:
+            if nxt>=len(XW5YT_LEVELS): return None
+            d,fr,r,_=XW5YT_LEVELS[nxt]
+            res={"Damage":d,"Firerate":fr,"Range":r,"HidDet":nxt>=4}
+            if nxt==3: res["Unlock"]="Frenzy ability"
+            elif nxt==5: res["Unlock"]="Passive slow"
+            elif nxt==7: res["Unlock"]="Blood Nova"
+            elif nxt==10: res["Unlock"]="Empowered abilities"
+            return res
         elif cls==Farm:
             if nxt>=len(FARM_LEVELS): return None
             income,_=FARM_LEVELS[nxt]
@@ -2600,7 +2684,7 @@ class UI:
 
             cls=type(u)
             nxt=self._get_next_stats(u)
-            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,HackerLaserTest:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS,Farm:FARM_LEVELS,Harvester:HARVESTER_LEVELS,Twitgunner:TWITGUN_LEVELS,Felyne:FELYNE_LEVELS,Conduit:CONDUIT_LEVELS,Castbound:CASTBOUND_LEVELS,TheStrongest:_STRONGEST_LEVELS}
+            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,Railgunner:RAILGUNNER_LEVELS,xw5yt:XW5YT_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,HackerLaserTest:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS,Farm:FARM_LEVELS,Harvester:HARVESTER_LEVELS,Twitgunner:TWITGUN_LEVELS,Felyne:FELYNE_LEVELS,Conduit:CONDUIT_LEVELS,Castbound:CASTBOUND_LEVELS,TheStrongest:_STRONGEST_LEVELS}
             lvl_list=levels_map.get(cls,[])
             if cls==Jester: lvl_list=JESTER_LEVELS
             total_lvls=len(lvl_list)
@@ -2710,6 +2794,31 @@ class UI:
                 ]
                 if hd_next:
                     stats.append(("HidDet_unlock",None,"Hidden Detection"))
+            elif cls==Railgunner:
+                hd_now=u.hidden_detection
+                hd_next=bool(nxt and nxt.get("HidDet") and not hd_now)
+                stats=[]
+                if hd_now: stats.append(("HidDet","Hidden Detection",None))
+                stats+=[
+                    ("Damage",  u.damage,           nxt.get("Damage")   if nxt else None),
+                    ("Firerate",f"{u.firerate:.2f}", f"{nxt['Firerate']:.2f}" if nxt else None),
+                    ("Range",   u.range_tiles,       nxt.get("Range")    if nxt else None),
+                    ("Pierce",  ("∞" if u._pierce>=999 else u._pierce), nxt.get("Pierce") if nxt else None),
+                    ("Charge",  f"{u._charge_time:.2f}s", nxt.get("Charge") if nxt else None),
+                ]
+                if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
+            elif cls==xw5yt:
+                hd_now=u.hidden_detection
+                hd_next=bool(nxt and nxt.get("HidDet") and not hd_now)
+                stats=[]
+                if hd_now: stats.append(("HidDet","Hidden Detection",None))
+                stats+=[
+                    ("Damage",  u.damage,           nxt.get("Damage")   if nxt else None),
+                    ("Firerate",f"{u.firerate:.2f}", f"{nxt['Firerate']:.2f}" if nxt else None),
+                    ("Range",   u.range_tiles,       nxt.get("Range")    if nxt else None),
+                ]
+                if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
+                if nxt and nxt.get("Unlock"): stats.append(("ability_unlock",None,nxt["Unlock"]))
             elif cls==Farm:
                 nxt_income=FARM_LEVELS[u.level+1][0] if u.level+1<len(FARM_LEVELS) else None
                 stats=[
@@ -5244,6 +5353,72 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
         pygame.draw.arc(surf, (10, 0, 0),    mouth_rect, math.pi, 0, max(2, sp(4)))
         pygame.draw.arc(surf, (255, 80, 80), mouth_rect, math.pi, 0, max(1, sp(2)))
 
+    elif unit_name == "Railgunner":
+        # ── Aura ──
+        pulse = abs(math.sin(t * 2.5))
+        aura_r = sc(30) + int(pulse * sc(4))
+        aura_s = pygame.Surface((aura_r * 2, aura_r * 2), pygame.SRCALPHA)
+        pygame.draw.circle(aura_s, (150, 90, 240, int(pulse * 45 + 20)), (aura_r, aura_r), aura_r)
+        surf.blit(aura_s, (cx - aura_r, cy - aura_r))
+        # ── Body ──
+        pygame.draw.circle(surf, C_RAIL_DARK, (cx, cy), sc(27))
+        pygame.draw.circle(surf, C_RAIL,      (cx, cy), sc(21))
+        pygame.draw.circle(surf, (210, 190, 255), (cx, cy), sc(21), sp(2))
+        # ── Long barrel (fixed angle) ──
+        a2 = math.radians(-25)
+        ca2, sa2 = math.cos(a2), math.sin(a2)
+        pa2 = a2 + math.pi / 2
+        ox2, oy2 = math.cos(pa2), math.sin(pa2)
+        w2 = sc(5)
+        b1x, b1y = cx + int(ca2 * sc(8)),  cy + int(sa2 * sc(8))
+        b2x, b2y = cx + int(ca2 * sc(42)), cy + int(sa2 * sc(42))
+        quad = [(b1x + int(ox2 * w2), b1y + int(oy2 * w2)),
+                (b1x - int(ox2 * w2), b1y - int(oy2 * w2)),
+                (b2x - int(ox2 * w2), b2y - int(oy2 * w2)),
+                (b2x + int(ox2 * w2), b2y + int(oy2 * w2))]
+        pygame.draw.polygon(surf, C_RAIL_DARK, quad)
+        pygame.draw.polygon(surf, C_RAIL, quad, sp(2))
+        # ── Muzzle core ──
+        pygame.draw.circle(surf, C_RAIL_CORE, (b2x, b2y), max(2, sc(4)))
+
+    elif unit_name == "xw5yt":
+        lava = abs(math.sin(t * 2.0))
+        # ── Ground ritual ring ──
+        rr = sc(37)
+        ring_s = pygame.Surface((rr * 2 + 4, rr * 2 + 4), pygame.SRCALPHA)
+        rc = rr + 2
+        pygame.draw.circle(ring_s, (200, 20, 35, int(60 + lava * 70)), (rc, rc), rr, sp(2))
+        star_r = int(rr * 0.6); sp2 = []
+        for i in range(5):
+            ang = math.radians(-90 + i * 144)
+            sp2.append((rc + math.cos(ang) * star_r, rc + math.sin(ang) * star_r))
+        pygame.draw.lines(ring_s, (255, 45, 55, int(120 + lava * 90)), True, sp2, sp(2))
+        surf.blit(ring_s, (cx - rc, cy - rc))
+        # ── Tiered stone body ──
+        pygame.draw.circle(surf, (16, 11, 14), (cx, cy), sc(27))
+        pygame.draw.circle(surf, (36, 26, 30), (cx, cy), sc(22))
+        pygame.draw.circle(surf, (20, 14, 17), (cx, cy), sc(17))
+        pygame.draw.circle(surf, (42, 30, 34), (cx, cy), sc(13))
+        # ── Spiked crown ──
+        for i in range(12):
+            ang = math.radians(i * 30)
+            bx = cx + math.cos(ang) * sc(22); by = cy + math.sin(ang) * sc(22)
+            tx = cx + math.cos(ang) * sc(30); ty = cy + math.sin(ang) * sc(30)
+            pa = ang + math.pi / 2
+            p1 = (bx + math.cos(pa) * sc(3), by + math.sin(pa) * sc(3))
+            p2 = (bx - math.cos(pa) * sc(3), by - math.sin(pa) * sc(3))
+            pygame.draw.polygon(surf, (34, 32, 40), [p1, p2, (tx, ty)])
+            pygame.draw.polygon(surf, (95, 22, 32), [p1, p2, (tx, ty)], sp(1))
+        # ── Flaming-eye emblem ──
+        er = int(sc(9) + lava * 2)
+        es = pygame.Surface((er * 4, er * 4), pygame.SRCALPHA); ec = er * 2
+        pygame.draw.circle(es, (255, 30, 40, int(130 + lava * 110)), (ec, ec), er + 3)
+        pygame.draw.circle(es, (35, 0, 5, 255), (ec, ec), er)
+        pygame.draw.circle(es, (255, 55, 55), (ec, ec), er, sp(2))
+        pygame.draw.line(es, (255, 90, 90), (ec, ec - er + 1), (ec, ec + er - 1), sp(2))
+        pygame.draw.line(es, (255, 225, 205), (ec, ec - er + 2), (ec, ec + er - 2), sp(1))
+        surf.blit(es, (cx - ec, cy - ec))
+
     else:
         # Fallback: colored circle with unit's color
         _col_map = {
@@ -6695,6 +6870,7 @@ def _wrap_draw_range_clip(fn):
 _ALL_UNIT_CLASSES = [
     Assassin, Accelerator, Frostcelerator, Lifestealer,
     Archer, Farm, RedBall, FrostBlaster, Freezer,
+    Railgunner, xw5yt,
     Sledger, Gladiator, ToxicGunner, Slasher, GoldenCowboy, HallowPunk,
     SpotlightTech, Snowballer, Commando,
     Caster, Warlock, Jester, SoulWeaver, RubberDuck,
@@ -7303,8 +7479,9 @@ class SettingsScreen:
         self.btn_lang_en = pygame.Rect(_lx0,           self._card.y + 120, _lbw, _lbh)
         self.btn_lang_ru = pygame.Rect(_lx0 + _lbw + _lg, self._card.y + 120, _lbw, _lbh)
 
-        # ── Back button ───────────────────────────────────────────────────────
-        self.btn_back = pygame.Rect(cx - 110, SCREEN_H - 64, 220, 44)
+        # ── Back + Credits buttons ─────────────────────────────────────────────
+        self.btn_back    = pygame.Rect(cx - 230, SCREEN_H - 64, 220, 44)
+        self.btn_credits = pygame.Rect(cx + 10,  SCREEN_H - 64, 220, 44)
 
         # ── Linux Mode warning modal state ───────────────────────────────────
         self._linux_warn_active = False   # показывать полноэкранное предупреждение
@@ -7312,6 +7489,9 @@ class SettingsScreen:
         # ── Wave Navigator warning modal state ───────────────────────────────
         self._navwarn_active = False
         self._navwarn_btn    = pygame.Rect(SCREEN_W // 2 - 140, SCREEN_H // 2 + 90, 280, 52)
+        # ── Credits modal state ───────────────────────────────────────────────
+        self._credits_active = False
+        self._credits_btn    = pygame.Rect(SCREEN_W // 2 - 90, SCREEN_H // 2 + 116, 180, 46)
 
     # ── Slider helpers ────────────────────────────────────────────────────────
     def _music_bar(self): return self._bar_music
@@ -7408,8 +7588,14 @@ class SettingsScreen:
             if self._navwarn_btn.collidepoint(pos):
                 self._navwarn_active = False
             return
+        # ── Credits modal intercept — клик в любом месте закрывает ──────────────
+        if self._credits_active:
+            self._credits_active = False
+            return
         if self.btn_back.collidepoint(pos):
             self.running = False; return
+        if self.btn_credits.collidepoint(pos):
+            self._credits_active = True; return
         for i, tr in enumerate(self._tab_rects):
             if tr.collidepoint(pos):
                 self._tab = i; return
@@ -7805,6 +7991,18 @@ class SettingsScreen:
         bk_s = bk_f.render("← BACK", True, (245, 200, 200) if hov else (170, 130, 130))
         surf.blit(bk_s, bk_s.get_rect(center=self.btn_back.center))
 
+        # ── Credits button ─────────────────────────────────────────────────────
+        chov = self.btn_credits.collidepoint(mx, my)
+        cb   = pygame.Surface((self.btn_credits.w, self.btn_credits.h), pygame.SRCALPHA)
+        c_col = (44, 32, 74, 230) if chov else (26, 20, 46, 210)
+        pygame.draw.rect(cb, c_col, (0, 0, self.btn_credits.w, self.btn_credits.h), border_radius=11)
+        pygame.draw.rect(cb, (255, 255, 255, 10), (1, 1, self.btn_credits.w - 2, self.btn_credits.h // 2), border_radius=10)
+        surf.blit(cb, self.btn_credits.topleft)
+        cbrd = (175, 130, 245) if chov else (95, 72, 145)
+        pygame.draw.rect(surf, cbrd, self.btn_credits, 1, border_radius=11)
+        cr_s = bk_f.render("CREDITS", True, (228, 208, 255) if chov else (155, 135, 195))
+        surf.blit(cr_s, cr_s.get_rect(center=self.btn_credits.center))
+
         # ── Linux Mode full-screen warning modal ─────────────────────────────
         if self._linux_warn_active:
             # ── Затемнение ────────────────────────────────────────────────────
@@ -7930,6 +8128,56 @@ class SettingsScreen:
             pygame.draw.rect(surf, (255, 200, 60) if _hov else (200, 120, 40), btn, 1)
             _btn_lbl = pygame.font.SysFont("segoeui", 20, bold=True).render(
                 _t("wavenav.continue"), True, (255, 240, 210) if _hov else (230, 200, 160))
+            surf.blit(_btn_lbl, _btn_lbl.get_rect(center=btn.center))
+
+        # ── Credits modal ──────────────────────────────────────────────────────
+        if self._credits_active:
+            _dim = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            _dim.fill((4, 2, 12, 215))
+            surf.blit(_dim, (0, 0))
+
+            CW, CH = 640, 470
+            CX = SCREEN_W // 2 - CW // 2
+            CY = SCREEN_H // 2 - CH // 2
+            _card_s = pygame.Surface((CW, CH), pygame.SRCALPHA)
+            _card_s.fill((12, 8, 26, 248))
+            surf.blit(_card_s, (CX, CY))
+            for _gi, _ga in [(6, 18), (4, 30), (2, 55), (1, 90)]:
+                pygame.draw.rect(surf, (150, 110, 240, _ga),
+                                 (CX - _gi, CY - _gi, CW + _gi * 2, CH + _gi * 2), 1, border_radius=4 + _gi)
+            pygame.draw.rect(surf, (170, 130, 250), (CX, CY, CW, CH), 1, border_radius=4)
+            pygame.draw.line(surf, (200, 170, 255), (CX + 1, CY + 1), (CX + CW - 2, CY + 1))
+
+            _f_title = pygame.font.SysFont("segoeui", 32, bold=True)
+            _f_name  = pygame.font.SysFont("segoeui", 22, bold=True)
+            _f_role  = pygame.font.SysFont("segoeui", 15)
+            _f_hint  = pygame.font.SysFont("segoeui", 13)
+
+            _title_s = _f_title.render("CREDITS", True, (225, 205, 255))
+            surf.blit(_title_s, _title_s.get_rect(centerx=SCREEN_W // 2, top=CY + 30))
+            pygame.draw.line(surf, (90, 70, 150), (CX + 40, CY + 84), (CX + CW - 40, CY + 84), 1)
+
+            _entries = [
+                ("Zigres", "Lead Developer",                    (255, 215, 120)),
+                ("Korzhik", "Red Ball & Felyne tower concept",  (255, 150, 150)),
+                ("xw5yt",  "Freezer tower, Multiplayer, Profiles & Main menu styles", (150, 200, 255)),
+                ("Tower Defense Simulator", "Inspired by  -  Music & SFX", (170, 230, 170)),
+            ]
+            _ey = CY + 104
+            for _nm, _role, _col in _entries:
+                _ns = _f_name.render(_nm, True, _col)
+                surf.blit(_ns, _ns.get_rect(centerx=SCREEN_W // 2, top=_ey))
+                _rs = _f_role.render(_role, True, (160, 165, 195))
+                surf.blit(_rs, _rs.get_rect(centerx=SCREEN_W // 2, top=_ey + 28))
+                _ey += 60
+
+            btn  = self._credits_btn
+            _hov = btn.collidepoint(mx, my)
+            _btn_s = pygame.Surface((btn.w, btn.h), pygame.SRCALPHA)
+            _btn_s.fill((150, 110, 240, 200) if _hov else (90, 70, 150, 180))
+            surf.blit(_btn_s, btn.topleft)
+            pygame.draw.rect(surf, (190, 150, 255) if _hov else (130, 100, 200), btn, 1, border_radius=4)
+            _btn_lbl = _f_name.render("CLOSE", True, (240, 225, 255) if _hov else (200, 185, 230))
             surf.blit(_btn_lbl, _btn_lbl.get_rect(center=btn.center))
 
 
@@ -9095,6 +9343,33 @@ class _VoidWisp:
         surf.blit(s, (int(self.x-r-1), int(self.y-r-1)))
 
 
+# ── Minecraft-style splash texts — one picked at random per game launch ───────
+MENU_SPLASHES = [
+    "Click on me",
+    "Want 100 coins?",
+    "100% bug-free!*",
+    "Now with more void!",
+    "Try the Red Ball!",
+    "Made in bash!",
+    "Powered by pygame!",
+    "Assassin says hi!",
+    "Nerf The Strongest!",
+    "It's tower o'clock!",
+    "Wave 100 awaits!",
+    "Don't leak!",
+    "Freezer go brrr!",
+    "Watch the path!",
+    "Upgrade everything!",
+    "So many towers!",
+    # ── From the player ──
+    "Also Try Pyrraria",
+]
+_CURRENT_SPLASH = random.choice(MENU_SPLASHES)
+
+# Splashes drawn with rainbow per-character coloring (the interactive / festive ones)
+_RAINBOW_SPLASHES = {"Click on me", "Want 100 coins?", "*+100 coins*"}
+
+
 class MainMenu:
     # ── Fonts (class-level, created once) ────────────────────────────────────
     _font_title  = None
@@ -9106,6 +9381,9 @@ class MainMenu:
     _bg_surf_cached     = None
     _bg_is_image_cached = False
     _vig_surf_cached    = None
+
+    # ── Splash text interaction state (persists for the launch) ──────────────
+    _splash_clicked = False   # True once the "Click on me" splash is clicked
 
     @classmethod
     def _ensure_fonts(cls):
@@ -9209,6 +9487,9 @@ class MainMenu:
         # Per-button hover glow (0..1) — one entry per _BTN_DEFS entry
         self._hover_anim = [0.0] * len(self._BTN_DEFS)
 
+        # Bounding rect of the drawn splash text — set each frame, used for clicks
+        self._splash_rect = None
+
         # emoji-capable font for small buttons
         self._emoji_font = None
 
@@ -9270,6 +9551,40 @@ class MainMenu:
 
         self._title_cache[key] = comp
         return comp
+
+    # ── Minecraft-style splash text near the title ──────────────────────────────
+    def _draw_splash(self, surf, ax, ay, t):
+        """Draw the per-launch random splash: bobbing text tilted up-right.
+        The special 'Click on me' splash renders rainbow and becomes 'spasibo'
+        once clicked (see click handling in run())."""
+        import colorsys
+        clickable = (_CURRENT_SPLASH == "Click on me")
+        txt       = "spasibo" if (clickable and MainMenu._splash_clicked) else _CURRENT_SPLASH
+        base      = max(15, int(SCREEN_H * 0.024))
+        scale     = 1.0 + 0.10 * abs(math.sin(t * 3.2))
+        f         = pygame.font.SysFont("comicsansms", int(base * scale), bold=True)
+
+        if txt in _RAINBOW_SPLASHES:
+            # Rainbow: render each glyph with a time-cycling hue, compose, rotate
+            glyphs = []
+            for i, ch in enumerate(txt):
+                r, g, b = colorsys.hsv_to_rgb((t * 0.4 + i * 0.09) % 1.0, 0.85, 1.0)
+                glyphs.append(f.render(ch, True, (int(r * 255), int(g * 255), int(b * 255))))
+            tw = max(1, sum(g.get_width() for g in glyphs))
+            th = max((g.get_height() for g in glyphs), default=1)
+            comp = pygame.Surface((tw, th), pygame.SRCALPHA)
+            gx = 0
+            for g in glyphs:
+                comp.blit(g, (gx, 0)); gx += g.get_width()
+            main = pygame.transform.rotate(comp, 20)
+        else:
+            sh   = pygame.transform.rotate(f.render(txt, True, (70, 55, 0)), 20)
+            surf.blit(sh, sh.get_rect(center=(ax + 2, ay + 2)))
+            main = pygame.transform.rotate(f.render(txt, True, (255, 240, 40)), 20)
+
+        rect = main.get_rect(center=(ax, ay))
+        surf.blit(main, rect)
+        self._splash_rect = rect
 
     # ── Ornament line ─────────────────────────────────────────────────────────
     @staticmethod
@@ -9389,6 +9704,16 @@ class MainMenu:
                     if self.btn_settings.collidepoint(pos):     self.action = "settings"
                     if self.btn_quit.collidepoint(pos):         self.action = "quit"
                     if self.btn_multiplayer.collidepoint(pos):  self.action = "multiplayer"
+                    # Easter egg: clicking the "Click on me" splash swaps it to "spasibo"
+                    if (_CURRENT_SPLASH == "Click on me" and not MainMenu._splash_clicked
+                            and self._splash_rect is not None
+                            and self._splash_rect.collidepoint(pos)):
+                        MainMenu._splash_clicked = True
+                    # "Want 100 coins?" splash launches the 100-coins minigame
+                    if (_CURRENT_SPLASH == "Want 100 coins?"
+                            and self._splash_rect is not None
+                            and self._splash_rect.collidepoint(pos)):
+                        self.action = "coins100"
             self._draw()
             pygame.display.flip()
         return self.action
@@ -9443,6 +9768,9 @@ class MainMenu:
         title_surf = self._get_title_surf(t * 1.4)
         ty = int(SCREEN_H * 0.12)
         surf.blit(title_surf, (cx - title_surf.get_width()//2, ty))
+
+        # ── Splash text ────────────────────────────────────────────────────────
+        self._draw_splash(surf, cx + title_surf.get_width()//2 - 24, ty + 42, t)
 
         # ── Drips ────────────────────────────────────────────────────────────
         self._drip_timer -= dt
@@ -9577,6 +9905,7 @@ class MainMenu:
         surf.blit(ts_sh, ts_sh.get_rect(center=(cx + 3, ty + 3)))
         ts_main = title_f.render("pyTDS", True, title_col)
         surf.blit(ts_main, ts_main.get_rect(center=(cx, ty)))
+        self._draw_splash(surf, cx + ts_main.get_width()//2 + 22, ty + 26, t)
         line_w = int(340 * min(1.0, t / 0.8))
         for lx in range(-line_w // 2, line_w // 2):
             frac  = abs(lx) / max(1, line_w // 2)
@@ -9718,6 +10047,7 @@ class MainMenu:
         tc = (int(200 + 40*pulse), int(170 + 30*pulse), int(50 + 20*pulse))
         ts = tf.render("TOWER DEFENSE", True, tc)
         surf.blit(ts, ts.get_rect(center=(cx, TITLE_Y)))
+        self._draw_splash(surf, cx + ts.get_width()//2 - 30, TITLE_Y + 34, t)
 
         # gold underline
         uw = int(500 * min(1.0, t / 1.0))
@@ -9890,6 +10220,8 @@ class MainMenu:
         ts_bright = title_font.render(title_str, True, (255, 255, 255))
         ts_bright.set_alpha(70)
         surf.blit(ts_bright, ts_bright.get_rect(center=(cx, ty - 3)))
+
+        self._draw_splash(surf, cx + ts_main.get_width()//2 + 14, ty + 30, t)
 
         if not hasattr(self, '_btn_hovers'):
             self._btn_hovers = {}
@@ -11054,7 +11386,9 @@ ALL_UNITS_POOL = [
     {"name": "Harvester",   "rarity": "epic"},
     {"name": "Control Panel", "rarity": "apex"},
     {"name": "Castbound",    "rarity": "singularity"},
-    {"name": "The Strongest", "rarity": "early_access"},
+    {"name": "The Strongest", "rarity": "rare"},
+    {"name": "Railgunner",    "rarity": "epic"},
+    {"name": "xw5yt",         "rarity": "apex"},
 
 ]
 
@@ -11092,45 +11426,49 @@ UNIT_SHOP_PRICES = {
     "Harvester":   5000,
     "Control Panel": None,   # Early Access — free to unlock
     "Castbound":     None,   # не продаётся — открывается за убийство Moon Lord
-    "The Strongest": None,   # Early Access — free
+    "The Strongest": 1200,
+    "Railgunner":    4500,
+    "xw5yt":         None,   # Apex — purchased with 2000 shards
 }
 
 # ── Base stats for detail panel ───────────────────────────────────────────────
 # Format: cost, limit, damage, firerate, range, income (None if not applicable)
 UNIT_BASE_STATS = {
     # cost = PLACE_COST from units.py (in-game placement price)
-    "Assassin":       {"cost": 300,  "limit": 5,  "damage": 50,   "firerate": 1.2,  "range": 7,  "income": None},
-    "Militant":       {"cost": 600,  "limit": 6,  "damage": 30,   "firerate": 1.5,  "range": 6,  "income": None},
-    "Twitgunner":     {"cost": 350,  "limit": 6,  "damage": 20,   "firerate": 3.0,  "range": 6,  "income": None},
-    "Lifestealer":    {"cost": 400,  "limit": 5,  "damage": 40,   "firerate": 1.0,  "range": 6,  "income": None},
-    "Archer":         {"cost": 600,  "limit": 8,  "damage": 45,   "firerate": 1.1,  "range": 9,  "income": None},
-    "Red Ball":       {"cost": 1250, "limit": 4,  "damage": 80,   "firerate": 0.8,  "range": 7,  "income": None},
-    "Farm":           {"cost": 250,  "limit": 5,  "damage": 0,    "firerate": 0.0,  "range": 0,  "income": 150},
-    "Cowboy":         {"cost": 550,  "limit": 4,  "damage": 60,   "firerate": 1.0,  "range": 8,  "income": 50},
-    "Swarmer":        {"cost": 900,  "limit": 14, "damage": 25,   "firerate": 2.0,  "range": 7,  "income": None},
-    "Freezer":        {"cost": 400,  "limit": 5,  "damage": 20,   "firerate": 1.0,  "range": 7,  "income": None},
-    "Frost Blaster":  {"cost": 800,  "limit": 4,  "damage": 55,   "firerate": 1.2,  "range": 8,  "income": None},
-    "Sledger":        {"cost": 950,  "limit": 3,  "damage": 200,  "firerate": 0.5,  "range": 6,  "income": None},
-    "Gladiator":      {"cost": 525,  "limit": 6,  "damage": 150,  "firerate": 0.9,  "range": 5,  "income": None},
-    "Toxic Gunner":   {"cost": 525,  "limit": 5,  "damage": 40,   "firerate": 1.5,  "range": 7,  "income": None},
-    "Slasher":        {"cost": 1700, "limit": 3,  "damage": 300,  "firerate": 0.7,  "range": 6,  "income": None},
-    "Hallow Punk":    {"cost": 300,  "limit": 4,  "damage": 65,   "firerate": 1.1,  "range": 7,  "income": None},
-    "Spotlight Tech": {"cost": 3250, "limit": 3,  "damage": 120,  "firerate": 1.0,  "range": 10, "income": None},
-    "Snowballer":     {"cost": 400,  "limit": 4,  "damage": 50,   "firerate": 1.3,  "range": 7,  "income": None},
-    "Commando":       {"cost": 900,  "limit": 5,  "damage": 55,   "firerate": 1.2,  "range": 8,  "income": None},
-    "Accelerator":    {"cost": 5000, "limit": 2,  "damage": 500,  "firerate": 0.3,  "range": 15, "income": None},
-    "Frostcelerator": {"cost": 3500, "limit": 2,  "damage": 550,  "firerate": 0.3,  "range": 14, "income": None},
-    "Warlock":        {"cost": 4200, "limit": 3,  "damage": 250,  "firerate": 0.6,  "range": 8,  "income": None},
-    "Caster":         {"cost": 7500, "limit": 2,  "damage": 400,  "firerate": 0.5,  "range": 9,  "income": None},
-    "Jester":         {"cost": 650,  "limit": 4,  "damage": 100,  "firerate": 1.5,  "range": 7,  "income": None},
-    "Korzhik":        {"cost": 600,  "limit": 6,  "damage": 350,  "firerate": 0.8,  "range": 7,  "income": None},
-    "Conduit":        {"cost": 1800, "limit": 3,  "damage": 60,   "firerate": 1.2,  "range": 5,  "income": None},
-    "Rubber Duck":    {"cost": 500,  "limit": 3,  "damage": 70,   "firerate": 1.0,  "range": 5,  "income": None},
-    "Harvester":      {"cost": 2000, "limit": 5,  "damage": 80,   "firerate": 1.0,  "range": 6,  "income": 80},
-    "Control Panel":  {"cost": 5000, "limit": 1,  "damage": 0,    "firerate": 0.0,  "range": 6,  "income": None},
-    "hacker_laser_effects_test": {"cost": 7500, "limit": 1, "damage": 9999, "firerate": 9.9, "range": 20, "income": None},
-    "Castbound":      {"cost": 400,  "limit": 5,  "damage": 4,    "firerate": 0.8,  "range": 6.2,"income": None},
-    "The Strongest":  {"cost": 600,  "limit": 5,  "damage": 130,  "firerate": 0.65, "range": 7.7,"income": None},
+    "Assassin":       {"cost": 300,  "limit": 5,  "damage": 4,     "firerate": 0.6,   "range": 3,   "income": None},
+    "Militant":       {"cost": 600,  "limit": 6,  "damage": 3,     "firerate": 0.6,   "range": 5,   "income": None},
+    "Twitgunner":     {"cost": 350,  "limit": 6,  "damage": 2,     "firerate": 1.525, "range": 12,  "income": None},
+    "Lifestealer":    {"cost": 400,  "limit": 5,  "damage": 2.75,  "firerate": 0.65,  "range": 5,   "income": None},
+    "Archer":         {"cost": 600,  "limit": 8,  "damage": 6,     "firerate": 1.608, "range": 6.3, "income": None},
+    "Red Ball":       {"cost": 2000, "limit": 3,  "damage": 17,    "firerate": 0.6,   "range": 7,   "income": None},
+    "Farm":           {"cost": 250,  "limit": 5,  "damage": 0,     "firerate": 0.0,   "range": 0,   "income": 50},
+    "Cowboy":         {"cost": 550,  "limit": 4,  "damage": 2,     "firerate": 0.358, "range": 5,   "income": 25},
+    "Swarmer":        {"cost": 900,  "limit": 10, "damage": 2,     "firerate": 1.208, "range": 5.5, "income": None},
+    "Freezer":        {"cost": 400,  "limit": 5,  "damage": 1.5,   "firerate": 0.9,   "range": 4,   "income": None},
+    "Frost Blaster":  {"cost": 800,  "limit": 4,  "damage": 2,     "firerate": 0.608, "range": 6,   "income": None},
+    "Sledger":        {"cost": 950,  "limit": 3,  "damage": 7,     "firerate": 1.208, "range": 7,   "income": None},
+    "Gladiator":      {"cost": 525,  "limit": 6,  "damage": 3,     "firerate": 0.975, "range": 5,   "income": None},
+    "Toxic Gunner":   {"cost": 525,  "limit": 5,  "damage": 1,     "firerate": 0.108, "range": 6.7, "income": None},
+    "Slasher":        {"cost": 1700, "limit": 3,  "damage": 6,     "firerate": 0.508, "range": 3,   "income": None},
+    "Hallow Punk":    {"cost": 300,  "limit": 4,  "damage": 10,    "firerate": 5.008, "range": 7,   "income": None},
+    "Spotlight Tech": {"cost": 3250, "limit": 3,  "damage": 4,     "firerate": 0.308, "range": 7,   "income": None},
+    "Snowballer":     {"cost": 400,  "limit": 4,  "damage": 6,     "firerate": 2.258, "range": 6,   "income": None},
+    "Commando":       {"cost": 900,  "limit": 5,  "damage": 3,     "firerate": 0.15,  "range": 7,   "income": None},
+    "Accelerator":    {"cost": 5000, "limit": 2,  "damage": 12,    "firerate": 0.208, "range": 7,   "income": None},
+    "Frostcelerator": {"cost": 3500, "limit": 2,  "damage": 5,     "firerate": 0.20,  "range": 7,   "income": None},
+    "Warlock":        {"cost": 4200, "limit": 3,  "damage": 30,    "firerate": 2.0,   "range": 6,   "income": None},
+    "Caster":         {"cost": 7500, "limit": 2,  "damage": 15,    "firerate": 0.19,  "range": 7.5, "income": None},
+    "Jester":         {"cost": 650,  "limit": 4,  "damage": 4,     "firerate": 1.208, "range": 6.5, "income": None},
+    "Korzhik":        {"cost": 600,  "limit": 6,  "damage": 4,     "firerate": 1.2,   "range": 5.7, "income": None},
+    "Conduit":        {"cost": 1800, "limit": 3,  "damage": 15,    "firerate": 1.2,   "range": 5,   "income": None},
+    "Rubber Duck":    {"cost": 500,  "limit": 3,  "damage": 8,     "firerate": 4.2,   "range": 4.5, "income": None},
+    "Harvester":      {"cost": 2000, "limit": 5,  "damage": 20,    "firerate": 1.425, "range": 20,  "income": None},
+    "Control Panel":  {"cost": 5000, "limit": 1,  "damage": 0,     "firerate": 0.0,   "range": 6,   "income": None},
+    "hacker_laser_effects_test": {"cost": 7500, "limit": 1, "damage": 15, "firerate": 0.19, "range": 7.5, "income": None},
+    "Castbound":      {"cost": 400,  "limit": 5,  "damage": 4,     "firerate": 0.8,   "range": 6.2, "income": None},
+    "The Strongest":  {"cost": 350,  "limit": 5,  "damage": 6,     "firerate": 1.30,  "range": 5,   "income": None},
+    "Railgunner":     {"cost": 1500, "limit": 4,  "damage": 45,    "firerate": 2.5,   "range": 12,  "income": None},
+    "xw5yt":          {"cost": 800,  "limit": 2,  "damage": 15,    "firerate": 1.2,   "range": 8,   "income": None},
 }
 
 # ── Tower descriptions — fill in your own later ───────────────────────────────
@@ -11140,7 +11478,7 @@ UNIT_DESCRIPTIONS = {
     "Twitgunner":     "The starter tower of the game.",
     "Lifestealer":    "Steal enemies life and convert it to money",
     "Archer":         "Shoot a piercing arrow that bounces towards nearby enemies. Pick between Fire, Stun, & EXP arrows.",
-    "Red Ball":       "Bounces at enemies dealing high single target damage. Felyne's tower",
+    "Red Ball":       "Bounces at enemies dealing high single target damage. Korzhik's tower",
     "Farm":           "Earn extra cash per wave. The higher the upgrade, the higher the income.",
     "Cowboy":         "There ain't enough room for the two of us pardner... Gain cash on reload.",
     "Swarmer":        "OH NOES, THE BEES! Attack enemies with bees that do damage over time",
@@ -11167,6 +11505,8 @@ UNIT_DESCRIPTIONS = {
     "hacker_laser_effects_test": "??? ERROR 404 UNIT NOT FOUND ???",
     "Castbound":      "\"The culmination of a journey forged into the ultimate tower\"",
     "The Strongest":  "Scale of the Dragon",
+    "Railgunner":     "A heavy long-range sniper that charges up, then fires a piercing rail beam straight through every enemy in its path.",
+    "xw5yt":          "A blood-fueled dev tower. Unlocks a Frenzy buff, a passive slow, and a Blood Nova explosion as it levels up.",
 }
 
 class LoadoutScreen:
@@ -11223,6 +11563,7 @@ class LoadoutScreen:
         self.selected  = None   # (rarity, idx) or None
         self.scroll_y  = 0
         self.btn_back  = pygame.Rect(20, 20, 120, 40)
+        self.btn_random = None   # built each frame in _draw (above the slots)
         self.msg       = ""
         self.msg_timer = 0.0
         self._card_hits = []
@@ -11322,6 +11663,18 @@ class LoadoutScreen:
         if self.btn_back.collidepoint(pos):
             self.running = False; return
 
+        # RANDOM button — fill the loadout with random owned units
+        if self.btn_random and self.btn_random.collidepoint(pos):
+            pool = [u for u in self._owned_units() if u != "hacker_laser_effects_test"]
+            random.shuffle(pool)
+            picks = pool[:5]
+            self.loadout = picks + [None] * (5 - len(picks))
+            self._slot_select = False
+            self.selected = None
+            self.detail_unit = None
+            self._show_msg("Random loadout!")
+            return
+
         # Skin buttons on slot cards
         for skin_btn, uname in getattr(self, '_skin_btns', []):
             if skin_btn.collidepoint(pos):
@@ -11350,7 +11703,7 @@ class LoadoutScreen:
 
         for btn_r, u in self._shard_buy_hits:
             if btn_r.collidepoint(pos):
-                SHARD_PRICES = {"Jester": 300, "Korzhik": 1500, "Control Panel": 1500}
+                SHARD_PRICES = {"Jester": 300, "Korzhik": 1500, "Control Panel": 500, "xw5yt": 2000}
                 price = SHARD_PRICES.get(u["name"], 0)
                 shards = self.save_data.get("shards", 0)
                 if shards >= price:
@@ -11491,6 +11844,19 @@ class LoadoutScreen:
         # ── LOADOUT SLOTS — bottom of left zone ──────────────────────────────
         slot_rects = self._slot_rects(left_w)
 
+        # ── RANDOM loadout button — above the slots ──────────────────────────
+        _rb_w, _rb_h = 180, 40
+        self.btn_random = pygame.Rect(left_w // 2 - _rb_w // 2,
+                                      slot_rects[0].top - _rb_h - 18, _rb_w, _rb_h)
+        _rb_hov = self.btn_random.collidepoint(mx, my)
+        pygame.draw.rect(surf, (60, 45, 100) if _rb_hov else (38, 30, 64),
+                         self.btn_random, border_radius=10)
+        pygame.draw.rect(surf, (150, 120, 230) if _rb_hov else (95, 75, 150),
+                         self.btn_random, 2, border_radius=10)
+        _rb_s = font_md.render("RANDOM", True,
+                               (235, 220, 255) if _rb_hov else (180, 165, 210))
+        surf.blit(_rb_s, _rb_s.get_rect(center=self.btn_random.center))
+
         _col_map_slot = {
             "Assassin": C_ASSASSIN,        "Lifestealer": C_LIFESTEALER,
             "Militant": C_MILITANT,        "Swarmer":     C_SWARMER,
@@ -11503,12 +11869,14 @@ class LoadoutScreen:
             "Jester":   C_JESTER,
             "Harvester": C_HARVESTER,
             "The Strongest": C_STRONGEST,
+            "Railgunner": C_RAIL,
+            "xw5yt": C_XW,
         }
 
         # Slot-select hint arrow
         if self._slot_select:
             hint_s = font_md.render("▼  Choose a slot  ▼", True, (80, 220, 140))
-            surf.blit(hint_s, hint_s.get_rect(center=(left_w // 2, slot_rects[0].top - 48)))
+            surf.blit(hint_s, hint_s.get_rect(center=(left_w // 2, slot_rects[0].top - 84)))
 
         for si, sr in enumerate(slot_rects):
             uname = self.loadout[si]
@@ -11580,7 +11948,7 @@ class LoadoutScreen:
                 "Frostcelerator": Frostcelerator,
                 "Lifestealer": Lifestealer, "Archer": Archer,
                 "Militant": Militant, "Swarmer": Swarmer,
-                "Red Ball": RedBall, "Farm": Farm,
+                "Red Ball": RedBall, "Railgunner": Railgunner, "xw5yt": xw5yt, "Farm": Farm,
                 "Freezer": Freezer, "Frost Blaster": FrostBlaster,
                 "Sledger": Sledger, "Gladiator": Gladiator,
                 "Toxic Gunner": ToxicGunner, "Slasher": Slasher,
@@ -11647,6 +12015,8 @@ class LoadoutScreen:
                 "Caster": "Defense", "Harvester": "Defense", "Korzhik": "Defense",
                 "Jester": "Support", "Control Panel": "Support", "Castbound": "Defense",
                 "The Strongest": "Offense",
+                "Railgunner": "Offense",
+                "xw5yt": "Offense",
             }
             _unit_class = _UNIT_CLASS.get(uname, "")
             name_f = pygame.font.SysFont("segoeui", 26, bold=True)
@@ -11883,7 +12253,7 @@ class LoadoutScreen:
                     surf.blit(dim, card_r.topleft)
 
                     if rarity == "apex":
-                        SHARD_PRICES = {"Jester": 300, "Korzhik": 1500, "Control Panel": 1500}
+                        SHARD_PRICES = {"Jester": 300, "Korzhik": 1500, "Control Panel": 500, "xw5yt": 2000}
                         shard_price = SHARD_PRICES.get(u["name"])
                         if shard_price is not None:
                             shards_have = self.save_data.get("shards", 0)
@@ -12037,6 +12407,14 @@ class Game:
             self.wave_mgr.spawn_interval=0.8   # tighter spawns than default 0.9 → more pressure
             self.player_hp=100; self.player_maxhp=100
             self.money=700
+        elif mode=="coins100":
+            # "Want 100 coins?" splash minigame: a single wave with one Void Reaver,
+            # on the zigzag map, with 100k starting money and the player's loadout.
+            self.wave_mgr=WaveManager(wave_data=[None, ([(VoidReaver,1)], 0, 0)], max_waves=1)
+            self.wave_mgr._mode="easy"
+            self.player_hp=100; self.player_maxhp=100
+            self.money=100000
+            game_core.CURRENT_MAP="zigzag"
         else:
             self.wave_mgr=WaveManager()
             self.wave_mgr._mode="easy"
@@ -12096,6 +12474,7 @@ class Game:
         self.paused = False
         self.pause_menu = PauseMenu(self.screen)
         self.return_to_menu = False
+        self._coins100_result = None   # "win"/"loss" for the coins100 minigame
         self._restart_mode  = None
         self.admin_mode = admin_mode or (mode == "sandbox")  # stays True after admin-panel restarts
         self._ability_cycle_idx = 0    # index into self.units for F-key ability cycling
@@ -12139,7 +12518,7 @@ class Game:
                         "Archer": Archer,
                         "Militant": Militant,
                         "Swarmer": Swarmer,
-                        "Red Ball": RedBall, "Farm": Farm,
+                        "Red Ball": RedBall, "Railgunner": Railgunner, "xw5yt": xw5yt, "Farm": Farm,
                         "Freezer": Freezer, "Frost Blaster": FrostBlaster,
                         "Sledger": Sledger, "Gladiator": Gladiator,
                         "Toxic Gunner": ToxicGunner, "Slasher": Slasher,
@@ -12747,7 +13126,17 @@ class Game:
                                         for u in self.units:
                                             new_units.append(Jester(u.px, u.py))
                                         self.units = new_units
-                                    
+                                    elif cid == "lose_hp":
+                                        self.player_hp = max(1, self.player_hp - 30)
+                                    elif cid == "level_down_all":
+                                        for u in self.units:
+                                            if u.level > 0:
+                                                u.level -= 1
+                                    elif cid == "lose_money_pct":
+                                        self.money = int(self.money * 0.6)
+                                    elif cid == "firerate_slow":
+                                        self.draft_mod_firerate *= 1.5
+
                                     self._draft_state_hash += 1
                                     self.draft_active = False
                                     break
@@ -13947,12 +14336,17 @@ class Game:
                 if self._fallen_king_shake>0:
                     self._fallen_king_shake=max(0, self._fallen_king_shake-dt)
     
+            # ── "Want 100 coins?" minigame: no win/lose screen, straight to menu ──
+            if self.mode == "coins100" and (self.game_over or self.win):
+                self._coins100_result = "win" if self.win else "loss"
+                self.running = False
+                self.return_to_menu = True
             if self.paused:
                 self.draw()
                 self.pause_menu.draw()
             else:
                 self.draw()
-            if self.game_over or self.win:
+            if (self.game_over or self.win) and self.mode != "coins100":
                 self._draw_end_screen()
             if SETTINGS.get("show_fps", False):
                 _fps_val = int(self.clock.get_fps())
@@ -14388,7 +14782,7 @@ class Game:
                 self.screen.blit(s2,(cx-20,cy-20))
                 txt(self.screen,f"{st:.1f}",(cx,cy-28),(255,220,50),font_sm,center=True)
 
-        if self.game_over or self.win:
+        if (self.game_over or self.win) and self.mode != "coins100":
             self._draw_end_screen()
 
         if getattr(self, 'draft_active', False):
@@ -14686,6 +15080,25 @@ if __name__ == "__main__":
             ls = LoadoutScreen(screen, save_data)
             ls.run()
             save_data = load_save()
+
+        elif action == "coins100":
+            # "Want 100 coins?" splash minigame: 1 wave / 1 Void Reaver on zigzag, 100k money.
+            game_core.CURRENT_MAP = "zigzag"
+            _c_res = "loss"
+            try:
+                game = Game(save_data, mode="coins100")
+                game.run()
+                _c_res = getattr(game, "_coins100_result", "loss")
+            except Exception:
+                import traceback; traceback.print_exc()
+                input("Press Enter to continue...")
+            save_data = load_save()
+            if _c_res == "win":
+                save_data["coins"] = save_data.get("coins", 0) + 100
+                game_core.write_save(save_data)
+                _CURRENT_SPLASH = "*+100 coins*"
+            else:
+                _CURRENT_SPLASH = "no 100 coins for u"
 
         elif action in ("play_easy", "play_sandbox", "play_fallen", "play_frosty", "play_infernal", "play_hardcore", "play_draft"):
             if action == "play_sandbox": mode = "sandbox"
