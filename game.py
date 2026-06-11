@@ -4263,23 +4263,67 @@ def draw_accel_icon(surf, cx, cy, t, size=28):
 
 
 def draw_frost_icon(surf, cx, cy, t, size=28):
-    spin = t * 180
-    orb_r = int(size * 0.65)
-    for i in range(4):
-        a = math.radians(spin + i * 90)
-        ox = cx + int(math.cos(a) * orb_r)
-        oy = cy + int(math.sin(a) * orb_r)
-        pygame.draw.circle(surf, C_FROST_ICE, (ox, oy), max(2, size // 7))
-        pygame.draw.circle(surf, (255, 255, 255), (ox, oy), max(1, size // 14))
-    pygame.draw.circle(surf, C_FROST_DARK, (cx, cy), int(size * 0.65))
-    pygame.draw.circle(surf, C_FROST, (cx, cy), int(size * 0.48))
+    """Crystalline ice gem matching the in-game Frostcelerator look."""
+    breathe = abs(math.sin(t * 2.2))
+    shimmer = abs(math.sin(t * 5.0))
+
+    def _poly(r, n, rot):
+        return [(cx + math.cos(rot + i * 2 * math.pi / n) * r,
+                 cy + math.sin(rot + i * 2 * math.pi / n) * r) for i in range(n)]
+
+    # ── Cold mist halo ───────────────────────────────────────────────────────
+    aura_r = int(size * 0.95 + breathe * size * 0.12)
+    aura = pygame.Surface((aura_r * 2 + 4, aura_r * 2 + 4), pygame.SRCALPHA)
+    ac = aura_r + 2
+    pygame.draw.circle(aura, (120, 210, 255, int(22 + breathe * 18)), (ac, ac), aura_r)
+    pygame.draw.circle(aura, (60, 190, 255, int(38 + breathe * 30)), (ac, ac), int(aura_r * 0.7))
+    surf.blit(aura, (cx - ac, cy - ac))
+
+    # ── Orbiting ice-crystal diamonds ─────────────────────────────────────────
+    orb_r = size * 0.82
     for i in range(6):
-        a = math.radians(i * 60 + t * 20)
-        ex = cx + int(math.cos(a) * int(size * 0.4))
-        ey = cy + int(math.sin(a) * int(size * 0.4))
-        pygame.draw.line(surf, (180, 230, 255), (cx, cy), (ex, ey), 1)
-    hi = max(1, size // 6)
-    pygame.draw.circle(surf, (220, 250, 255), (cx - hi, cy - hi), hi + 1)
+        a = t * 0.9 + i * (2 * math.pi / 6)
+        ox = cx + math.cos(a) * orb_r
+        oy = cy + math.sin(a) * orb_r
+        tw = 0.6 + 0.4 * abs(math.sin(t * 3 + i * 1.1))
+        d = max(2, size * 0.18)
+        diamond = [(ox, oy - d * 1.4), (ox + d * 0.7, oy), (ox, oy + d * 1.4), (ox - d * 0.7, oy)]
+        pygame.draw.polygon(surf, (150, 225, 255), diamond)
+        pygame.draw.polygon(surf, (235, 250, 255), diamond, 1)
+
+    # ── Faceted hexagonal gem body ────────────────────────────────────────────
+    body_rot = t * 0.35
+    pygame.draw.polygon(surf, C_FROST_DARK, _poly(size * 0.7, 6, body_rot))
+    pygame.draw.polygon(surf, (120, 215, 255), _poly(size * 0.7, 6, body_rot), max(1, size // 14))
+    for fr, col in [(0.58, (40, 150, 225)), (0.45, (70, 190, 250)),
+                    (0.32, C_FROST), (0.20, (170, 235, 255))]:
+        pygame.draw.polygon(surf, col, _poly(size * fr, 6, body_rot))
+    for vx, vy in _poly(size * 0.58, 6, body_rot):
+        pygame.draw.line(surf, (210, 245, 255), (cx, cy), (int(vx), int(vy)), 1)
+
+    # ── Rotating snowflake with branchlets ────────────────────────────────────
+    flake_rot = t * 0.8
+    arm = size * 0.5
+    for i in range(6):
+        a = flake_rot + math.radians(i * 60)
+        ex = cx + math.cos(a) * arm
+        ey = cy + math.sin(a) * arm
+        pygame.draw.line(surf, (230, 250, 255), (cx, cy), (int(ex), int(ey)), max(1, size // 16))
+        for frac, blen in [(0.5, arm * 0.32), (0.78, arm * 0.22)]:
+            bx = cx + math.cos(a) * arm * frac
+            by = cy + math.sin(a) * arm * frac
+            for sign in (-1, 1):
+                ba = a + sign * math.radians(58)
+                ex2 = bx + math.cos(ba) * blen
+                ey2 = by + math.sin(ba) * blen
+                pygame.draw.line(surf, (205, 242, 255), (int(bx), int(by)), (int(ex2), int(ey2)), 1)
+
+    # ── Glowing nucleus ───────────────────────────────────────────────────────
+    nr = max(2, int(size * 0.12 + shimmer * size * 0.06))
+    nuc = pygame.Surface((nr * 4, nr * 4), pygame.SRCALPHA)
+    pygame.draw.circle(nuc, (180, 240, 255, 160), (nr * 2, nr * 2), nr + max(1, size // 12))
+    pygame.draw.circle(nuc, (255, 255, 255, 235), (nr * 2, nr * 2), nr)
+    surf.blit(nuc, (cx - nr * 2, cy - nr * 2))
 
 
 def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
@@ -9560,6 +9604,7 @@ class MainMenu:
         import colorsys
         clickable = (_CURRENT_SPLASH == "Click on me")
         txt       = "spasibo" if (clickable and MainMenu._splash_clicked) else _CURRENT_SPLASH
+        ay       += int(SCREEN_H * 0.035)   # nudge splash a bit lower, below the title
         base      = max(15, int(SCREEN_H * 0.024))
         scale     = 1.0 + 0.10 * abs(math.sin(t * 3.2))
         f         = pygame.font.SysFont("comicsansms", int(base * scale), bold=True)

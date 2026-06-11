@@ -520,7 +520,7 @@ class Frostcelerator(Unit):
     def update(self, dt, enemies, effects, money):
         self._laser_t+=dt
         if self.cd_left>0: self.cd_left-=dt
-        targets=self._get_rightmost(enemies,4)
+        targets=self._get_rightmost(enemies,2)
         self._laser_targets=targets
         if targets:
             t0=targets[0]
@@ -578,36 +578,100 @@ class Frostcelerator(Unit):
         ry = self.py + math.sin(right_a) * self._TRI_ORBIT
         return (lx, ly), (rx, ry)
 
+    @staticmethod
+    def _poly(cx, cy, r, n, rot=0.0):
+        """Return n-gon vertex list centered at (cx,cy)."""
+        return [(cx + math.cos(rot + i * 2 * math.pi / n) * r,
+                 cy + math.sin(rot + i * 2 * math.pi / n) * r) for i in range(n)]
+
     def draw(self, surf):
         cx,cy=int(self.px),int(self.py)
-        # Aura
-        pulse = int(abs(math.sin(self._laser_t*5))*50)+20
-        aura=pygame.Surface((120,120),pygame.SRCALPHA)
-        pygame.draw.circle(aura,(0,180,255,pulse//3),(60,60),56)
-        pygame.draw.circle(aura,(40,200,255,pulse),(60,60),36)
-        surf.blit(aura,(cx-60,cy-60))
-        # Body
-        pygame.draw.circle(surf,C_FROST_DARK,(cx,cy),27)
-        pygame.draw.circle(surf,C_FROST,(cx,cy),20)
-        pygame.draw.circle(surf,(180,240,255),(cx,cy),20,2)
-        # Snowflake
+        t=self._laser_t
+        breathe=abs(math.sin(t*2.2))          # slow cold breathing 0..1
+        shimmer=abs(math.sin(t*5.0))           # faster ice shimmer 0..1
+
+        # ── Cold mist aura: layered frozen halo ──────────────────────────────
+        aura_r=46+int(breathe*7)
+        aura=pygame.Surface((aura_r*2+8,aura_r*2+8),pygame.SRCALPHA)
+        ac=aura_r+4
+        pygame.draw.circle(aura,(120,210,255,int(18+breathe*16)),(ac,ac),aura_r)
+        pygame.draw.circle(aura,(60,190,255,int(34+breathe*30)),(ac,ac),int(aura_r*0.72))
+        pygame.draw.circle(aura,(180,240,255,int(20+breathe*22)),(ac,ac),int(aura_r*0.72),2)
+        surf.blit(aura,(cx-ac,cy-ac))
+
+        # ── Drifting snow particles around the tower ─────────────────────────
+        for i in range(10):
+            base_a=i*(2*math.pi/10)
+            drift=(t*0.6+i*0.41)%1.0                 # 0..1 outward drift cycle
+            rad=24+drift*22
+            a=base_a+t*0.5+math.sin(t*1.3+i)*0.25
+            sx=int(cx+math.cos(a)*rad); sy=int(cy+math.sin(a)*rad)
+            sa=int((1.0-drift)*150*(0.5+0.5*shimmer))
+            if sa<=0: continue
+            ps=pygame.Surface((6,6),pygame.SRCALPHA)
+            pygame.draw.circle(ps,(225,248,255,sa),(3,3),2)
+            pygame.draw.circle(ps,(255,255,255,min(255,sa+50)),(3,3),1)
+            surf.blit(ps,(sx-3,sy-3))
+
+        # ── Orbiting crystalline ice shards (diamonds) ───────────────────────
+        ring_spin=t*0.9
         for i in range(6):
-            a=math.radians(i*60+self._laser_t*20)
-            ex=cx+int(math.cos(a)*16); ey=cy+int(math.sin(a)*16)
-            pygame.draw.line(surf,(200,240,255),(cx,cy),(ex,ey),2)
-            for sign in [-1,1]:
-                bx=cx+int(math.cos(a)*9); by=cy+int(math.sin(a)*9)
-                ba=a+sign*math.radians(60)
-                ex2=bx+int(math.cos(ba)*5); ey2=by+int(math.sin(ba)*5)
-                pygame.draw.line(surf,(220,250,255),(bx,by),(ex2,ey2),1)
-        pygame.draw.circle(surf,(240,255,255),(cx,cy),3)
+            a=ring_spin+i*(2*math.pi/6)
+            ox=cx+math.cos(a)*33; oy=cy+math.sin(a)*33
+            tw=0.6+0.4*abs(math.sin(t*3+i*1.1))      # twinkle
+            d=5
+            diamond=[(ox,oy-d*1.4),(ox+d*0.7,oy),(ox,oy+d*1.4),(ox-d*0.7,oy)]
+            shard=pygame.Surface((20,20),pygame.SRCALPHA)
+            dd=[(px_-ox+10,py_-oy+10) for px_,py_ in diamond]
+            pygame.draw.polygon(shard,(150,225,255,int(120*tw)),dd)
+            pygame.draw.polygon(shard,(235,250,255,int(220*tw)),dd,1)
+            surf.blit(shard,(int(ox)-10,int(oy)-10))
+
+        # ── Faceted ice-crystal body (hexagonal gem) ─────────────────────────
+        body_rot=t*0.35
+        outer=self._poly(cx,cy,26,6,body_rot)
+        pygame.draw.polygon(surf,C_FROST_DARK,outer)
+        pygame.draw.polygon(surf,(120,215,255),outer,2)
+        # gradient facets toward the core
+        for r_step,col in [(22,(40,150,225)),(17,(70,190,250)),(12,C_FROST),(8,(170,235,255))]:
+            pygame.draw.polygon(surf,col,self._poly(cx,cy,r_step,6,body_rot))
+        # crisp facet edges from center → vertices (gem look)
+        for vx,vy in self._poly(cx,cy,22,6,body_rot):
+            pygame.draw.line(surf,(210,245,255),(cx,cy),(int(vx),int(vy)),1)
+
+        # ── Detailed rotating snowflake ──────────────────────────────────────
+        flake_rot=t*0.8
+        for i in range(6):
+            a=flake_rot+math.radians(i*60)
+            ex=cx+math.cos(a)*18; ey=cy+math.sin(a)*18
+            pygame.draw.line(surf,(230,250,255),(cx,cy),(int(ex),int(ey)),2)
+            # two pairs of branchlets along each arm
+            for frac,blen in [(0.5,6),(0.78,4)]:
+                bx=cx+math.cos(a)*18*frac; by=cy+math.sin(a)*18*frac
+                for sign in (-1,1):
+                    ba=a+sign*math.radians(58)
+                    ex2=bx+math.cos(ba)*blen; ey2=by+math.sin(ba)*blen
+                    pygame.draw.line(surf,(205,242,255),(int(bx),int(by)),(int(ex2),int(ey2)),1)
+            # crystal tip
+            pygame.draw.circle(surf,(255,255,255),(int(ex),int(ey)),1)
+        # glowing nucleus
+        nuc=pygame.Surface((16,16),pygame.SRCALPHA)
+        nr=int(3+shimmer*2)
+        pygame.draw.circle(nuc,(180,240,255,160),(8,8),nr+3)
+        pygame.draw.circle(nuc,(255,255,255,235),(8,8),nr)
+        surf.blit(nuc,(cx-8,cy-8))
+
+        # ── Level indicators: little ice crystals at the base ────────────────
         for i in range(self.level):
-            pygame.draw.circle(surf,C_FROST_ICE,(cx-14+i*7,cy+36),3)
+            lxp=cx-((self.level-1)*7)//2+i*7; lyp=cy+34
+            pygame.draw.polygon(surf,C_FROST_ICE,
+                                [(lxp,lyp-3),(lxp+2,lyp),(lxp,lyp+3),(lxp-2,lyp)])
+            pygame.draw.circle(surf,(255,255,255),(lxp,lyp),1)
 
         # Triangle positions
         (lx,ly),(rx,ry) = self._tri_positions()
 
-        # Lasers from triangles
+        # Lasers from triangles — crisp icy beams with frost crackle
         for target in self._laser_targets:
             if not target.alive: continue
             tx,ty=int(target.x),int(target.y); tv=self._laser_t
@@ -615,14 +679,31 @@ class Frostcelerator(Unit):
             flicker=int(abs(math.sin(tv*20))*2)
             for ox,oy in [(int(lx),int(ly)),(int(rx),int(ry))]:
                 for width,col2,alp in [(18+flicker,(0,100,200),15),(11,(40,160,255),30),
-                                        (7,(80,200,255),60),(4,(160,230,255),130),(2,(220,245,255),210)]:
+                                        (7,(80,200,255),60),(4,(160,230,255),130),(2,(245,252,255),235)]:
                     pygame.draw.line(s2,(*col2,alp),(ox,oy),(tx,ty),width)
+                # frost crackle: faint zigzag of ice along the beam
+                seg_n=7; zz=[(ox,oy)]
+                for si in range(1,seg_n):
+                    fr=si/seg_n
+                    mx_=ox+(tx-ox)*fr; my_=oy+(ty-oy)*fr
+                    perp_x=-(ty-oy); perp_y=(tx-ox)
+                    pl=max(1,math.hypot(perp_x,perp_y))
+                    jit=math.sin(tv*22+si*1.9+ox)*3
+                    zz.append((mx_+perp_x/pl*jit,my_+perp_y/pl*jit))
+                zz.append((tx,ty))
+                pygame.draw.lines(s2,(225,248,255,80),False,zz,1)
             surf.blit(s2,(0,0))
-            fs=pygame.Surface((40,40),pygame.SRCALPHA)
-            fr2=int(abs(math.sin(tv*16))*6)+5
-            pygame.draw.circle(fs,(180,230,255,100),(20,20),fr2+4)
-            pygame.draw.circle(fs,(220,245,255,180),(20,20),fr2)
-            surf.blit(fs,(tx-20,ty-20))
+            # Impact: icy burst + tiny snowflake spikes
+            fs=pygame.Surface((48,48),pygame.SRCALPHA)
+            fr2=int(abs(math.sin(tv*16))*6)+6
+            pygame.draw.circle(fs,(120,200,255,90),(24,24),fr2+6)
+            pygame.draw.circle(fs,(190,235,255,150),(24,24),fr2+2)
+            pygame.draw.circle(fs,(255,255,255,225),(24,24),max(1,fr2-2))
+            for k in range(6):
+                a=math.radians(k*60+tv*120)
+                ex=24+math.cos(a)*(fr2+6); ey=24+math.sin(a)*(fr2+6)
+                pygame.draw.line(fs,(225,248,255,180),(24,24),(int(ex),int(ey)),1)
+            surf.blit(fs,(tx-24,ty-24))
 
         # Draw triangles
         tri_size = 36
@@ -1914,7 +1995,7 @@ class Railgunner(Unit):
 
         # ── Charge build-up at muzzle ──
         if self._charging and self._charge_time>0:
-            cf=1.0-max(0.0,self._charge_t/self._charge_time)
+            cf=min(1.0,max(0.0,1.0-self._charge_t/self._charge_time))
             mx,my=cx+int(ca*40),cy+int(sa*40)
             cr=int(2+cf*7)
             cs=pygame.Surface((cr*2+4,cr*2+4),pygame.SRCALPHA)
