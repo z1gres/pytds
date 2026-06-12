@@ -6023,9 +6023,15 @@ class DifficultyMenu:
 
         ("play_sandbox", "SANDBOX", "sandbox_ico",
          (220, 180, 80),
-         "No rules. Test anything.",    
+         "No rules. Test anything.",
          ["HP: ∞", "Starting cash: ∞"],
          ("—", (180, 160, 100))),
+
+        ("play_test",    "TEST",    "test_ico",
+         (170, 80, 255),
+         "Jumps straight to wave 50.",
+         ["HP: 10000", "Starting cash: $100k"],
+         ("—", (190, 110, 255))),
     ]
 
     def __init__(self, screen, save_data=None):
@@ -9735,6 +9741,9 @@ class MainMenu:
                             elif diff == "play_sandbox":
                                 game_core.CURRENT_MAP = "straight"
                                 self.action = diff
+                            elif diff == "play_test":
+                                game_core.CURRENT_MAP = "straight"
+                                self.action = diff
                             else:
                                 map_choice = MapSelectMenu(self.screen).run()
                                 if map_choice != "back":
@@ -12452,6 +12461,13 @@ class Game:
             self.wave_mgr.spawn_interval=0.8   # tighter spawns than default 0.9 → more pressure
             self.player_hp=100; self.player_maxhp=100
             self.money=700
+        elif mode=="test":
+            # Test mode: jump straight to wave 50 (Void Reaver) on the straight map,
+            # with a scripted intro dialogue. Reuses the hardcore wave table.
+            self.wave_mgr=WaveManager(wave_data=HARDCORE_WAVE_DATA, max_waves=HARDCORE_MAX_WAVES)
+            self.wave_mgr._mode="hardcore"
+            self.player_hp=10000; self.player_maxhp=10000
+            self.money=100000
         elif mode=="coins100":
             # "Want 100 coins?" splash minigame: a single wave with one Void Reaver,
             # on the zigzag map, with 100k starting money and the player's loadout.
@@ -12603,6 +12619,31 @@ class Game:
             self.player_hp = 10000; self.player_maxhp = 10000
             self.money = 9999999999
             self.ui.SLOT_TYPES = [None, None, None, None, None]
+        # ── Test mode: scripted wave-50 intro dialogue ───────────────────────
+        # Each line: (speaker, text, type_time, hold_time). type_time = seconds
+        # to fully type the text; hold_time = seconds to stay fully written after.
+        self._test_dialogue = None
+        if mode == "test":
+            self._test_dialogue = [
+                ("Void Caster",
+                 "When the Old World still drew breath, Lord Exo saw what i was, what i have always been, and accepted it",
+                 4.0, 4.0),
+                ("Void Caster",
+                 "My army marched beneath his banner as i gave him a promise that the flora of the Void would take root in every realm and bloom, until there was nothing left to bloom upon",
+                 5.0, 5.0),
+                ("Void Caster",
+                 "Now you will watch as your world dies a quiet, tranquil death.",
+                 3.0, 3.0),
+                ("Commander",
+                 "No. We won't. Because we aren't giving you the chance.",
+                 4.0, 4.0),
+                ("Void Caster",
+                 "Nah. You carry the will of a fool",
+                 2.0, 2.0),
+            ]
+            self._test_dlg_idx = 0      # current line index
+            self._test_dlg_timer = 0.0  # elapsed time within current line
+            self._test_dlg_done = False # True once the whole dialogue finished
         # Hardcore: 1.5× placement and upgrade cost multiplier
         self._hc_cost_mult = 1.4 if mode == "hardcore" else 1.0
         # Frosty: force the map
@@ -12927,6 +12968,9 @@ class Game:
             txt(surf,"E",(SCREEN_W-6+ox,PATH_Y-5+oy),C_GREEN,font_sm,center=True)
 
     def run(self):
+        # Test mode: warp straight to wave 50 before the loop starts.
+        if self.mode == "test":
+            self._do_wave_jump(50)
         while self.running:
             _fps_cap = 720 if SETTINGS.get("unlock_fps") else FPS
             raw_dt = min(self.clock.tick(_fps_cap) / 1000.0, 0.05)
@@ -14380,6 +14424,15 @@ class Game:
                 self.ui.update(dt)
                 if self._fallen_king_shake>0:
                     self._fallen_king_shake=max(0, self._fallen_king_shake-dt)
+                # ── Test mode: advance scripted intro dialogue ──────────────
+                if self._test_dialogue is not None and not self._test_dlg_done:
+                    self._test_dlg_timer += dt
+                    _spk, _txt, _tt, _ht = self._test_dialogue[self._test_dlg_idx]
+                    if self._test_dlg_timer >= _tt + _ht:
+                        self._test_dlg_idx += 1
+                        self._test_dlg_timer = 0.0
+                        if self._test_dlg_idx >= len(self._test_dialogue):
+                            self._test_dlg_done = True
     
             # ── "Want 100 coins?" minigame: no win/lose screen, straight to menu ──
             if self.mode == "coins100" and (self.game_over or self.win):
@@ -14874,6 +14927,57 @@ class Game:
         # Achievement toasts — always drawn on top
         self.ach_mgr.draw(self.screen)
 
+        # Test-mode scripted dialogue (drawn above everything)
+        if getattr(self, '_test_dialogue', None) is not None and not self._test_dlg_done:
+            self._draw_test_dialogue()
+
+    def _draw_test_dialogue(self):
+        """Render the current test-mode dialogue line at the bottom of the screen,
+        typing it out over its type_time then holding fully written for hold_time."""
+        idx = self._test_dlg_idx
+        if idx >= len(self._test_dialogue):
+            return
+        speaker, text, type_time, _hold = self._test_dialogue[idx]
+        # Typewriter: fraction of characters revealed
+        frac = 1.0 if type_time <= 0 else min(1.0, self._test_dlg_timer / type_time)
+        shown = text[:int(len(text) * frac + 0.0001)]
+
+        surf = self.screen
+        name_col = (190, 110, 255) if speaker == "Void Caster" else (90, 200, 255)
+
+        f_name = pygame.font.SysFont("segoeui", 30, bold=True)
+        f_body = pygame.font.SysFont("segoeui", 26)
+
+        # Word-wrap the shown text to fit the box
+        box_w = 1100
+        import textwrap
+        # Estimate chars-per-line from average glyph width
+        avg_w = max(1, f_body.size("abcdefghijklmnopqrstuvwxyz")[0] // 26)
+        cpl = max(10, (box_w - 60) // avg_w)
+        lines = textwrap.wrap(shown, width=cpl) or [""]
+
+        line_h = f_body.get_height() + 4
+        box_h = 70 + len(lines) * line_h + 24
+        box_x = (SCREEN_W - box_w) // 2
+        box_y = SCREEN_H - box_h - 60
+
+        # Panel
+        panel = pygame.Surface((box_w, box_h), pygame.SRCALPHA)
+        pygame.draw.rect(panel, (10, 8, 18, 225), (0, 0, box_w, box_h), border_radius=16)
+        pygame.draw.rect(panel, (*name_col, 220), (0, 0, box_w, box_h), 3, border_radius=16)
+        surf.blit(panel, (box_x, box_y))
+
+        # Speaker name
+        ns = f_name.render(speaker, True, name_col)
+        surf.blit(ns, (box_x + 30, box_y + 20))
+
+        # Body lines
+        ty = box_y + 64
+        for ln in lines:
+            ls = f_body.render(ln, True, (235, 235, 240))
+            surf.blit(ls, (box_x + 30, ty))
+            ty += line_h
+
     def _draw_end_screen(self):
         surf=self.screen
         is_win=self.win
@@ -15008,6 +15112,9 @@ def _run_multiplayer(screen, save_data):
                                     self.action = diff
 
                             elif diff == "play_sandbox":
+                                game_core.CURRENT_MAP = "straight"
+                                self.action = diff
+                            elif diff == "play_test":
                                 game_core.CURRENT_MAP = "straight"
                                 self.action = diff
                             else:
@@ -15145,8 +15252,9 @@ if __name__ == "__main__":
             else:
                 _CURRENT_SPLASH = "no 100 coins for u"
 
-        elif action in ("play_easy", "play_sandbox", "play_fallen", "play_frosty", "play_infernal", "play_hardcore", "play_draft"):
+        elif action in ("play_easy", "play_sandbox", "play_fallen", "play_frosty", "play_infernal", "play_hardcore", "play_draft", "play_test"):
             if action == "play_sandbox": mode = "sandbox"
+            elif action == "play_test": mode = "test"
             elif action == "play_fallen": mode = "fallen"
             elif action == "play_frosty": mode = "frosty"
             elif action == "play_infernal": mode = "infernal"
