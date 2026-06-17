@@ -1852,6 +1852,167 @@ class VoidReaver(Enemy):
         if hovered: self._hover_label(surf)
 
 
+class VoidKnight(Enemy):
+    """Void mode (test) — slow-moving void footsoldier. Freeze/stun immune.
+    HP is configurable per spawn (40k / 90k variants)."""
+    DISPLAY_NAME="Void Knight"; BASE_HP=40000; BASE_SPEED=28; KILL_REWARD=0
+    ARMOR=0.0
+    _stun_immune=True; _shock_immune=True; _freeze_immune=True
+
+    def __init__(self, wave=1, hp=40000):
+        super().__init__(wave)
+        self.hp=hp; self.maxhp=hp
+        self.speed=self.BASE_SPEED; self._base_speed=self.BASE_SPEED
+        self.radius=28
+        self._rot=0.0
+
+    def update(self, dt):
+        # Hard freeze/stun immunity — clear any applied effect every tick.
+        self.frozen=False; self._frost_frozen=False
+        self._shock_stunned=False
+        self._rot += dt*70
+        return super().update(dt)
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*0.5)*2; cx,cy=int(self.x),int(self.y+bob)
+        r=self.radius
+        # Dark void aura
+        s=pygame.Surface((r*4,r*4),pygame.SRCALPHA)
+        pulse=int(abs(math.sin(self._rot/40))*40)+30
+        pygame.draw.circle(s,(70,20,120,pulse),(r*2,r*2),r+12)
+        surf.blit(s,(cx-r*2,cy-r*2))
+        # Knight body — shield + helm silhouette
+        pygame.draw.circle(surf,(100,40,170),(cx,cy),r+4,5)
+        pygame.draw.circle(surf,(45,12,80),(cx,cy),r)
+        pygame.draw.circle(surf,(20,4,40),(cx,cy),r-8)
+        # Cross blade mark
+        for ang in (self._rot, self._rot+90):
+            a=math.radians(ang)
+            x1=cx+int(math.cos(a)*(r-4)); y1=cy+int(math.sin(a)*(r-4))
+            x2=cx-int(math.cos(a)*(r-4)); y2=cy-int(math.sin(a)*(r-4))
+            pygame.draw.line(surf,(180,120,255),(x1,y1),(x2,y2),3)
+        # Glowing eye
+        ep=int(abs(math.sin(self._rot/25))*50)+150
+        pygame.draw.circle(surf,(min(255,ep),90,255),(cx,cy),7)
+        pygame.draw.circle(surf,(255,235,255),(cx,cy),3)
+        self._draw_hp_bar(surf,60,8,(180,120,255))
+        if hovered: self._hover_label(surf)
+
+
+class VoidGuardian(Enemy):
+    """Void mode (test) — heavy slow-moving guardian. Freeze/stun immune."""
+    DISPLAY_NAME="Void Guardian"; BASE_HP=200000; BASE_SPEED=28; KILL_REWARD=0
+    ARMOR=0.0
+    _stun_immune=True; _shock_immune=True; _freeze_immune=True
+
+    def __init__(self, wave=1, hp=200000):
+        super().__init__(wave)
+        self.hp=hp; self.maxhp=hp
+        self.speed=self.BASE_SPEED; self._base_speed=self.BASE_SPEED
+        self.radius=44
+        self._rot=0.0
+
+    def update(self, dt):
+        self.frozen=False; self._frost_frozen=False
+        self._shock_stunned=False
+        self._rot += dt*35
+        return super().update(dt)
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*0.4)*2; cx,cy=int(self.x),int(self.y+bob)
+        r=self.radius
+        # Heavy void aura
+        s=pygame.Surface((r*4,r*4),pygame.SRCALPHA)
+        pulse=int(abs(math.sin(self._rot/30))*50)+40
+        pygame.draw.circle(s,(60,15,110,pulse),(r*2,r*2),r+18)
+        surf.blit(s,(cx-r*2,cy-r*2))
+        # Orbiting guard shards
+        for i in range(8):
+            a=math.radians(self._rot+i*45)
+            ox=cx+int(math.cos(a)*(r+14)); oy=cy+int(math.sin(a)*(r+14))
+            pygame.draw.circle(surf,(160,90,230),(ox,oy),5)
+        # Body — layered plates
+        pygame.draw.circle(surf,(120,50,190),(cx,cy),r+6,7)
+        pygame.draw.circle(surf,(55,15,95),(cx,cy),r)
+        pygame.draw.circle(surf,(25,5,45),(cx,cy),r-14)
+        # Hex plating lines
+        for i in range(6):
+            a=math.radians(self._rot*0.5+i*60)
+            x2=cx+int(math.cos(a)*(r-4)); y2=cy+int(math.sin(a)*(r-4))
+            pygame.draw.line(surf,(150,90,220),(cx,cy),(x2,y2),2)
+        # Core
+        cp=int(abs(math.sin(self._rot/20))*60)+160
+        pygame.draw.circle(surf,(min(255,cp),100,255),(cx,cy),12)
+        pygame.draw.circle(surf,(255,235,255),(cx,cy),5)
+        self._draw_hp_bar(surf,100,11,(180,120,255))
+        if hovered: self._hover_label(surf)
+
+
+class VoidCaster(Enemy):
+    """Void mode (test) — the Void Caster boss. Spawns when the Void Reaver
+    drops to 600k HP. Takes no damage while `_void_untargetable` is set
+    (i.e. until the Reaver has been slain, or while ahead of the Reaver)."""
+    DISPLAY_NAME="Void Caster"; BASE_HP=650000; BASE_SPEED=6; KILL_REWARD=0
+    ARMOR=0.0
+    _stun_immune=True; _shock_immune=True; _freeze_immune=True
+
+    def __init__(self, wave=1, hp=650000):
+        super().__init__(wave)
+        self.hp=hp; self.maxhp=hp
+        self.speed=self.BASE_SPEED; self._base_speed=self.BASE_SPEED
+        self.radius=52
+        self._rot=0.0
+        self._void_untargetable=True   # invulnerable until the script clears it
+
+    def take_damage(self, dmg):
+        if getattr(self, '_void_untargetable', False):
+            return  # no damage while shielded by the Reaver
+        super().take_damage(dmg)
+
+    def update(self, dt):
+        self.frozen=False; self._frost_frozen=False
+        self._shock_stunned=False
+        self._rot += dt*50
+        return super().update(dt)
+
+    def draw(self, surf, hovered=False, detected=False):
+        bob=math.sin(self._bob*0.35)*2; cx,cy=int(self.x),int(self.y+bob)
+        r=self.radius
+        invuln=getattr(self,'_void_untargetable',False)
+        # Massive void aura
+        s=pygame.Surface((r*4,r*4),pygame.SRCALPHA)
+        pulse=int(abs(math.sin(self._rot/30))*70)+60
+        pygame.draw.circle(s,(90,20,160,pulse),(r*2,r*2),r+30)
+        pygame.draw.circle(s,(40,5,80,pulse),(r*2,r*2),r+10)
+        surf.blit(s,(cx-r*2,cy-r*2))
+        # Casting glyph ring
+        for i in range(10):
+            a=math.radians(self._rot+i*36)
+            ox=cx+int(math.cos(a)*(r+22)); oy=cy+int(math.sin(a)*(r+22))
+            pygame.draw.circle(surf,(190,130,255),(ox,oy),4)
+        # Robed body
+        pygame.draw.circle(surf,(140,60,210),(cx,cy),r+8,9)
+        pygame.draw.circle(surf,(60,18,110),(cx,cy),r)
+        pygame.draw.circle(surf,(25,5,50),(cx,cy),r-16)
+        # Twin casting eyes
+        for ex in (-r//3, r//3):
+            pygame.draw.circle(surf,(210,140,255),(cx+ex,cy-6),8)
+            pygame.draw.circle(surf,(255,240,255),(cx+ex,cy-6),3)
+        # Core sigil
+        cp=int(abs(math.sin(self._rot/18))*70)+160
+        pygame.draw.circle(surf,(min(255,cp),110,255),(cx,cy+10),10)
+        # Invulnerability shield dome
+        if invuln:
+            dr=r+22
+            dome=pygame.Surface((dr*2+4,dr*2+4),pygame.SRCALPHA)
+            da=int(abs(math.sin(self._rot/12))*70)+100
+            pygame.draw.circle(dome,(170,100,255,da),(dr+2,dr+2),dr,6)
+            pygame.draw.circle(dome,(120,60,210,40),(dr+2,dr+2),dr)
+            surf.blit(dome,(cx-dr-2,cy-dr-2))
+        self._draw_hp_bar(surf,150,16,(210,140,255))
+        if hovered: self._hover_label(surf)
+
+
 # ── Frosty breaker pool ────────────────────────────────────────────────────────
 FROST_MYSTERY_POOL_SNOWY  = SnowyEnemy
 FROST_MYSTERY_POOL_FROZEN = FrozenEnemy

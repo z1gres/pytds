@@ -98,6 +98,7 @@ class Unit:
         r=self.range_tiles*TILE; pool=[]
         for e in enemies:
             if not e.alive: continue
+            if getattr(e,'_void_untargetable',False): continue  # Void Caster shield
             if e.IS_HIDDEN and not self.hidden_detection and not getattr(e,"_exposed",False): continue
             if dist((e.x,e.y),(self.px,self.py))<=r: pool.append(e)
         if not pool: return []
@@ -11149,7 +11150,7 @@ def _cb_apply_burn(enemy, burn_dmg, burn_dur, burn_tick):
     enemy._cb_burn_timer = 0.0
 
 def _cb_apply_knockback(enemy, px_amount):
-    """Откидывание назад по пути — против текущего направления движения врага.
+    """Откидывание назад ВДОЛЬ пути (полилинии вейпоинтов), а не по прямой в 2D.
     Кнокбек имеет кулдаун 1.2с на врага, чтобы не стакаться бесконечно."""
     # кулдаун: не чаще 1.2 сек на одного врага
     now = pygame.time.get_ticks() * 0.001
@@ -11158,17 +11159,32 @@ def _cb_apply_knockback(enemy, px_amount):
         return
     enemy._cb_kb_time = now
 
-    # смещаем против направления движения
-    vx = getattr(enemy, 'vx', None)
-    vy = getattr(enemy, 'vy', None)
-    if vx is not None and vy is not None:
-        d = math.hypot(vx, vy) or 1.0
-        enemy.x -= (vx / d) * px_amount
-        enemy.y -= (vy / d) * px_amount
-    else:
-        a = getattr(enemy, '_angle', 0.0)
-        enemy.x -= math.cos(a) * px_amount
-        enemy.y -= math.sin(a) * px_amount
+    # Враги двигаются по вейпоинтам (path[_wp_index]) и не имеют vx/vy — поэтому
+    # откатываем строго назад по сегментам пути. Так враг не уезжает за дорожку
+    # и его всегда отталкивает в правильную сторону (к предыдущему вейпоинту).
+    path = getattr(enemy, '_frosty_path', None) or get_map_path()
+    if not path:
+        return
+    wp = getattr(enemy, '_wp_index', 1)
+    remaining = float(px_amount)
+    while remaining > 0 and wp >= 1:
+        pvx, pvy = path[wp - 1]            # предыдущий вейпоинт — куда откатываем
+        dx = pvx - enemy.x; dy = pvy - enemy.y
+        d = math.hypot(dx, dy)
+        if d <= 1e-9:
+            # уже стоим в предыдущем вейпоинте — шагаем на сегмент раньше
+            if wp <= 1: break
+            wp -= 1; enemy._wp_index = wp
+            continue
+        if remaining < d:
+            enemy.x += dx / d * remaining
+            enemy.y += dy / d * remaining
+            remaining = 0
+        else:
+            enemy.x = float(pvx); enemy.y = float(pvy)
+            remaining -= d
+            if wp <= 1: break
+            wp -= 1; enemy._wp_index = wp
 
 def _cb_tick_debuffs(enemy, dt):
     """Тикает дебаффы на враге. Вызывается каждый кадр из Castbound.update()."""

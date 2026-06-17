@@ -55,7 +55,7 @@ from game_core import (
     get_map_path, get_frosty_path, spawn_enemy_at_start, CURRENT_MAP,
     font_sm, font_md, font_lg, font_xl, font_ru, font_ru_lg,
     SAVE_FILE, load_icon, RARITY_DATA, UNIT_LIMITS,
-    load_save, write_save, dist, txt, draw_rect_alpha,
+    load_save, write_save, dist, path_progress, txt, draw_rect_alpha,
     SwordEffect, WhirlwindEffect, FloatingText, BloodSlashEffect,
     ACHIEVEMENTS_FILE, ACHIEVEMENT_DEFS, load_achievements, grant_achievement,
     fmt_num,
@@ -313,7 +313,7 @@ from enemies import (
     FallenGuardianEnemy,
     WAVE_DATA, FALLEN_WAVE_DATA, FALLEN_MAX_WAVES,
     HARDCORE_WAVE_DATA, HARDCORE_MAX_WAVES,
-    VoidReaver,
+    VoidReaver, VoidKnight, VoidGuardian, VoidCaster,
     BREAKER_POOL, FALLEN_BREAKER_POOL,
     WaveManager,
     # Frosty enemies
@@ -9741,10 +9741,8 @@ class MainMenu:
                             elif diff == "play_sandbox":
                                 game_core.CURRENT_MAP = "straight"
                                 self.action = diff
-                            elif diff == "play_test":
-                                game_core.CURRENT_MAP = "straight"
-                                self.action = diff
                             else:
+                                # All other modes (incl. test) pick a map first.
                                 map_choice = MapSelectMenu(self.screen).run()
                                 if map_choice != "back":
                                     game_core.CURRENT_MAP = map_choice
@@ -12462,12 +12460,14 @@ class Game:
             self.player_hp=100; self.player_maxhp=100
             self.money=700
         elif mode=="test":
-            # Test mode: jump straight to wave 50 (Void Reaver) on the straight map,
-            # with a scripted intro dialogue. Reuses the hardcore wave table.
+            # Test mode: a fully scripted Void encounter that begins AFTER the intro
+            # dialogue. The WaveManager never auto-spawns (natural_spawn_stopped);
+            # all spawns are driven by _update_test_boss().
             self.wave_mgr=WaveManager(wave_data=HARDCORE_WAVE_DATA, max_waves=HARDCORE_MAX_WAVES)
             self.wave_mgr._mode="hardcore"
             self.player_hp=10000; self.player_maxhp=10000
-            self.money=100000
+            self.money=9999999999   # effectively infinite money by default
+            self.natural_spawn_stopped=True
         elif mode=="coins100":
             # "Want 100 coins?" splash minigame: a single wave with one Void Reaver,
             # on the zigzag map, with 100k starting money and the player's loadout.
@@ -12545,6 +12545,8 @@ class Game:
         # Hardcore wave-50: Void Reaver entrance flash
         self._void_reaver_seen = False
         self._void_flash = 0.0
+        # Scripted Void encounter active (test mode from start; hardcore from wave 50)
+        self._void_script_active = (mode == "test")
         # generic scheduled spawns (for delayed summon abilities)
         self._scheduled_spawns = []  # [{"t":float,"cls":type,"x":float,"y":float,"wp":int,"fp":path|None,"from_wave":bool,"free_kill":bool}]
         # Achievement manager
@@ -12619,31 +12621,11 @@ class Game:
             self.player_hp = 10000; self.player_maxhp = 10000
             self.money = 9999999999
             self.ui.SLOT_TYPES = [None, None, None, None, None]
-        # ── Test mode: scripted wave-50 intro dialogue ───────────────────────
-        # Each line: (speaker, text, type_time, hold_time). type_time = seconds
-        # to fully type the text; hold_time = seconds to stay fully written after.
+        # ── Scripted wave-50 Void intro dialogue ──────────────────────────────
+        # Used by test mode (from the start) and by hardcore (when wave 50 begins).
         self._test_dialogue = None
         if mode == "test":
-            self._test_dialogue = [
-                ("Void Caster",
-                 "When the Old World still drew breath, Lord Exo saw what i was, what i have always been, and accepted it",
-                 4.0, 4.0),
-                ("Void Caster",
-                 "My army marched beneath his banner as i gave him a promise that the flora of the Void would take root in every realm and bloom, until there was nothing left to bloom upon",
-                 5.0, 5.0),
-                ("Void Caster",
-                 "Now you will watch as your world dies a quiet, tranquil death.",
-                 3.0, 3.0),
-                ("Commander",
-                 "No. We won't. Because we aren't giving you the chance.",
-                 4.0, 4.0),
-                ("Void Caster",
-                 "Nah. You carry the will of a fool",
-                 2.0, 2.0),
-            ]
-            self._test_dlg_idx = 0      # current line index
-            self._test_dlg_timer = 0.0  # elapsed time within current line
-            self._test_dlg_done = False # True once the whole dialogue finished
+            self._setup_void_dialogue()
         # Hardcore: 1.5× placement and upgrade cost multiplier
         self._hc_cost_mult = 1.4 if mode == "hardcore" else 1.0
         # Frosty: force the map
@@ -12728,6 +12710,203 @@ class Game:
         wm._bonus_paid = True
         wm._start_wave()
         self.ui.show_msg(f"Jumped to wave {w}", 2.0)
+
+    # ── Test mode: scripted Void encounter ──────────────────────────────────────
+    _VOID_REAVER_BASE_SPEED = 6   # VoidReaver.BASE_SPEED
+
+    def _build_test_queue(self):
+        """Returns [(spawn_time_seconds, factory_fn), ...] for the scripted fight.
+        Times are measured from the moment the intro dialogue finishes."""
+        q = []
+        t = 1.0
+        # 5× Void Knight (40k HP, slow)
+        for _ in range(5):
+            q.append((t, lambda: self._mk_void_knight(40000))); t += 1.3
+        t += 2.0
+        # 1× Void Reaver (1.2M HP)
+        q.append((t, self._mk_test_reaver)); t += 2.5
+        # 5× Void Knight (90k HP, slow)
+        for _ in range(5):
+            q.append((t, lambda: self._mk_void_knight(90000))); t += 1.3
+        t += 2.0
+        # 1× Void Guardian (200k HP, slow)
+        q.append((t, lambda: self._mk_void_guardian(200000)))
+        return q
+
+    def _mk_void_knight(self, hp):
+        return VoidKnight(hp=hp)
+
+    def _mk_void_guardian(self, hp):
+        return VoidGuardian(hp=hp)
+
+    def _mk_test_reaver(self):
+        """The original 1.2M Void Reaver. No phase shield (scripted fight)."""
+        r = VoidReaver()
+        r.hp = r.maxhp = 1200000
+        r._phase_thresholds = []      # disable hardcore phase-shield invuln
+        r.speed = self._VOID_REAVER_BASE_SPEED
+        r._base_speed = self._VOID_REAVER_BASE_SPEED
+        r._test_boss = True
+        self._test_reaver = r
+        return r
+
+    def _spawn_revived_reaver(self, hp, speed):
+        """Spawn a fresh Void Reaver at the last known Reaver position."""
+        r = VoidReaver()
+        r.hp = r.maxhp = hp
+        r._phase_thresholds = []
+        r.speed = speed
+        r._base_speed = speed
+        r._test_boss = True
+        pos = getattr(self, '_test_last_reaver_pos', None)
+        if pos:
+            r.x = float(pos[0]); r.y = float(pos[1]); r._wp_index = pos[2]
+        self.enemies.append(r)
+        return r
+
+    def _setup_void_dialogue(self):
+        """Build the scripted wave-50 Void intro dialogue + its playback state.
+        Each line: (speaker, text, type_time, hold_time). type_time = seconds to
+        fully type the text; hold_time = seconds to stay fully written after."""
+        self._test_dialogue = [
+            ("Void Caster",
+             "When the Old World still drew breath, Lord Exo saw what i was, what i have always been, and accepted it",
+             4.0, 4.0),
+            ("Void Caster",
+             "My army marched beneath his banner as i gave him a promise that the flora of the Void would take root in every realm and bloom, until there was nothing left to bloom upon",
+             5.0, 5.0),
+            ("Void Caster",
+             "Now you will watch as your world dies a quiet, tranquil death.",
+             3.0, 3.0),
+            ("Commander",
+             "No. We won't. Because we aren't giving you the chance.",
+             4.0, 4.0),
+            ("Void Caster",
+             "Nah. You carry the will of a fool",
+             2.0, 2.0),
+        ]
+        self._test_dlg_idx = 0      # current line index
+        self._test_dlg_timer = 0.0  # elapsed time within current line
+        self._test_dlg_done = False # True once the whole dialogue finished
+
+    def _update_test_boss(self, dt):
+        # Hold everything until the intro dialogue has fully played out.
+        if getattr(self, '_test_dialogue', None) is not None and not self._test_dlg_done:
+            return
+
+        # One-time init of the encounter state.
+        if not getattr(self, '_test_seq_started', False):
+            self._test_seq_started   = True
+            self._test_seq_clock     = 0.0
+            self._test_spawn_queue   = self._build_test_queue()
+            self._test_reaver        = None
+            self._test_reaver_deaths = 0
+            self._test_caster        = None
+            self._test_caster_spawned= False
+            self._test_caster_dead   = False
+            self._test_final_started = False
+            self._test_fight_over    = False
+            self._test_last_reaver_pos = None
+            self._void_caster_glitch = 0.0
+            self._test_reaver_respawn_pending = False
+            self._test_reaver_respawn_timer   = 0.0
+
+        # Tick the caster-entrance glitch overlay timer.
+        if self._void_caster_glitch > 0:
+            self._void_caster_glitch = max(0.0, self._void_caster_glitch - dt)
+
+        # Drive scripted spawns.
+        self._test_seq_clock += dt
+        while self._test_spawn_queue and self._test_seq_clock >= self._test_spawn_queue[0][0]:
+            _, fn = self._test_spawn_queue.pop(0)
+            self.enemies.append(fn())
+
+        # Enforce freeze/stun immunity for every Void enemy this tick.
+        for e in self.enemies:
+            if not e.alive: continue
+            if isinstance(e, (VoidKnight, VoidGuardian, VoidReaver, VoidCaster)):
+                if getattr(e, '_shock_stunned', False):
+                    pre = getattr(e, '_shock_pre_speed', None)
+                    if pre is not None: e.speed = pre
+                    e._shock_stunned = False; e._shock_stun_timer = 0.0
+                e.frozen = False; e._frost_frozen = False
+
+        # Track the current Reaver's position while it lives (for revives).
+        if self._test_reaver is not None and self._test_reaver.alive:
+            self._test_last_reaver_pos = (self._test_reaver.x, self._test_reaver.y,
+                                          self._test_reaver._wp_index)
+
+        # Spawn the Void Caster once the original Reaver drops to 600k HP.
+        if (not self._test_caster_spawned and self._test_reaver is not None
+                and self._test_reaver.alive and self._test_reaver.hp <= 600000):
+            self._test_caster_spawned = True
+            c = VoidCaster()
+            c.hp = c.maxhp = 650000
+            c.speed = self._VOID_REAVER_BASE_SPEED
+            c._base_speed = self._VOID_REAVER_BASE_SPEED
+            self._test_caster = c
+            self.enemies.append(c)
+            self._void_caster_glitch = 3.0   # half-purple + glitch overlay for 3s
+
+        # Update the Caster's invulnerability / targetability each tick.
+        #   • invulnerable until the Reaver has been slain at least once
+        #   • untargetable while a LIVING Reaver is ahead of it
+        #   (during the 5s respawn window there is no living Reaver, so the
+        #    Caster stays damageable instead of going invulnerable)
+        if self._test_caster is not None and not self._test_caster_dead:
+            c = self._test_caster
+            untarget = False
+            if self._test_reaver_deaths == 0:
+                untarget = True
+            else:
+                rv = self._test_reaver if (self._test_reaver and self._test_reaver.alive) else None
+                if rv is not None and path_progress(c) > path_progress(rv):
+                    untarget = True
+            c._void_untargetable = untarget
+
+        # Caster slain → the Reaver returns one final time: 240k HP at 5× the
+        # normal speed (this is the last time it revives).
+        if (self._test_caster is not None and self._test_caster_spawned
+                and not self._test_caster.alive and not self._test_caster_dead):
+            self._test_caster_dead = True
+            # This is the final revive — cancel any pending 5s respawn so we don't
+            # spawn a stray 300k Reaver on top of the final form.
+            self._test_reaver_respawn_pending = False
+            final_speed = self._VOID_REAVER_BASE_SPEED * 5
+            rv = self._test_reaver if (self._test_reaver and self._test_reaver.alive) else None
+            if rv is not None:
+                rv.hp = rv.maxhp = 240000
+                rv.speed = final_speed; rv._base_speed = final_speed
+            else:
+                rv = self._spawn_revived_reaver(240000, final_speed)
+                self._test_reaver = rv
+            self._test_final_started = True
+
+        # Reaver killed (hp<=0, not merely leaked).
+        if (self._test_reaver is not None and not self._test_reaver.alive
+                and self._test_reaver.hp <= 0
+                and not self._test_reaver_respawn_pending):
+            if not self._test_caster_dead:
+                # Start a 5-second respawn countdown, then revive at the death spot.
+                self._test_reaver_deaths += 1
+                self._test_reaver_respawn_pending = True
+                self._test_reaver_respawn_timer   = 5.0
+            else:
+                # The final form is dead — the encounter is won.
+                self._test_reaver = None
+                self._test_fight_over = True
+
+        # Tick the 5s respawn countdown; revive the Reaver (300k HP) when it elapses.
+        if self._test_reaver_respawn_pending:
+            self._test_reaver_respawn_timer -= dt
+            if self._test_reaver_respawn_timer <= 0:
+                self._test_reaver_respawn_pending = False
+                self._test_reaver = self._spawn_revived_reaver(
+                    300000, self._VOID_REAVER_BASE_SPEED)
+
+        # When the fight is over, let the normal win path fire once the field clears.
+        if self._test_fight_over:
+            self.wave_mgr.state = "done"
 
     def _broadcast(self, data):
         pass
@@ -12968,9 +13147,12 @@ class Game:
             txt(surf,"E",(SCREEN_W-6+ox,PATH_Y-5+oy),C_GREEN,font_sm,center=True)
 
     def run(self):
-        # Test mode: warp straight to wave 50 before the loop starts.
+        # Test mode: warp the wave counter to 50 (Void encounter) but DON'T let the
+        # WaveManager auto-spawn anything — _update_test_boss drives all spawns once
+        # the intro dialogue finishes. Clear the queue the jump built.
         if self.mode == "test":
             self._do_wave_jump(50)
+            self.wave_mgr.spawn_queue = []
         while self.running:
             _fps_cap = 720 if SETTINGS.get("unlock_fps") else FPS
             raw_dt = min(self.clock.tick(_fps_cap) / 1000.0, 0.05)
@@ -13078,6 +13260,27 @@ class Game:
                                 self.ui.show_msg("[DEBUG] Castbound: already at last stage", 2.0)
                         else:
                             self.ui.show_msg("[DEBUG] Castbound: unknown stage", 2.0)
+                    # ── Q (test mode only): max out every tower; Castbounds → Star Wrath ──
+                    if ev.key == pygame.K_q and self.mode == "test" and not self.console.visible:
+                        _rng_bonus = getattr(self, '_sk_range_bonus', 0)
+                        for u in self.units:
+                            # Strip Enhanced Optics range bonus so it doesn't stack per level
+                            if _rng_bonus > 0:
+                                u.range_tiles = getattr(u, '_base_range_tiles', u.range_tiles)
+                            # Upgrade to max level (cap iterations to avoid any infinite loop)
+                            for _ in range(20):
+                                if u.upgrade_cost() is None: break
+                                _lvl_before = getattr(u, 'level', None)
+                                u.upgrade()
+                                if getattr(u, 'level', None) == _lvl_before: break
+                            # Re-apply Enhanced Optics range bonus on the post-upgrade range
+                            if _rng_bonus > 0:
+                                u._base_range_tiles = u.range_tiles
+                                u.range_tiles = round(u.range_tiles * (1.0 + _rng_bonus), 4)
+                            # Castbounds get ONLY the Star Wrath blade
+                            if isinstance(u, Castbound):
+                                u.set_blades(["starwrath"])
+                        self.ui.show_msg("[TEST] All towers maxed — Castbounds set to Star Wrath", 3.0)
                     if ev.key == pygame.K_e and self.ui.open_unit:
                         u = self.ui.open_unit; cost = u.upgrade_cost()
                         if cost is not None:
@@ -13478,7 +13681,9 @@ class Game:
                     self._void_flash = 255.0   # purple entrance flash
                 if self._void_flash > 0:
                     self._void_flash = max(0.0, self._void_flash - dt * 300.0)
-                for vr in _vrs:
+                # The scripted Void fight (test mode, or hardcore wave 50) skips the
+                # hardcore Reaver abilities (pulse/tendril/summon).
+                for vr in (_vrs if not self._void_script_active else []):
                     # 1) Void Pulse — screen-wide tower stun (telegraphed by a ring)
                     if getattr(vr, "_void_pulse_timer", 999) <= 0:
                         vr._void_pulse_timer = random.uniform(12, 16)
@@ -13812,6 +14017,20 @@ class Game:
                         pm=getattr(u,'_pending_money',0)
                         if pm>0: self.money+=pm; u._pending_money=0
 
+                # ── Hardcore: when wave 50 begins, swap in the scripted Void
+                # encounter instead of the plain WaveManager spawn. Keep hardcore's
+                # HP/money/economy (the test god-mode resources are NOT carried over).
+                if (self.mode == "hardcore" and not self._void_script_active
+                        and self.wave_mgr.wave >= 50):
+                    self._void_script_active  = True
+                    self.natural_spawn_stopped = True   # freeze WaveManager; script drives spawns
+                    self.wave_mgr.spawn_queue  = []     # drop the normal wave-50 spawn
+                    self._setup_void_dialogue()
+
+                # ── Scripted Void encounter (spawns, caster, revives) ──
+                if self._void_script_active:
+                    self._update_test_boss(dt)
+
                 # Castbound: track damage dealt → charge Terraprisma bar
                 _CB_CHARGE_MAX = 1500
                 for u in self.units:
@@ -14103,6 +14322,13 @@ class Game:
                 vr_alive = [e for e in self.enemies if isinstance(e, VoidReaver) and e.alive]
                 if vr_alive:
                     self._fallen_boss_bars[VoidReaver] = vr_alive[0]
+
+                # Void Caster: boss bar while alive (test-mode scripted boss)
+                vc_alive = [e for e in self.enemies if isinstance(e, VoidCaster) and e.alive]
+                if vc_alive:
+                    self._fallen_boss_bars[VoidCaster] = vc_alive[0]
+                elif VoidCaster in self._fallen_boss_bars:
+                    del self._fallen_boss_bars[VoidCaster]
     
                 # tf_test: always track 1M miniboss and TFK in boss bars regardless of mode
     
@@ -14813,6 +15039,7 @@ class Game:
                 FrostHero:         ("FROST HERO",          (160,230,255)),
                 FrostSpirit:       ("FROST SPIRIT",        (220,248,255)),
                 VoidReaver:        ("VOID REAVER",         (180, 90,255)),
+                VoidCaster:        ("VOID CASTER",         (210,140,255)),
             }
         # ── Infernal boss bars ─────────────────────────────────────────────
         if _INFERNAL_AVAILABLE and self.mode == "infernal":
@@ -14869,6 +15096,26 @@ class Game:
             fl=pygame.Surface((SCREEN_W,SCREEN_H))
             fl.fill((120,20,200)); fl.set_alpha(int(self._void_flash))
             self.screen.blit(fl,(0,0))
+
+        # Void Caster entrance — half-purple wash + black glitch stripes (3s)
+        if getattr(self, '_void_caster_glitch', 0) > 0:
+            gt = self._void_caster_glitch
+            # Half-purple wash over the whole screen (~50% alpha = "half purple").
+            wash = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+            wash.fill((110, 20, 190, 128))
+            self.screen.blit(wash, (0, 0))
+            # Black glitch stripes — random horizontal bars that jitter each frame.
+            n_bars = 14
+            for _ in range(n_bars):
+                by = random.randint(0, SCREEN_H - 4)
+                bh = random.randint(4, 26)
+                bx = random.randint(-40, 40)
+                bw = SCREEN_W + 80
+                self.screen.fill((0, 0, 0), (bx, by, bw, bh))
+            # A few bright purple glitch slivers for contrast.
+            for _ in range(5):
+                gy = random.randint(0, SCREEN_H - 3)
+                self.screen.fill((200, 120, 255), (0, gy, SCREEN_W, random.randint(1, 3)))
 
         # Draw stun indicator on stunned units
         for u in self.units:
@@ -15114,10 +15361,8 @@ def _run_multiplayer(screen, save_data):
                             elif diff == "play_sandbox":
                                 game_core.CURRENT_MAP = "straight"
                                 self.action = diff
-                            elif diff == "play_test":
-                                game_core.CURRENT_MAP = "straight"
-                                self.action = diff
                             else:
+                                # All other modes (incl. test) pick a map first.
                                 map_choice = MapSelectMenu(self.screen).run()
                                 if map_choice != "back":
                                     game_core.CURRENT_MAP = map_choice
