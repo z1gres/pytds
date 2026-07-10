@@ -77,6 +77,7 @@ UNIT_LIMITS["Castbound"]   = 5
 UNIT_LIMITS["TheStrongest"] = 5
 UNIT_LIMITS["Spotlight Tech"] = 3
 UNIT_LIMITS["xw5yt"] = 2
+UNIT_LIMITS["Noiseform"] = 2
 UNIT_LIMITS["Railgunner"] = 4
 
 GLOBAL_UNIT_LIMIT = 40   # max total towers per match
@@ -356,6 +357,7 @@ from units import (
     C_RAIL, C_RAIL_DARK, C_RAIL_CORE,
     xw5yt, XW5YT_LEVELS,
     C_XW, C_XW_DARK, C_XW_ACC,
+    Noiseform, NOISEFORM_LEVELS, C_NOISEFORM, C_NOISEFORM_DARK, _noiseform_tick_buffs,
     Freezer, FREEZER_LEVELS,
     FreezerBullet,
     FrostBlaster, FrostBlasterBullet, FROSTBLASTER_LEVELS,
@@ -788,6 +790,7 @@ class AdminPanel:
                 ("Strongest",TheStrongest,C_STRONGEST),
                 ("Railgunner",Railgunner,C_RAIL),
                 ("xw5yt",xw5yt,C_XW),
+                ("Noiseform",Noiseform,C_NOISEFORM),
             ]
             cols=8; cw=(pw-28)//cols; ch=100; gap=6
             start_x=px+10; start_y=content_top+6
@@ -1971,6 +1974,16 @@ class UI:
             pygame.draw.circle(es,(255,55,55),(ec,ec),er,2)
             pygame.draw.line(es,(255,90,90),(ec,ec-er+1),(ec,ec+er-1),2)
             surf.blit(es,(cx-ec,cy-ec))
+        elif isinstance(u, Noiseform):
+            t2=pygame.time.get_ticks()*0.001
+            ga2=int(abs(math.sin(t2*2.2))*45+35)
+            glow2=pygame.Surface((64,64),pygame.SRCALPHA)
+            pygame.draw.circle(glow2,(70,230,140,ga2),(32,32),29)
+            surf.blit(glow2,(cx-32,cy-32))
+            pygame.draw.circle(surf,(12,30,22),(cx,cy),24)
+            pygame.draw.circle(surf,C_NOISEFORM_DARK,(cx,cy),21)
+            pygame.draw.circle(surf,C_NOISEFORM,(cx,cy),18)
+            pygame.draw.circle(surf,(190,255,220),(cx,cy),18,2)
         else:
             pygame.draw.circle(surf,(70,40,100),(cx,cy),28)
             pygame.draw.circle(surf,u.COLOR,(cx,cy),22)
@@ -1987,6 +2000,7 @@ class UI:
         elif cls==RedBall: levels=REDBALL_LEVELS; cost_idx=2
         elif cls==Railgunner: levels=RAILGUNNER_LEVELS; cost_idx=3
         elif cls==xw5yt: levels=XW5YT_LEVELS; cost_idx=3
+        elif cls==Noiseform: levels=NOISEFORM_LEVELS; cost_idx=3
         elif cls==Farm: levels=FARM_LEVELS; cost_idx=1
         elif cls==Freezer: levels=FREEZER_LEVELS; cost_idx=3
         elif cls==FrostBlaster: levels=FROSTBLASTER_LEVELS; cost_idx=3
@@ -2060,10 +2074,38 @@ class UI:
             if nxt>=len(XW5YT_LEVELS): return None
             d,fr,r,_=XW5YT_LEVELS[nxt]
             res={"Damage":d,"Firerate":fr,"Range":r,"HidDet":nxt>=4}
-            if nxt==3: res["Unlock"]="Frenzy ability"
-            elif nxt==5: res["Unlock"]="Passive slow"
-            elif nxt==7: res["Unlock"]="Blood Nova"
-            elif nxt==10: res["Unlock"]="Empowered abilities"
+            if nxt==3:
+                res["Unlock"]="+Frenzy"
+                res["UnlockDesc"]="Active: +50% damage & firerate and a burn for 10s"
+            elif nxt==5:
+                res["Unlock"]="+Hemochill"
+                res["UnlockDesc"]="Every 5th hit slows the target by 30% for 3s"
+            elif nxt==7:
+                res["Unlock"]="+Blood Nova"
+                res["UnlockDesc"]="Active: detonate a x3 damage blast around the tower"
+            elif nxt==10:
+                res["Unlock"]="+Ascendance"
+                res["UnlockDesc"]="Empowers Frenzy (+75% dmg) & Blood Nova leaves a burning field"
+            return res
+        elif cls==Noiseform:
+            if nxt>=len(NOISEFORM_LEVELS): return None
+            d,fr,r,_=NOISEFORM_LEVELS[nxt]
+            res={"Damage":d,"Firerate":fr,"Range":r,"HidDet":nxt>=2}
+            if nxt==1:
+                res["Unlock"]="+Resonance"
+                res["UnlockDesc"]="All towers in range gain +15% firerate"
+            elif nxt==2:
+                res["Unlock"]="+Resonance II"
+                res["UnlockDesc"]="Resonance firerate aura grows to +20%"
+            elif nxt==3:
+                res["Unlock"]="+Soultorn"
+                res["UnlockDesc"]="5% on a death in range: a soul bursts, +7% damage to towers in range for 5s"
+            elif nxt==4:
+                res["Unlock"]="+Star Beam"
+                res["UnlockDesc"]="Active (30s): 10 arrows rain down; each grants +2% firerate to towers in range for 15s"
+            elif nxt==5:
+                res["Unlock"]="+Spirit Warden"
+                res["UnlockDesc"]="Towers in range recover from stuns 50% faster"
             return res
         elif cls==Farm:
             if nxt>=len(FARM_LEVELS): return None
@@ -2684,7 +2726,7 @@ class UI:
 
             cls=type(u)
             nxt=self._get_next_stats(u)
-            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,Railgunner:RAILGUNNER_LEVELS,xw5yt:XW5YT_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,HackerLaserTest:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS,Farm:FARM_LEVELS,Harvester:HARVESTER_LEVELS,Twitgunner:TWITGUN_LEVELS,Felyne:FELYNE_LEVELS,Conduit:CONDUIT_LEVELS,Castbound:CASTBOUND_LEVELS,TheStrongest:_STRONGEST_LEVELS}
+            levels_map={Assassin:ASSASSIN_LEVELS,Accelerator:ACCEL_LEVELS,Frostcelerator:FROST_LEVELS,Lifestealer:LIFESTEALER_LEVELS,Archer:ARCHER_LEVELS,RedBall:REDBALL_LEVELS,Railgunner:RAILGUNNER_LEVELS,xw5yt:XW5YT_LEVELS,FrostBlaster:FROSTBLASTER_LEVELS,Freezer:FREEZER_LEVELS,Sledger:SLEDGER_LEVELS,Gladiator:GLADIATOR_LEVELS,ToxicGunner:TOXICGUN_LEVELS,Slasher:SLASHER_LEVELS,GoldenCowboy:GCOWBOY_LEVELS,HallowPunk:HALLOWPUNK_LEVELS,SpotlightTech:SPOTLIGHTTECH_LEVELS,Snowballer:SNOWBALLER_LEVELS,Commando:COMMANDO_LEVELS,Caster:CASTER_LEVELS,HackerLaserTest:CASTER_LEVELS,Warlock:WARLOCK_LEVELS,RubberDuck:DUCK_LEVELS,Militant:MILITANT_LEVELS,Swarmer:SWARMER_LEVELS,Farm:FARM_LEVELS,Harvester:HARVESTER_LEVELS,Twitgunner:TWITGUN_LEVELS,Felyne:FELYNE_LEVELS,Conduit:CONDUIT_LEVELS,Castbound:CASTBOUND_LEVELS,TheStrongest:_STRONGEST_LEVELS,Noiseform:NOISEFORM_LEVELS}
             lvl_list=levels_map.get(cls,[])
             if cls==Jester: lvl_list=JESTER_LEVELS
             total_lvls=len(lvl_list)
@@ -2816,6 +2858,19 @@ class UI:
                     ("Damage",  u.damage,           nxt.get("Damage")   if nxt else None),
                     ("Firerate",f"{u.firerate:.2f}", f"{nxt['Firerate']:.2f}" if nxt else None),
                     ("Range",   u.range_tiles,       nxt.get("Range")    if nxt else None),
+                ]
+                if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
+                if nxt and nxt.get("Unlock"): stats.append(("ability_unlock",None,nxt["Unlock"]))
+            elif cls==Noiseform:
+                hd_now=u.hidden_detection
+                hd_next=bool(nxt and nxt.get("HidDet") and not hd_now)
+                stats=[]
+                if hd_now: stats.append(("HidDet","Hidden Detection",None))
+                stats+=[
+                    ("Damage",  u.damage,           nxt.get("Damage")   if nxt else None),
+                    ("Firerate",f"{u.firerate:.2f}", f"{nxt['Firerate']:.2f}" if nxt else None),
+                    ("Range",   u.range_tiles,       nxt.get("Range")    if nxt else None),
+                    ("Slow",    "10%/1.5s",          None),
                 ]
                 if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
                 if nxt and nxt.get("Unlock"): stats.append(("ability_unlock",None,nxt["Unlock"]))
@@ -3623,6 +3678,31 @@ class UI:
                 new_s=font_md.render(str(_snext_disp),True,(100,220,100))
                 surf.blit(new_s,(xp,ch_y))
                 ch_y+=20
+
+            # === ABILITY-UNLOCK DESCRIPTION — short grey text under the "+Name" line ===
+            if nxt and nxt.get("UnlockDesc"):
+                _ud_f = pygame.font.SysFont("segoeui", 12)
+                _ud_maxw = mw - 24
+                # greedy word-wrap
+                _ud_words = nxt["UnlockDesc"].split()
+                _ud_lines = []; _ud_cur = ""
+                for _w in _ud_words:
+                    _try = (_ud_cur + " " + _w).strip()
+                    if _ud_f.size(_try)[0] <= _ud_maxw:
+                        _ud_cur = _try
+                    else:
+                        if _ud_cur: _ud_lines.append(_ud_cur)
+                        _ud_cur = _w
+                if _ud_cur: _ud_lines.append(_ud_cur)
+                _card_clip = pygame.Rect(mx_m+2, my_m+2, mw-4, menu.h-4)
+                _old_clip2 = surf.get_clip()
+                surf.set_clip(_card_clip)
+                for _udl in _ud_lines:
+                    if ch_y + 14 > my_m + menu.h - 48: break
+                    _uds = _ud_f.render(_udl, True, (150, 150, 165))
+                    surf.blit(_uds, (mx_m+12, ch_y))
+                    ch_y += 15
+                surf.set_clip(_old_clip2)
 
             # === JESTER EXTRA INFO — plain text after changing stats, clipped inside card ===
             if cls==Jester:
@@ -5463,6 +5543,44 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
         pygame.draw.line(es, (255, 225, 205), (ec, ec - er + 2), (ec, ec + er - 2), sp(1))
         surf.blit(es, (cx - ec, cy - ec))
 
+    elif unit_name == "Noiseform":
+        # the "Noiseform" rod — shattered obsidian blade wreathed in teal energy
+        pulse = abs(math.sin(t * 2.2))
+        ang = -math.pi / 2 + 0.35  # point up & tilted right, like the rod art
+        ca, sa = math.cos(ang), math.sin(ang)  # NB: don't shadow scale factor `s`
+
+        def R(lx, ly):
+            return (int(cx + sc(lx) * ca - sc(ly) * sa), int(cy + sc(lx) * sa + sc(ly) * ca))
+
+        # teal glow
+        glow_r = sc(28)
+        gs = pygame.Surface((glow_r * 2 + 4, glow_r * 2 + 4), pygame.SRCALPHA)
+        pygame.draw.circle(gs, (60, 235, 160, int(40 + pulse * 45)), (glow_r + 2, glow_r + 2), glow_r)
+        surf.blit(gs, (cx - glow_r - 2, cy - glow_r - 2))
+
+        # dark jagged blade silhouette
+        blade = [(-24, -3), (-12, -6), (2, -7), (20, -4), (40, 0),
+                 (20, 4), (2, 7), (-12, 6), (-24, 3)]
+        pygame.draw.polygon(surf, (8, 16, 14), [R(x, y) for x, y in blade])
+        inner = [(-20, -2), (2, -5), (34, 0), (2, 5), (-20, 2)]
+        pygame.draw.polygon(surf, (16, 34, 28), [R(x, y) for x, y in inner])
+        pygame.draw.lines(surf, (50, 200, 140), True, [R(x, y) for x, y in blade], sp(1))
+
+        # jagged shards
+        for sh in ((30, -9, 38, -2, 26, -2), (8, 9, 14, 16, 2, 7)):
+            pygame.draw.polygon(surf, (14, 30, 24), [R(sh[0], sh[1]), R(sh[2], sh[3]), R(sh[4], sh[5])])
+
+        # glowing teal crystals
+        for (lx, ly, sz) in ((-2, 0, 6), (8, -3, 5), (-10, 2, 4), (16, 2, 4)):
+            diamond = [R(lx, ly - sz), R(lx + sz, ly), R(lx, ly + sz), R(lx - sz, ly)]
+            pygame.draw.polygon(surf, (40, 180, 120), diamond)
+            pygame.draw.polygon(surf, (150, 255, 215), diamond, sp(1))
+
+        # white-hot core
+        core = R(0, 0)
+        pygame.draw.circle(surf, (120, 255, 200), core, sc(4))
+        pygame.draw.circle(surf, (235, 255, 245), core, sc(2))
+
     else:
         # Fallback: colored circle with unit's color
         _col_map = {
@@ -6026,12 +6144,6 @@ class DifficultyMenu:
          "No rules. Test anything.",
          ["HP: ∞", "Starting cash: ∞"],
          ("—", (180, 160, 100))),
-
-        ("play_test",    "TEST",    "test_ico",
-         (170, 80, 255),
-         "Jumps straight to wave 50.",
-         ["HP: 10000", "Starting cash: $100k"],
-         ("—", (190, 110, 255))),
     ]
 
     def __init__(self, screen, save_data=None):
@@ -6920,7 +7032,7 @@ def _wrap_draw_range_clip(fn):
 _ALL_UNIT_CLASSES = [
     Assassin, Accelerator, Frostcelerator, Lifestealer,
     Archer, Farm, RedBall, FrostBlaster, Freezer,
-    Railgunner, xw5yt,
+    Railgunner, xw5yt, Noiseform,
     Sledger, Gladiator, ToxicGunner, Slasher, GoldenCowboy, HallowPunk,
     SpotlightTech, Snowballer, Commando,
     Caster, Warlock, Jester, SoulWeaver, RubberDuck,
@@ -11441,6 +11553,7 @@ ALL_UNITS_POOL = [
     {"name": "The Strongest", "rarity": "rare"},
     {"name": "Railgunner",    "rarity": "epic"},
     {"name": "xw5yt",         "rarity": "apex"},
+    {"name": "Noiseform",     "rarity": "early_access"},
 
 ]
 
@@ -11481,6 +11594,7 @@ UNIT_SHOP_PRICES = {
     "The Strongest": 1200,
     "Railgunner":    4500,
     "xw5yt":         None,   # Apex — purchased with 2000 shards
+    "Noiseform":     None,   # Early Access — free for EA owners
 }
 
 # ── Base stats for detail panel ───────────────────────────────────────────────
@@ -11521,6 +11635,7 @@ UNIT_BASE_STATS = {
     "The Strongest":  {"cost": 350,  "limit": 5,  "damage": 6,     "firerate": 1.30,  "range": 5,   "income": None},
     "Railgunner":     {"cost": 1500, "limit": 4,  "damage": 45,    "firerate": 2.5,   "range": 12,  "income": None},
     "xw5yt":          {"cost": 800,  "limit": 2,  "damage": 15,    "firerate": 1.2,   "range": 8,   "income": None},
+    "Noiseform":      {"cost": 450,  "limit": 2,  "damage": 5,     "firerate": 1.5,   "range": 8,   "income": None},
 }
 
 # ── Tower descriptions — fill in your own later ───────────────────────────────
@@ -11559,6 +11674,7 @@ UNIT_DESCRIPTIONS = {
     "The Strongest":  "Scale of the Dragon",
     "Railgunner":     "A heavy long-range sniper that charges up, then fires a piercing rail beam straight through every enemy in its path.",
     "xw5yt":          "A blood-fueled dev tower. Unlocks a Frenzy buff, a passive slow, and a Blood Nova explosion as it levels up.",
+    "Noiseform":      "A spectral support tower firing a chilling green laser. Buffs nearby towers with firerate, damage and faster stun recovery, and rains a Star Beam on the lane.",
 }
 
 class LoadoutScreen:
@@ -11653,6 +11769,9 @@ class LoadoutScreen:
         # The Strongest — Early Access, free for EA owners
         if self.save_data.get("early_access_purchased") and "The Strongest" not in owned:
             owned = list(owned) + ["The Strongest"]
+        # noiseform — Early Access, free for EA owners
+        if self.save_data.get("early_access_purchased") and "Noiseform" not in owned:
+            owned = list(owned) + ["Noiseform"]
 
         return owned
 
@@ -11920,6 +12039,7 @@ class LoadoutScreen:
             "Hallow Punk": C_HALLOWPUNK,   "Spotlight Tech": C_SPOTLIGHT,
             "Jester":   C_JESTER,
             "Harvester": C_HARVESTER,
+            "Noiseform": C_NOISEFORM,
             "The Strongest": C_STRONGEST,
             "Railgunner": C_RAIL,
             "xw5yt": C_XW,
@@ -12000,7 +12120,7 @@ class LoadoutScreen:
                 "Frostcelerator": Frostcelerator,
                 "Lifestealer": Lifestealer, "Archer": Archer,
                 "Militant": Militant, "Swarmer": Swarmer,
-                "Red Ball": RedBall, "Railgunner": Railgunner, "xw5yt": xw5yt, "Farm": Farm,
+                "Red Ball": RedBall, "Railgunner": Railgunner, "xw5yt": xw5yt, "Noiseform": Noiseform, "Farm": Farm,
                 "Freezer": Freezer, "Frost Blaster": FrostBlaster,
                 "Sledger": Sledger, "Gladiator": Gladiator,
                 "Toxic Gunner": ToxicGunner, "Slasher": Slasher,
@@ -12067,6 +12187,7 @@ class LoadoutScreen:
                 "Caster": "Defense", "Harvester": "Defense", "Korzhik": "Defense",
                 "Jester": "Support", "Control Panel": "Support", "Castbound": "Defense",
                 "The Strongest": "Offense",
+                "Noiseform": "Support",
                 "Railgunner": "Offense",
                 "xw5yt": "Offense",
             }
@@ -12581,7 +12702,7 @@ class Game:
                         "Archer": Archer,
                         "Militant": Militant,
                         "Swarmer": Swarmer,
-                        "Red Ball": RedBall, "Railgunner": Railgunner, "xw5yt": xw5yt, "Farm": Farm,
+                        "Red Ball": RedBall, "Railgunner": Railgunner, "xw5yt": xw5yt, "Noiseform": Noiseform, "Farm": Farm,
                         "Freezer": Freezer, "Frost Blaster": FrostBlaster,
                         "Sledger": Sledger, "Gladiator": Gladiator,
                         "Toxic Gunner": ToxicGunner, "Slasher": Slasher,
@@ -13976,6 +14097,11 @@ class Game:
                                 self.effects.append(FloatingText(fs.x, fs.y-fs.radius-18, f"+{amt}"))
     
                 _x5k = getattr(self,"_x5000_dmg",False)
+                # Noiseform reads the tower list during its own update (support auras),
+                # so inject it before the update loop runs.
+                for u in self.units:
+                    if isinstance(u, Noiseform):
+                        u._units_ref = self.units
                 for u in self.units:
                     # Stun: frozen by FallenKing sword
                     if getattr(u,'_stun_timer',0)>0:
@@ -14090,6 +14216,7 @@ class Game:
                                     if killer:
                                         u.check_chain(killer, e, self.enemies, self.effects)
                 _sw_tick_buffs(self.units)
+                _noiseform_tick_buffs(self.units)
     
                 # Collect GoldenCowboy cash shot income
                 for u in self.units:

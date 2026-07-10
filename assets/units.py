@@ -2406,6 +2406,463 @@ class xw5yt(Unit):
         return info
 
 
+# ── noiseform ─────────────────────────────────────────────────────────────────
+# Early Access spectral SUPPORT tower. 6 levels (0–5). Fires a thick green neon
+# laser that hits in a small AoE and chills (slows) everything it touches, and
+# unlocks a chain of buffs that empower nearby towers:
+#   ability1 (lv0) Frost Touch  — every hit slows for 10% / 1.5s
+#   ability2 (lv1) Resonance    — towers in range gain +15% firerate (+20% @lv2)
+#   lv2                          — hidden detection
+#   ability3 (lv3) Soultorn     — 5% on a death in range: a soul bursts, granting
+#                                  towers in range +7% damage for 5s
+#   ability4 (lv4) Star Beam     — ACTIVE (30s cd): 10 arrows rain on the lane,
+#                                  each grants towers in range +2% firerate /15s
+#   ability5 (lv5) Spirit Warden — towers in range shake off stuns 50% faster
+# Visual body is a plain green circle for now.
+C_NOISEFORM      = (70, 230, 140)
+C_NOISEFORM_DARK = (20, 80, 55)
+
+# (damage, firerate, range_tiles, upgrade_cost)
+NOISEFORM_LEVELS = [
+    (  5, 1.5,  8,  None),   # lv0  Frost Touch (slow on hit)
+    (  8, 1.3,  9,   800),   # lv1  + Resonance (+15% fr aura)
+    ( 12, 1.2,  9,  1200),   # lv2  Resonance → +20% fr, + hidden detection
+    ( 25, 1.0, 10,  2400),   # lv3  + Soultorn
+    ( 40, 1.0, 10,  5200),   # lv4  + Star Beam (active)
+    (100, 1.0, 10, 14000),   # lv5  + Spirit Warden (stun recovery)
+]
+
+# Tuning constants
+_NF_SLOW_PCT       = 0.10    # Frost Touch: 10% slow
+_NF_SLOW_DUR       = 1.5     # for 1.5 seconds
+_NF_AOE_R          = 1.4     # laser AoE radius (tiles)
+_NF_FR_AURA_1      = 1.15    # Resonance aura at lv1 (+15% firerate)
+_NF_FR_AURA_2      = 1.20    # Resonance aura at lv2+ (+20% firerate)
+_NF_AURA_REFRESH   = 0.25    # aura re-apply window (s)
+_NF_SOUL_CHANCE    = 0.05    # Soultorn proc chance per death in range
+_NF_SOUL_DMG_MULT  = 1.07    # Soultorn: +7% damage to towers in range
+_NF_SOUL_BUFF_DUR  = 5.0     # for 5 seconds
+_NF_STAR_CD        = 30.0    # Star Beam cooldown
+_NF_STAR_DUR       = 2.0     # arrows rain over this window
+_NF_STAR_ARROWS    = 10      # number of arrows
+_NF_STAR_FR_STEP   = 1.02    # each arrow: +2% firerate to towers in range
+_NF_STAR_MAX_STACKS= 10      # stack cap (one per arrow)
+_NF_STAR_BUFF_DUR  = 15.0    # each stack lasts 15 seconds (refreshed by new arrows)
+_NF_STUN_RECOVERY  = 0.5     # Spirit Warden: extra stun decay (×dt) → 50% faster
+_NF_SHOT_FADE      = 0.16    # how long each laser-beam pulse stays on screen
+
+
+def _noiseform_tick_buffs(units):
+    """Expire Noiseform support buffs whose window elapsed.
+    Call once per frame from Game.update (mirrors _sw_tick_buffs). Each buff
+    reverses itself by the exact inverse multiplier so several buffs compose."""
+    now = pygame.time.get_ticks() * 0.001
+    for u in units:
+        # Resonance firerate aura
+        if getattr(u, '_nf_fr_active', False) and now >= getattr(u, '_nf_fr_expire', 0.0):
+            u.firerate = u.firerate * getattr(u, '_nf_fr_mult', 1.0)
+            u._nf_fr_active = False
+        # Soultorn damage buff
+        if getattr(u, '_nf_dmg_active', False) and now >= getattr(u, '_nf_dmg_expire', 0.0):
+            u.damage = u.damage / _NF_SOUL_DMG_MULT
+            u._nf_dmg_active = False
+        # Star Beam firerate stacks
+        _st = getattr(u, '_nf_star_stacks', 0)
+        if _st > 0 and now >= getattr(u, '_nf_star_expire', 0.0):
+            u.firerate = u.firerate * (_NF_STAR_FR_STEP ** _st)
+            u._nf_star_stacks = 0
+
+
+class _NfBeamImpact:
+    """Bright green burst where the laser lands."""
+    def __init__(self, x, y):
+        self.x=float(x); self.y=float(y); self.alive=True
+        self._t=0.0; self.duration=0.22
+    def update(self, dt):
+        self._t+=dt
+        if self._t>=self.duration: self.alive=False
+        return self.alive
+    def draw(self, surf):
+        if not self.alive: return
+        prog=self._t/self.duration
+        r=int(7+prog*14); a=int(200*(1.0-prog))
+        s=pygame.Surface((r*2+4,r*2+4),pygame.SRCALPHA)
+        pygame.draw.circle(s,(90,240,150,a),    (r+2,r+2),r,3)
+        pygame.draw.circle(s,(200,255,220,a//2),(r+2,r+2),max(1,r-4))
+        surf.blit(s,(int(self.x)-r-2,int(self.y)-r-2))
+
+
+class _NfStarBeamEffect:
+    """A single falling green arrow streak for Star Beam."""
+    def __init__(self, x, y):
+        self.x=float(x); self.y=float(y); self.alive=True
+        self._t=0.0; self.duration=0.40
+    def update(self, dt):
+        self._t+=dt
+        if self._t>=self.duration: self.alive=False
+        return self.alive
+    def draw(self, surf):
+        if not self.alive: return
+        prog=self._t/self.duration
+        x=int(self.x); y=int(self.y)
+        drop=int(70*(1.0-prog))   # arrow falls in from above
+        a=int(235*(1.0-prog))
+        s2=pygame.Surface((SCREEN_W,SCREEN_H),pygame.SRCALPHA)
+        pygame.draw.line(s2,(120,255,180,a),(x,y-drop-26),(x,y-drop),4)
+        pygame.draw.line(s2,(220,255,235,a),(x,y-drop-26),(x,y-drop),1)
+        surf.blit(s2,(0,0))
+        pygame.draw.polygon(surf,(180,255,210),
+            [(x,y-drop+5),(x-6,y-drop-7),(x+6,y-drop-7)])
+        g=pygame.Surface((26,26),pygame.SRCALPHA)
+        pygame.draw.circle(g,(120,255,180,a),(13,13),int(4+prog*7))
+        surf.blit(g,(x-13,y-drop-13))
+
+
+class _NfSoulEffect:
+    """A spectral soul that rises from a death then bursts into a green ring."""
+    def __init__(self, x, y, hx, hy):
+        self.x=float(x); self.y=float(y)
+        self.hx=float(hx); self.hy=float(hy)   # home (tower) — soul drifts toward it
+        self.alive=True; self._t=0.0; self.duration=0.55
+    def update(self, dt):
+        self._t+=dt
+        if self._t>=self.duration: self.alive=False; return self.alive
+        f=self._t/self.duration
+        self.x=self.x+(self.hx-self.x)*0.10
+        self.y=self.y+(self.hy-self.y)*0.10 - 18*dt   # gentle rise
+        return self.alive
+    def draw(self, surf):
+        if not self.alive: return
+        f=self._t/self.duration; x=int(self.x); y=int(self.y)
+        # expanding burst ring (second half)
+        if f>0.45:
+            rf=(f-0.45)/0.55; r=int(6+rf*30); a=int(200*(1.0-rf))
+            s=pygame.Surface((r*2+4,r*2+4),pygame.SRCALPHA)
+            pygame.draw.circle(s,(90,240,150,a),     (r+2,r+2),r,3)
+            pygame.draw.circle(s,(180,255,210,a//2), (r+2,r+2),r,1)
+            surf.blit(s,(x-r-2,y-r-2))
+        # wispy soul body
+        bob=math.sin(self._t*16)*3
+        a=int(220*(1.0-f))
+        gs=pygame.Surface((22,26),pygame.SRCALPHA)
+        pygame.draw.circle(gs,(120,255,180,a),(11,11),8)
+        pygame.draw.circle(gs,(210,255,225,a),(11,9),4)
+        # little tail
+        pygame.draw.polygon(gs,(120,255,180,a//2),[(6,16),(16,16),(11,24+int(bob))])
+        surf.blit(gs,(x-11,y-13))
+
+
+class _NfStarBeamAbility:
+    name="Star Beam"
+    def __init__(self, owner):
+        self.owner=owner; self.cd_left=0.0; self.cooldown=_NF_STAR_CD
+    def update(self, dt):
+        if self.cd_left>0: self.cd_left-=dt
+    def ready(self): return self.cd_left<=0
+    def activate(self, enemies, effects):
+        if not self.ready(): return False
+        self.cd_left=self.cooldown
+        self.owner._start_star_beam()
+        return True
+
+
+class Noiseform(Unit):
+    PLACE_COST=450; COLOR=C_NOISEFORM; NAME="Noiseform"; hidden_detection=False
+
+    def __init__(self, px, py):
+        super().__init__(px,py)
+        self._anim_t=0.0
+        self._aim_angle=0.0
+        self._shots=[]              # brief laser-beam pulses: [sx,sy,tx,ty,t_left]
+        self._fire_flash=0.0        # muzzle flash on shot
+        # Star Beam state
+        self._star_shots_left=0
+        self._star_accum=0.0
+        self.ability3=None          # Star Beam (lv4) — uses ab3 floating button
+        self._units_ref=[]          # injected by Game loop (for support auras)
+        self._apply_level()
+
+    def _apply_level(self):
+        self.damage,self.firerate,self.range_tiles,_=NOISEFORM_LEVELS[self.level]
+        self.hidden_detection = self.level>=2
+        if self.level>=4 and self.ability3 is None:
+            self.ability3=_NfStarBeamAbility(self)
+
+    def upgrade_cost(self):
+        nxt=self.level+1
+        if nxt>=len(NOISEFORM_LEVELS): return None
+        return NOISEFORM_LEVELS[nxt][3]
+
+    def upgrade(self):
+        nxt=self.level+1
+        if nxt<len(NOISEFORM_LEVELS): self.level=nxt; self._apply_level()
+
+    # ── helpers ────────────────────────────────────────────────────────────────
+    def _can_hit(self, e):
+        if not e.alive: return False
+        if getattr(e,'_void_untargetable',False): return False
+        if e.IS_HIDDEN and not self.hidden_detection and not getattr(e,'_exposed',False):
+            return False
+        return True
+
+    def _apply_slow(self, e):
+        """ability1 Frost Touch — 10% slow for 1.5s."""
+        if getattr(e,'SLOW_RESISTANCE',0.0)>=1.0: return
+        orig=getattr(e,'_nf_orig_speed',None)
+        if orig is None: e._nf_orig_speed=e.speed; orig=e.speed
+        res=1.0-getattr(e,'SLOW_RESISTANCE',0.0)
+        e.speed=orig*(1.0-_NF_SLOW_PCT*res)
+        e._nf_slow_timer=_NF_SLOW_DUR*_dm()
+
+    def _tick_slows(self, enemies, dt):
+        for e in enemies:
+            if not e.alive: continue
+            st=getattr(e,'_nf_slow_timer',0.0)
+            if st>0:
+                e._nf_slow_timer=st-dt
+                if e._nf_slow_timer<=0:
+                    o=getattr(e,'_nf_orig_speed',None)
+                    if o is not None: e.speed=o
+                    e._nf_orig_speed=None
+
+    # ── support auras (ability2 + ability5) ──────────────────────────────────
+    def _apply_auras(self, dt):
+        if self.level<1: return
+        now=pygame.time.get_ticks()*0.001
+        r_px=self.range_tiles*TILE
+        fr_mult=_NF_FR_AURA_2 if self.level>=2 else _NF_FR_AURA_1
+        for u in self._units_ref:
+            if u is self: continue
+            if dist((u.px,u.py),(self.px,self.py))>r_px: continue
+            # Resonance firerate aura (firerate is a cooldown → divide to speed up)
+            if not getattr(u,'_nf_fr_active',False):
+                u.firerate=u.firerate/fr_mult; u._nf_fr_active=True; u._nf_fr_mult=fr_mult
+            elif getattr(u,'_nf_fr_mult',fr_mult)!=fr_mult:
+                # aura strength changed (lv1→lv2): re-base to the new multiplier
+                u.firerate=u.firerate*u._nf_fr_mult/fr_mult; u._nf_fr_mult=fr_mult
+            u._nf_fr_expire=now+_NF_AURA_REFRESH
+            # Spirit Warden (lv5): towers in range recover from stuns 50% faster
+            if self.level>=5:
+                stt=getattr(u,'_stun_timer',0.0)
+                if stt>0:
+                    u._stun_timer=max(0.0, stt-dt*_NF_STUN_RECOVERY)
+
+    # ── Soultorn (ability3) ───────────────────────────────────────────────────
+    def _check_soultorn(self, enemies, effects):
+        if self.level<3: return
+        r_px=self.range_tiles*TILE
+        for e in enemies:
+            if e.alive: continue
+            if getattr(e,'_nf_soul_checked',False): continue
+            if dist((e.x,e.y),(self.px,self.py))>r_px: continue
+            e._nf_soul_checked=True
+            if random.random()<_NF_SOUL_CHANCE:
+                self._spawn_soul(e, effects)
+
+    def _spawn_soul(self, e, effects):
+        now=pygame.time.get_ticks()*0.001
+        r_px=self.range_tiles*TILE
+        for u in self._units_ref:
+            if u is self: continue
+            if dist((u.px,u.py),(self.px,self.py))>r_px: continue
+            if not getattr(u,'_nf_dmg_active',False):
+                u.damage=u.damage*_NF_SOUL_DMG_MULT; u._nf_dmg_active=True
+            u._nf_dmg_expire=now+_NF_SOUL_BUFF_DUR
+        effects.append(_NfSoulEffect(e.x,e.y,self.px,self.py))
+
+    # ── Star Beam (ability4) ──────────────────────────────────────────────────
+    def _start_star_beam(self):
+        self._star_shots_left=_NF_STAR_ARROWS
+        self._star_accum=0.0
+
+    def _drop_star_arrow(self, enemies, effects):
+        # Land on an enemy in the lane if there is one, else along the aim line.
+        st=self._get_targets(enemies,1)
+        if st:
+            lx,ly=st[0].x,st[0].y
+        else:
+            ang=self._aim_angle
+            d=self.range_tiles*TILE*0.6
+            lx,ly=self.px+math.cos(ang)*d, self.py+math.sin(ang)*d
+        # AoE damage where the arrow lands
+        aoe=_NF_AOE_R*TILE*_am()
+        for e in enemies:
+            if not self._can_hit(e): continue
+            if dist((e.x,e.y),(lx,ly))<=aoe:
+                e.take_damage(self.damage); self.total_damage+=self.damage
+                self._apply_slow(e)
+        # Buff: +2% firerate stack to every OTHER tower in range
+        now=pygame.time.get_ticks()*0.001
+        r_px=self.range_tiles*TILE
+        for u in self._units_ref:
+            if u is self: continue
+            if dist((u.px,u.py),(self.px,self.py))>r_px: continue
+            stacks=getattr(u,'_nf_star_stacks',0)
+            if stacks<_NF_STAR_MAX_STACKS:
+                u.firerate=u.firerate/_NF_STAR_FR_STEP; u._nf_star_stacks=stacks+1
+            u._nf_star_expire=now+_NF_STAR_BUFF_DUR
+        effects.append(_NfStarBeamEffect(lx,ly))
+
+    # ── main update ────────────────────────────────────────────────────────────
+    def update(self, dt, enemies, effects, money):
+        self._anim_t+=dt
+        if self.cd_left>0: self.cd_left-=dt
+        if self.ability3: self.ability3.update(dt)
+        if self._fire_flash>0: self._fire_flash-=dt
+
+        # support auras + slow expiry + soultorn watch
+        self._apply_auras(dt)
+        self._tick_slows(enemies, dt)
+        self._check_soultorn(enemies, effects)
+
+        # Star Beam arrow storm
+        if self._star_shots_left>0:
+            self._star_accum+=dt
+            interval=_NF_STAR_DUR/_NF_STAR_ARROWS
+            while self._star_shots_left>0 and self._star_accum>=interval:
+                self._star_accum-=interval
+                self._star_shots_left-=1
+                self._drop_star_arrow(enemies, effects)
+
+        # Fade out the brief laser-beam pulses
+        if self._shots:
+            for s in self._shots: s[4]-=dt
+            self._shots=[s for s in self._shots if s[4]>0]
+
+        # Aim & SHOOT a laser at the current target (instant beam pulse, not a beam-lock)
+        targets=self._get_targets(enemies,1)
+        if not targets:
+            return
+        t0=targets[0]
+        self._aim_angle=math.atan2(t0.y-self.py,t0.x-self.px)
+        if self.cd_left<=0:
+            self.cd_left=self.firerate
+            self._fire_flash=0.12
+            self._impact(t0.x, t0.y, enemies, effects)
+            self._shots.append([self.px, self.py, float(t0.x), float(t0.y), _NF_SHOT_FADE])
+
+    def _impact(self, x, y, enemies, effects):
+        """AoE damage + Frost Touch slow where a laser shot lands."""
+        aoe=_NF_AOE_R*TILE*_am()
+        for e in enemies:
+            if not self._can_hit(e): continue
+            if dist((e.x,e.y),(x,y))<=aoe:
+                e.take_damage(self.damage); self.total_damage+=self.damage
+                self._apply_slow(e)
+        effects.append(_NfBeamImpact(x,y))
+
+    # ── drawing ──────────────────────────────────────────────────────────────
+    def draw(self, surf):
+        cx,cy=int(self.px),int(self.py)
+        t=self._anim_t
+        pulse=abs(math.sin(t*2.2))
+
+        # ── Fired laser beams (thick green neon pulses, fading fast) ──
+        for sx,sy,tx,ty,tl in self._shots:
+            frac=max(0.0,min(1.0,tl/_NF_SHOT_FADE))
+            flick=int(abs(math.sin(t*30))*4)
+            s2=pygame.Surface((SCREEN_W,SCREEN_H),pygame.SRCALPHA)
+            # wide+dim → narrow+bright (core ~30px → thicker than the Accelerator's 22)
+            for w,c,a in ((30+flick,( 20, 90, 55), 70),(22,( 40,160, 95),100),
+                          (15,( 70,220,130),140),( 9,(120,245,165),185),
+                          ( 5,(190,255,210),225),( 2,(235,255,240),250)):
+                pygame.draw.line(s2,(*c,int(a*frac)),(int(sx),int(sy)),(int(tx),int(ty)),w)
+            surf.blit(s2,(0,0))
+            # bright bloom at the strike point
+            br=int(10+ (1.0-frac)*10)
+            fs=pygame.Surface((br*2+8,br*2+8),pygame.SRCALPHA); fc=br+4
+            pygame.draw.circle(fs,(110,245,160,int(170*frac)),(fc,fc),br)
+            pygame.draw.circle(fs,(235,255,240,int(235*frac)),(fc,fc),max(1,br-6))
+            surf.blit(fs,(int(tx)-fc,int(ty)-fc))
+
+        # ── Body: the "Noiseform" rod — a shattered obsidian blade wreathed in teal energy ──
+        ang=self._aim_angle + math.sin(t*1.3)*0.05
+        c,s=math.cos(ang),math.sin(ang)
+        def R(lx,ly):
+            return (int(cx+lx*c-ly*s),int(cy+lx*s+ly*c))
+
+        # teal ground glow
+        glow_r=int(30+pulse*6)
+        gs=pygame.Surface((glow_r*2,glow_r*2),pygame.SRCALPHA)
+        pygame.draw.circle(gs,(55,230,150,int(38+pulse*40)),(glow_r,glow_r),glow_r)
+        pygame.draw.circle(gs,(90,255,200,int(28+pulse*40)),(glow_r,glow_r),int(glow_r*0.6))
+        surf.blit(gs,(cx-glow_r,cy-glow_r))
+
+        # drifting energy wisps + shattered particles swirling around the rod
+        wisp=pygame.Surface((100,100),pygame.SRCALPHA)
+        for i in range(8):
+            a=t*1.1+i*0.785
+            rr=20+(i%3)*6+math.sin(t*2.0+i)*4
+            wx=50+math.cos(a)*rr; wy=50+math.sin(a)*rr
+            al=int(60+70*abs(math.sin(t*2.5+i)))
+            pygame.draw.circle(wisp,(70,255,185,al),(int(wx),int(wy)),2+i%2)
+        surf.blit(wisp,(cx-50,cy-50))
+
+        # dark jagged blade silhouette (rotated to aim)
+        blade=[(-24,-3),(-12,-6),(2,-7),(20,-4),(40,0),
+               (20,4),(2,7),(-12,6),(-24,3)]
+        pygame.draw.polygon(surf,(8,16,14),[R(x,y) for x,y in blade])
+        inner=[(-20,-2),(2,-5),(34,0),(2,5),(-20,2)]
+        pygame.draw.polygon(surf,(16,34,28),[R(x,y) for x,y in inner])
+        pygame.draw.lines(surf,(50,200,140),True,[R(x,y) for x,y in blade],1)
+
+        # jagged shards breaking off the blade
+        for sh in ((30,-9,38,-2,26,-2),(8,9,14,16,2,7),(-6,-9,-2,-15,-14,-6)):
+            pygame.draw.polygon(surf,(14,30,24),[R(sh[0],sh[1]),R(sh[2],sh[3]),R(sh[4],sh[5])])
+
+        # glowing teal crystals embedded along the rod
+        for (lx,ly,sz) in ((-2,0,6),(8,-3,5),(-10,2,4),(16,2,4),(2,4,3)):
+            cpulse=0.6+0.4*math.sin(t*3.0+lx)
+            ctr=R(lx,ly)
+            cgs=pygame.Surface((sz*6,sz*6),pygame.SRCALPHA); cc=sz*3
+            pygame.draw.circle(cgs,(60,255,180,int(110*cpulse)),(cc,cc),int(sz*2))
+            surf.blit(cgs,(ctr[0]-cc,ctr[1]-cc))
+            diamond=[R(lx,ly-sz),R(lx+sz,ly),R(lx,ly+sz),R(lx-sz,ly)]
+            pygame.draw.polygon(surf,(40,180,120),diamond)
+            pygame.draw.polygon(surf,(150,255,215),diamond,1)
+
+        # white-hot core at the heart of the rod
+        core=R(0,0); cr=int(4+pulse*2)
+        cgs=pygame.Surface((cr*4,cr*4),pygame.SRCALPHA)
+        pygame.draw.circle(cgs,(120,255,200,200),(cr*2,cr*2),cr*2)
+        pygame.draw.circle(cgs,(235,255,245,255),(cr*2,cr*2),cr)
+        surf.blit(cgs,(core[0]-cr*2,core[1]-cr*2))
+
+        # muzzle flare at the broken tip while firing
+        if self._fire_flash>0:
+            mx,my=R(40,0)
+            mr=int(6+self._fire_flash*44)
+            ms=pygame.Surface((mr*2,mr*2),pygame.SRCALPHA)
+            pygame.draw.circle(ms,(200,255,220,200),(mr,mr),mr)
+            pygame.draw.circle(ms,(240,255,245,230),(mr,mr),max(1,mr//2))
+            surf.blit(ms,(mx-mr,my-mr))
+
+        # ── Star Beam active aura ──
+        if self._star_shots_left>0:
+            ga=int(abs(math.sin(t*8))*70+70)
+            ring=pygame.Surface((84,84),pygame.SRCALPHA)
+            pygame.draw.circle(ring,(120,255,180,ga),(42,42),38,3)
+            surf.blit(ring,(cx-42,cy-42))
+
+        # ── Level pips ──
+        for i in range(self.level):
+            pygame.draw.circle(surf,(150,255,190),(cx-12+i*5,cy+30),2)
+
+    def draw_range(self, surf):
+        r=int(self.range_tiles*TILE)
+        s=pygame.Surface((r*2,r*2),pygame.SRCALPHA)
+        pygame.draw.circle(s,(255,255,255,22),(r,r),r)
+        pygame.draw.circle(s,(120,255,180,80),(r,r),r,2)
+        surf.blit(s,(int(self.px)-r,int(self.py)-r))
+
+    def get_info(self):
+        info={"Damage":self.damage,
+              "Firerate":f"{self.firerate:.2f}",
+              "Range":self.range_tiles,
+              "Slow":f"{int(_NF_SLOW_PCT*100)}%/{_NF_SLOW_DUR:.1f}s",
+              "HidDet":"YES" if self.hidden_detection else "no"}
+        return info
+
 
 CONSOLE_HELP=["help            - show all commands",
               "cash <N>        - give N money",
