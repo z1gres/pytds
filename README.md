@@ -10,7 +10,7 @@ A custom 2D Tower Defense game built from scratch using **Python** and **Pygame*
 * **Wave Engine:** Configurable wave spawning, custom enemy health scaling, and waypoint pathfinding.
 * **UI & Placement System:** Clean tower shop, grid-based placement preview, and visual radius indicators.
 
-## Note
+## Notes
 * *to lock everything delete every json file*
 
 ## 🚀 Quick Start
