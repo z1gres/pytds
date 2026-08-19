@@ -1,4 +1,4 @@
-# 🛡️ pytds — Tower Defense Simulator in Python
+1# 🛡️ pytds — Tower Defense Simulator in Python
 
 A custom 2D Tower Defense game built from scratch using **Python** and **Pygame**, heavily inspired by *Tower Defense Simulator*.
 
