@@ -49,9 +49,9 @@ A custom 2D Tower Defense game built from scratch using Python and Pygame, heavi
    ```
 ---
 
-## ⚠️ Notes & Disclaimers
+## ⚠️ Notes (important)
 
-> 🔴 Project Status: Archived / EOL (End of Life)
+> 🔴 Project Status: Archived / End Of Life
 > * No Further Updates: This project is no longer actively maintained or supported. No new features, bug fixes, or updates will be released.
 > * Lost Commit History: Due to repository resets/migrations, a large portion of the original commit history and development logs was unfortunately lost.
 > * Reset Data / Lock Everything: If you want to reset your progress, lock all towers/features back to default, or fix corrupted save states, delete every .json file in the project directory (they will be re-created automatically on the next launch).
