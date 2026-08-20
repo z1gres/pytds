@@ -26,13 +26,6 @@ A custom 2D Tower Defense game built from scratch using Python and Pygame, heavi
 
 ---
 
-## 🛠️ Tech Stack & Requirements
-
-* Language: Python 3.8+
-* Library: Pygame 2.x
-
----
-
 ## ⚠️ Notes (important)
 
 > 🔴 Project Status: Archived / End Of Life
@@ -41,7 +34,6 @@ A custom 2D Tower Defense game built from scratch using Python and Pygame, heavi
 > * Reset Data / Lock Everything: If you want to reset your progress, lock all towers/features back to default, or fix corrupted save states, delete every .json file in the project directory (they will be re-created automatically on the next launch).
 
 ---
-
 
 ## 🚀 Quick Start
 
@@ -59,6 +51,11 @@ A custom 2D Tower Defense game built from scratch using Python and Pygame, heavi
    python main.py
    ```
 ---
+
+## 🛠️ Tech Stack & Requirements
+
+* Language: Python 3.8+
+* Library: Pygame 2.x
 
 ## 🎮 How to Play / Controls
 
