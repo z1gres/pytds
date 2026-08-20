@@ -57,6 +57,8 @@ A custom 2D Tower Defense game built from scratch using Python and Pygame, heavi
 * Language: Python 3.8+
 * Library: Pygame 2.x
 
+---
+
 ## 🎮 How to Play / Controls
 
 * Left Mouse Button (LMB): Select towers from the shop / Place tower on the grid / Upgrade existing tower.
