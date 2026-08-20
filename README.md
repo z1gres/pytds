@@ -35,15 +35,18 @@ A custom 2D Tower Defense game built from scratch using Python and Pygame, heavi
 ## 🚀 Quick Start
 
 1. Clone the repository:
+   ```bash
    git clone https://github.com/z1gres/pytds.git
    cd pytds
-   
+   ```
 3. Install dependencies:
+   ```bash
    pip install pygame
-
-4. Run the game:
+   ```
+5. Run the game:
+   ```bash
    python main.py
-
+   ```
 ---
 
 ## ⚠️ Notes & Disclaimers
