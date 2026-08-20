@@ -1,6 +1,6 @@
 # 🛡️ pytds — Tower Defense Simulator in Python
 
-A custom 2D Tower Defense game built from scratch using Python and Pygame, heavily inspired by Tower Defense Simulator (TDS).
+A custom 2D Tower Defense game built from scratch using Python and Pygame, heavily inspired by Tower Defense Simulator from Roblox.
 
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![Pygame](https://img.shields.io/badge/Pygame-Green?style=for-the-badge)
@@ -12,7 +12,7 @@ A custom 2D Tower Defense game built from scratch using Python and Pygame, heavi
 
 * Custom Towers & Upgrades:
   - Unique tower classes: Archer, Cowboy, Swarmer, Harvester, Castbound.
-  - Custom stats, upgrade trees, and distinct targeting logic (First, Last, Strongest, Weakest).
+  - Custom stats, upgrade trees, and distinct targeting logic.
 * Wave Engine:
   - Configurable wave spawning system.
   - Dynamic enemy health scaling and smooth waypoint pathfinding.
