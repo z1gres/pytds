@@ -7,6 +7,10 @@
 
 A custom 2D Tower Defense game built from scratch using Python and Pygame, heavily inspired by Tower Defense Simulator from Roblox.
 
+> ⚠️ **Project Status: Archived / End Of Life**
+> * **No Maintenance:** This project is no longer actively supported or updated.
+> * **Lost History:** Development logs and early commit history were lost during repository migration.
+> * **Reset Data:** To reset progress or fix corrupted save states, delete all `.json` files in the root folder (they auto-generate on next startup).
 
 ---
 
