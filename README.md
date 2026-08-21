@@ -3,12 +3,12 @@
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![Pygame](https://img.shields.io/badge/Pygame-Green?style=for-the-badge)
 [![Trello](https://img.shields.io/badge/Trello-%23026AA7.svg?style=for-the-badge&logo=trello&logoColor=white)](https://trello.com/b/x6IYV4mE/py-tds)
-![Status](https://img.shields.io/badge/Archived-red?style=for-the-badge)
+![Status](https://img.shields.io/badge/Status-Passive_Maintenance-orange?style=for-the-badge)
 
 A custom 2D Tower Defense game built from scratch using Python and Pygame, heavily inspired by Tower Defense Simulator from Roblox.
 
-> ⚠️ **Project Status: Archived / End Of Life**
-> * **No Maintenance:** This project is no longer actively supported or updated.
+> ⚠️ **Important**
+> * **Project Status** Pytds is not under active development anymore. Updates will be infrequent and focused primarily on critical bug fixes
 > * **Lost History:** Development logs and early commit history were lost during repository migration.
 > * **Reset Data:** To reset progress or fix corrupted save states, delete all `.json` files in the root folder (they auto-generate on next startup).
 
