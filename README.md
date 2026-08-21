@@ -59,7 +59,7 @@ A custom 2D Tower Defense game built from scratch using Python and Pygame, heavi
 
 * Left Mouse Button (LMB): Select towers from the shop / Place tower on the grid / Upgrade existing tower.
 * Right Mouse Button (RMB) / Esc: Cancel placement or deselect tower.
-* U Key: Quickly upgrade selected tower.
+* E Key: Quickly upgrade selected tower.
 * Sell: Use the in-game UI panel when a tower is selected.
 
 ---
