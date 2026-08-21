@@ -2,6 +2,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![Pygame](https://img.shields.io/badge/Pygame-Green?style=for-the-badge)
+[![Trello](https://img.shields.io/badge/Trello-%23026AA7.svg?style=for-the-badge&logo=trello&logoColor=white)](https://trello.com/b/x6IYV4mE/py-tds)
 ![Status](https://img.shields.io/badge/Archived-red?style=for-the-badge)
 
 A custom 2D Tower Defense game built from scratch using Python and Pygame, heavily inspired by Tower Defense Simulator from Roblox.
