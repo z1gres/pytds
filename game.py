@@ -1976,14 +1976,31 @@ class UI:
             surf.blit(es,(cx-ec,cy-ec))
         elif isinstance(u, Noiseform):
             t2=pygame.time.get_ticks()*0.001
-            ga2=int(abs(math.sin(t2*2.2))*45+35)
-            glow2=pygame.Surface((64,64),pygame.SRCALPHA)
-            pygame.draw.circle(glow2,(70,230,140,ga2),(32,32),29)
-            surf.blit(glow2,(cx-32,cy-32))
-            pygame.draw.circle(surf,(12,30,22),(cx,cy),24)
-            pygame.draw.circle(surf,C_NOISEFORM_DARK,(cx,cy),21)
-            pygame.draw.circle(surf,C_NOISEFORM,(cx,cy),18)
-            pygame.draw.circle(surf,(190,255,220),(cx,cy),18,2)
+            pulse = abs(math.sin(t2 * 2.2))
+            ang = -math.pi / 2 + 0.35
+            ca, sa = math.cos(ang), math.sin(ang)
+            def R2(lx, ly):
+                return (int(cx + lx * ca - ly * sa), int(cy + lx * sa + ly * ca))
+            gs = pygame.Surface((72, 72), pygame.SRCALPHA)
+            pygame.draw.circle(gs, (60, 235, 160, int(45 + pulse * 45)), (36, 36), 34)
+            surf.blit(gs, (cx - 36, cy - 36))
+            blade = [(-20, -3), (-10, -5), (2, -6), (16, -3), (32, 0),
+                     (16, 3), (2, 5), (-10, 5), (-20, 3)]
+            pygame.draw.polygon(surf, (8, 16, 14), [R2(x, y) for x, y in blade])
+            inner = [(-16, -2), (2, -4), (26, 0), (2, 4), (-16, 2)]
+            pygame.draw.polygon(surf, (16, 34, 28), [R2(x, y) for x, y in inner])
+            pygame.draw.lines(surf, (50, 200, 140), True, [R2(x, y) for x, y in blade], 1)
+            for sh in ((24, -7, 30, -2, 20, -2), (6, 7, 11, 13, 2, 6)):
+                pygame.draw.polygon(surf, (14, 30, 24), [R2(sh[0], sh[1]), R2(sh[2], sh[3]), R2(sh[4], sh[5])])
+            for (lx, ly, sz) in ((-2, 0, 5), (6, -2, 4), (-8, 2, 3), (12, 1, 3)):
+                diamond = [R2(lx, ly - sz), R2(lx + sz, ly), R2(lx, ly + sz), R2(lx - sz, ly)]
+                pygame.draw.polygon(surf, (40, 180, 120), diamond)
+                pygame.draw.polygon(surf, (150, 255, 215), diamond, 1)
+            cr = int(4 + pulse * 2)
+            cgs = pygame.Surface((cr * 4, cr * 4), pygame.SRCALPHA)
+            pygame.draw.circle(cgs, (120, 255, 200, 200), (cr * 2, cr * 2), cr * 2)
+            pygame.draw.circle(cgs, (235, 255, 245, 255), (cr * 2, cr * 2), cr)
+            surf.blit(cgs, (cx - cr * 2, cy - cr * 2))
         else:
             pygame.draw.circle(surf,(70,40,100),(cx,cy),28)
             pygame.draw.circle(surf,u.COLOR,(cx,cy),22)
@@ -2093,19 +2110,19 @@ class UI:
             res={"Damage":d,"Firerate":fr,"Range":r,"HidDet":nxt>=2}
             if nxt==1:
                 res["Unlock"]="+Resonance"
-                res["UnlockDesc"]="All towers in range gain +15% firerate"
+                res["UnlockDesc"]="All towers in range gain +15% firerate aura"
             elif nxt==2:
                 res["Unlock"]="+Resonance II"
-                res["UnlockDesc"]="Resonance firerate aura grows to +20%"
+                res["UnlockDesc"]="Resonance aura grows to +20% & grants Hidden Detection"
             elif nxt==3:
                 res["Unlock"]="+Soultorn"
-                res["UnlockDesc"]="5% on a death in range: a soul bursts, +7% damage to towers in range for 5s"
+                res["UnlockDesc"]="25% on death in range: soul bursts, +10% dmg (stacks 3x) for 6s"
             elif nxt==4:
                 res["Unlock"]="+Star Beam"
-                res["UnlockDesc"]="Active (30s): 10 arrows rain down; each grants +2% firerate to towers in range for 15s"
+                res["UnlockDesc"]="Active (30s): 10 star arrows rain down; each grants +2% firerate (up to +20%) for 15s"
             elif nxt==5:
                 res["Unlock"]="+Spirit Warden"
-                res["UnlockDesc"]="Towers in range recover from stuns 50% faster"
+                res["UnlockDesc"]="Towers in range recover from stuns 75% faster & gain +10% range. Stun immune"
             return res
         elif cls==Farm:
             if nxt>=len(FARM_LEVELS): return None
@@ -2870,8 +2887,16 @@ class UI:
                     ("Damage",  u.damage,           nxt.get("Damage")   if nxt else None),
                     ("Firerate",f"{u.firerate:.2f}", f"{nxt['Firerate']:.2f}" if nxt else None),
                     ("Range",   u.range_tiles,       nxt.get("Range")    if nxt else None),
-                    ("Slow",    "10%/1.5s",          None),
+                    ("Slow",    "15%/2.0s",          None),
                 ]
+                if u.level>=1:
+                    res_val = "+20% Firerate" if u.level>=2 else "+15% Firerate"
+                    stats.append(("Resonance", res_val, "+20% Firerate" if nxt and nxt.get("Unlock")=="+Resonance II" else None))
+                if u.level>=3:
+                    s_st = getattr(u, '_nf_soul_stacks', 0)
+                    stats.append(("Soultorn", f"+{s_st*10}% DMG (Active)" if s_st>0 else "+10% DMG on kill", None))
+                if u.level>=5:
+                    stats.append(("SpiritWarden", "-75% Stun, +10% RNG", None))
                 if hd_next: stats.append(("HidDet_unlock",None,"Hidden Detection"))
                 if nxt and nxt.get("Unlock"): stats.append(("ability_unlock",None,nxt["Unlock"]))
             elif cls==Farm:
@@ -14105,9 +14130,12 @@ class Game:
                 for u in self.units:
                     # Stun: frozen by FallenKing sword
                     if getattr(u,'_stun_timer',0)>0:
-                        u._stun_timer-=dt
-                        if u._stun_timer<=0: u._stun_timer=0
-                        continue  # skip update while stunned
+                        if isinstance(u, Noiseform) and u.level >= 5:
+                            u._stun_timer = 0
+                        else:
+                            u._stun_timer-=dt
+                            if u._stun_timer<=0: u._stun_timer=0
+                            continue  # skip update while stunned
                     if self._ceremony_phase not in (None,'done'):
                         continue
                     # Conduit: pass unit list for charge collection
@@ -14215,6 +14243,14 @@ class Game:
                                             best_d = d2; killer = ku
                                     if killer:
                                         u.check_chain(killer, e, self.enemies, self.effects)
+                # Noiseform Soultorn kill check
+                for e in self.enemies:
+                    if not e.alive and not getattr(e, '_nf_death_checked', False):
+                        e._nf_death_checked = True
+                        for u in self.units:
+                            if isinstance(u, Noiseform) and u.level >= 3:
+                                if dist((e.x, e.y), (u.px, u.py)) <= u.range_tiles * TILE:
+                                    u.notify_enemy_death(e, self.effects)
                 _sw_tick_buffs(self.units)
                 _noiseform_tick_buffs(self.units)
     
