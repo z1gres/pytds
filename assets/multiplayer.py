@@ -798,10 +798,10 @@ class _MPGameFactory:
             def __init__(self, save_data, net, nick, is_host,
                          host_nick, map_name, mode):
                 # In multiplayer, each player keeps their own personal limits
-                # (no doubling). The global limit per player stays at 40.
+                # (no doubling). The global limit per player stays at 40 (or 50 in hardcore).
                 self._orig_limits = dict(UNIT_LIMITS)
                 # Do NOT double UNIT_LIMITS — each player has their own budget
-                game_mod.GLOBAL_UNIT_LIMIT = 40  # per-player limit stays 40
+                game_mod.GLOBAL_UNIT_LIMIT = getattr(game_mod, "get_global_unit_limit", lambda m: 40)(mode)
 
                 import game_core as _gc2
                 _gc2.CURRENT_MAP = map_name
@@ -828,7 +828,7 @@ class _MPGameFactory:
                 self._peer_nick         = ""
                 self._peer_money        = 0
                 self._peer_units_placed = 0
-                self._peer_unit_limit   = 40
+                self._peer_unit_limit   = getattr(game_mod, "get_global_unit_limit", lambda m: 40)(mode)
 
                 # Track which own units we've already broadcast
                 self._sent_unit_ids = set()
@@ -900,7 +900,7 @@ class _MPGameFactory:
                     self.nick,
                     self.money,
                     len(own2),
-                    40,
+                    getattr(game_mod, "get_global_unit_limit", lambda m: 40)(self.mode),
                     self._peer_nick or self.peer_cursor.nick,
                     self._peer_money,
                     self._peer_units_placed,

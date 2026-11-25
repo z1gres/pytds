@@ -1,4 +1,4 @@
-import pygame
+﻿import pygame
 import math
 import random
 import sys
@@ -56,7 +56,7 @@ from game_core import (
     font_sm, font_md, font_lg, font_xl, font_ru, font_ru_lg,
     SAVE_FILE, load_icon, RARITY_DATA, UNIT_LIMITS,
     load_save, write_save, dist, path_progress, txt, draw_rect_alpha,
-    SwordEffect, WhirlwindEffect, FloatingText, BloodSlashEffect,
+    SwordEffect, WhirlwindEffect, FloatingText, BloodSlashEffect, AssassinSlashEffect,
     ACHIEVEMENTS_FILE, ACHIEVEMENT_DEFS, load_achievements, grant_achievement,
     fmt_num,
 )
@@ -74,6 +74,7 @@ UNIT_LIMITS["Conduit"]    = 3
 
 UNIT_LIMITS["ControlPanel"] = 1
 UNIT_LIMITS["Castbound"]   = 5
+UNIT_LIMITS["Skelebound"]  = 5
 UNIT_LIMITS["TheStrongest"] = 5
 UNIT_LIMITS["Spotlight Tech"] = 3
 UNIT_LIMITS["xw5yt"] = 2
@@ -81,6 +82,10 @@ UNIT_LIMITS["Noiseform"] = 2
 UNIT_LIMITS["Railgunner"] = 4
 
 GLOBAL_UNIT_LIMIT = 40   # max total towers per match
+HARDCORE_GLOBAL_UNIT_LIMIT = 50
+
+def get_global_unit_limit(mode: str = "") -> int:
+    return HARDCORE_GLOBAL_UNIT_LIMIT if str(mode).lower() == "hardcore" else GLOBAL_UNIT_LIMIT
 
 # ── Patch early_access rarity into RARITY_DATA (from game_core) ───────────────
 RARITY_DATA.setdefault("early_access", {
@@ -407,6 +412,16 @@ from units import (
     C_CB_ZENITH, C_CB_ICE,
     TheStrongest, _STRONGEST_LEVELS, C_STRONGEST, C_STRONGEST_DARK,
 )
+
+# ── Castbound display-name helper ─────────────────────────────────────────────
+def _get_castbound_display_name():
+    """Returns 'Skelebound' when the skelebound skin is equipped, else 'Castbound'."""
+    try:
+        if get_equipped_skin("Castbound") == "castbound_skelebound":
+            return "Skelebound"
+    except Exception:
+        pass
+    return "Castbound"
 
 # ── Archer level 3 upgrade cost → 750 ────────────────────────────────────────
 if len(ARCHER_LEVELS) > 3:
@@ -810,13 +825,15 @@ class AdminPanel:
                 pygame.draw.rect(surf,brd,cr,2,border_radius=10)
                 if name=="Accelerator": draw_accel_icon(surf,cx2+cw//2,cy2+28,t,size=20)
                 elif name=="Frostcel.": draw_frost_icon(surf,cx2+cw//2,cy2+28,t,size=20)
-                elif name=="Castbound": _draw_tower_icon(surf,"Castbound",cx2+cw//2,cy2+26,t,size=32)
+                elif name=="Assassin": draw_assassin_icon(surf,cx2+cw//2,cy2+28,t,size=22)
+                elif name=="Castbound": _draw_tower_icon(surf,"Castbound",cx2+cw//2,cy2+26,t,size=28)
                 elif name=="RubberDuck": _draw_tower_icon(surf,"Rubber Duck",cx2+cw//2,cy2+28,t,size=24)
 
                 else:
                     pygame.draw.circle(surf,(16,12,28),(cx2+cw//2,cy2+28),20)
                     pygame.draw.circle(surf,col,(cx2+cw//2,cy2+28),16)
-                ns=lf.render(name,True,(120,255,120) if is_active else C_WHITE)
+                disp_card_name = _get_castbound_display_name() if name == "Castbound" else name
+                ns=lf.render(disp_card_name,True,(120,255,120) if is_active else C_WHITE)
                 surf.blit(ns,ns.get_rect(centerx=cx2+cw//2,top=cy2+52))
                 if is_active:
                     ck=pygame.font.SysFont("segoeui",10).render("IN SLOT",True,(80,200,80))
@@ -1017,6 +1034,7 @@ class UI:
     _SPEED_STEPS = [0.25, 0.50, 1.0, 1.25, 1.50, 2.0]
     def __init__(self, save_data=None):
         self.save_data = save_data or {}
+        self.mode = "easy"
         self.ui_layout = self.save_data.get("ui_layout", {})
         self.slots=self._build_slots(); self.selected_slot=None
         self.drag_unit=None; self.open_unit=None; self.msg=""; self.msg_timer=0.0
@@ -1181,14 +1199,14 @@ class UI:
                 if limit is not None:
                     count=sum(1 for u in own_units if type(u)==UType)
                     if count>=limit:
-                        self.show_msg(f"Limit: {limit} {UType.NAME}!")
+                        _lim_disp = _get_castbound_display_name() if UType.NAME == "Castbound" else UType.NAME
+                        self.show_msg(f"Limit: {limit} {_lim_disp}!")
                         return 0
-                if len(own_units) >= GLOBAL_UNIT_LIMIT:
-                    self.show_msg(f"Tower limit reached! ({GLOBAL_UNIT_LIMIT} max)")
+                _max_units = get_global_unit_limit(mode or getattr(self, 'mode', ''))
+                if len(own_units) >= _max_units:
+                    self.show_msg(f"Tower limit reached! ({_max_units} max)")
                     return 0
                 u=UType(mx,my); units.append(u)
-                if isinstance(u, Castbound) and (self.save_data or {}).get("castbound_zenith_unlocked"):
-                    u.grant_zenith()
                 if UType is ControlPanel and u.ability is not None:
                     u.ability.cd_left = 60.0  # starting cooldown on placement
                 _sk_rng = getattr(self, '_sk_range_bonus', 0)
@@ -1320,6 +1338,16 @@ class UI:
                     if key.startswith("cb_blade_") and val.collidepoint(pos):
                         bid = key[len("cb_blade_"):]
                         u.toggle_blade(bid)
+                        from assets.units import play_castbound_sfx
+                        _cb_sfx_map = {
+                            "ice":       "cb_slash_ice.wav",
+                            "fire":      "cb_slash_fire.wav",
+                            "terra":     "cb_slash_terra.wav",
+                            "star":      "cb_slash_star.wav",
+                            "starwrath": "cb_slash_star.wav",
+                            "zenith":    "cb_slash_zenith.wav",
+                        }
+                        play_castbound_sfx(_cb_sfx_map.get(bid, "cb_slash_ice.wav"), vol_mult=0.6, min_interval=0.01)
                         return 0
             if btns.get("ability_sq") and btns["ability_sq"].collidepoint(pos):
                 if self.open_unit and self.open_unit.ability and self.open_unit.ability.ready():
@@ -1377,7 +1405,8 @@ class UI:
                     if lim is not None:
                         own_u = [u for u in units if not getattr(u, '_mp_peer', False)]
                         if sum(1 for u in own_u if type(u) == UType) >= lim:
-                            self.show_msg(f"Limit: {lim} {UType.NAME}!")
+                            _lim_disp2 = _get_castbound_display_name() if UType.NAME == "Castbound" else UType.NAME
+                            self.show_msg(f"Limit: {lim} {_lim_disp2}!")
                             return 0
                 self.selected_slot=i
                 self.drag_unit=UType(*pos)
@@ -1449,18 +1478,7 @@ class UI:
                 ox2=int(cx+math.cos(a2)*18); oy2=int(cy+math.sin(a2)*18)
                 pygame.draw.circle(surf,(60,200,110),(ox2,oy2),4)
         elif isinstance(u,Assassin):
-            # Dark slate body with blue rim
-            pygame.draw.circle(surf, (15, 18, 28), (cx, cy), 28)
-            pygame.draw.circle(surf, C_ASSASSIN, (cx, cy), 22)
-            pygame.draw.circle(surf, (60, 100, 200), (cx, cy), 28, 2)
-            # Twin spinning daggers
-            for i in range(2):
-                da = math.radians(t * 90 + i * 180)
-                dx2 = int(cx + math.cos(da) * 16)
-                dy2 = int(cy + math.sin(da) * 16)
-                dx3 = int(cx + math.cos(da) * 5)
-                dy3 = int(cy + math.sin(da) * 5)
-                pygame.draw.line(surf, (120, 160, 210), (dx3, dy3), (dx2, dy2), 3)
+            draw_assassin_icon(surf, cx, cy, t, size=28)
         elif isinstance(u,Archer):
             t2=pygame.time.get_ticks()*0.001
             # Warm amber aura
@@ -2569,7 +2587,7 @@ class UI:
         if not is_sandbox:
             _own_u   = [u for u in units if not getattr(u, '_mp_peer', False)]
             _cur     = len(_own_u)
-            _lim     = GLOBAL_UNIT_LIMIT
+            _lim     = get_global_unit_limit(mode or getattr(self, 'mode', ''))
             # colour: white normally, orange near cap, red at cap
             if _cur >= _lim:
                 _lim_col = (255, 80, 60)
@@ -2624,15 +2642,15 @@ class UI:
 
             if UType:
                 # Detailed tower icon — centred in card, leaving room for text below
-                icon_cy = slot.y + 52
                 r_outer = 34
                 r_inner = 28
                 t = pygame.time.get_ticks() * 0.001
-                _is_castbound = UType.NAME == "Castbound"
+                _is_castbound = UType.NAME in ("Castbound", "Skelebound")
                 # Towers whose icon is a full sprite/animation — no circular backdrop
-                _no_bg = UType.NAME in ("Castbound", "Rubber Duck")
+                _no_bg = UType.NAME in ("Castbound", "Skelebound", "Rubber Duck")
                 icon_sz = r_inner
                 _cb_sz = int(icon_sz * 1.8) if _is_castbound else icon_sz
+                icon_cy = slot.y + 52
                 if _no_bg:
                     # Draw icon directly onto surf — no shadow ring, no base circle.
                     _draw_tower_icon(surf, UType.NAME, cx2, icon_cy, t, size=_cb_sz)
@@ -2658,7 +2676,8 @@ class UI:
 
                 # Name
                 name_col = (110, 115, 130) if unavailable else (210, 215, 230)
-                ns = _slot_font_name.render(UType.NAME, True, name_col)
+                _disp_name = _get_castbound_display_name() if UType.NAME == "Castbound" else UType.NAME
+                ns = _slot_font_name.render(_disp_name, True, name_col)
                 surf.blit(ns, ns.get_rect(centerx=cx2, top=slot.y + 94))
 
                 if over_limit:
@@ -3224,6 +3243,7 @@ class UI:
                 if ab.is_buffing():
                     tgt_name = getattr(ab._active_buff_unit, "NAME",
                                        type(ab._active_buff_unit).__name__)
+                    if tgt_name in ("Castbound", "Skelebound"): tgt_name = _get_castbound_display_name()
                     stats.append(("Buffing", f"{ab._active_buff_type}", None))
                     stats.append(("Target",  tgt_name, None))
                     stats.append(("Buff left", f"{ab._active_buff_dur:.1f}s", None))
@@ -3326,8 +3346,8 @@ class UI:
                 pygame.draw.rect(surf,C_FROST,(bar_x,bar_y,int(bar_w*frac),9),border_radius=4)
                 pygame.draw.rect(surf,(55,150,210),(bar_x,bar_y,bar_w,9),1,border_radius=4)
                 top_offset+=26
-            if isinstance(u,Castbound):
-                _CB_CHARGE_MAX = 1500
+            if isinstance(u,Castbound) and getattr(u, '_terra_unlocked', False):
+                _CB_CHARGE_MAX = 2500
                 _cb_charge = getattr(u, '_terraprisma_charge', 0.0)
                 _cb_count  = len(getattr(u, '_terraprismas', []))
                 bar_x=mx_m+6; bar_w=mw-12; bar_y=my_m+top_offset+14
@@ -3396,7 +3416,8 @@ class UI:
             # === NAME + LEVEL + TOTAL DAMAGE strip ===
             strip_y=my_m+top_offset+portrait_size+6
             pygame.draw.rect(surf,(28,22,48),(mx_m+6,strip_y,mw-12,48),border_radius=5)
-            txt(surf,u.NAME,(mx_m+10,strip_y+4),(210,190,255),font_lg)
+            _u_disp_name = _get_castbound_display_name() if isinstance(u, Castbound) else u.NAME
+            txt(surf,_u_disp_name,(mx_m+10,strip_y+4),(210,190,255),font_lg)
             txt(surf,f"Level: {u.level}",(mx_m+10,strip_y+26),(140,130,175),font_md)
             td_s=font_md.render(f"Total Damage:",True,(160,155,185))
             td_n=font_lg.render(fmt_num(int(u.total_damage)),True,(240,220,100))
@@ -3497,9 +3518,6 @@ class UI:
                     surf.blit(price_s,(px_start+ico_m.get_width(), py_mid))
                 else:
                     surf.blit(price_s,(px_start, py_mid))
-            elif cls==Castbound and u.level==5 and not u._zenith_mode:
-                # Zenith is an award — show special button (always pressable)
-                txt(surf,"⚔ Zenith (Award)",up_rect.center,C_CB_ZENITH,font_lg,center=True)
             else:
                 txt(surf,"✓ MAX LEVEL",up_rect.center,(100,160,100),font_lg,center=True)
 
@@ -4152,6 +4170,7 @@ class UI:
             pygame.draw.rect(surf, bg,  (bx, by, btn_w, bh), border_radius=6)
             pygame.draw.rect(surf, brd, (bx, by, btn_w, bh), 2, border_radius=6)
             uname = getattr(u, "NAME", type(u).__name__)
+            if uname in ("Castbound", "Skelebound"): uname = _get_castbound_display_name()
             ns = lf12.render(uname[:10], True, C_WHITE if sel else (160, 190, 210))
             surf.blit(ns, ns.get_rect(centerx=bx + btn_w // 2, centery=by + bh // 2))
             self._rc_tower_btns.append((pygame.Rect(bx, by, btn_w, bh), u))
@@ -4275,6 +4294,115 @@ class UI:
         return 0
 
 # ── Rarity card drawing helper ──────────────────────────────────────────────────
+def draw_assassin_icon(surf, cx, cy, t, size=32):
+    """Draw the modernized Assassin icon — scales to any size."""
+    s = size / 27.0
+    def sc(v): return int(v * s)
+    def sp(v): return max(1, int(v * s))
+
+    pulse = abs(math.sin(t * 2.8))
+
+    # 1. Pulsing shadow mist aura
+    aura_r = sc(33) + int(pulse * sc(4))
+    aura_s = pygame.Surface((aura_r * 2 + 4, aura_r * 2 + 4), pygame.SRCALPHA)
+    pygame.draw.circle(aura_s, (32, 12, 54, int(42 + pulse * 38)), (aura_r + 2, aura_r + 2), aura_r)
+    surf.blit(aura_s, (cx - aura_r - 2, cy - aura_r - 2))
+
+    # 2. Cloak body & pauldrons
+    pygame.draw.circle(surf, (14, 15, 24), (cx, cy), sc(26))
+    pygame.draw.circle(surf, (24, 25, 38), (cx, cy), sc(22))
+    pygame.draw.circle(surf, (155, 65, 235), (cx, cy), sc(21), sp(2))
+
+    # Shoulder pauldrons
+    p_w, p_h = max(2, sc(14)), max(2, sc(9))
+    pygame.draw.ellipse(surf, (34, 38, 54), (cx - sc(24), cy - sc(2), p_w, p_h))
+    pygame.draw.ellipse(surf, (80, 88, 115), (cx - sc(24), cy - sc(2), p_w, p_h), sp(1))
+    pygame.draw.circle(surf, (190, 205, 225), (cx - sc(17), cy + sc(2)), sp(2))
+
+    pygame.draw.ellipse(surf, (34, 38, 54), (cx + sc(10), cy - sc(2), p_w, p_h))
+    pygame.draw.ellipse(surf, (80, 88, 115), (cx + sc(10), cy - sc(2), p_w, p_h), sp(1))
+    pygame.draw.circle(surf, (190, 205, 225), (cx + sc(17), cy + sc(2)), sp(2))
+
+    # 3. Assassin hood & cowl
+    hood_pts = [
+        (cx, cy - sc(25)),
+        (cx - sc(16), cy - sc(5)),
+        (cx - sc(8), cy + sc(7)),
+        (cx + sc(8), cy + sc(7)),
+        (cx + sc(16), cy - sc(5))
+    ]
+    pygame.draw.polygon(surf, (28, 22, 44), hood_pts)
+    pygame.draw.polygon(surf, (75, 48, 120), hood_pts, sp(1))
+
+    # Shadow cavity
+    c_w, c_h = max(2, sc(18)), max(2, sc(13))
+    pygame.draw.ellipse(surf, (8, 6, 14), (cx - c_w // 2, cy - sc(11), c_w, c_h))
+
+    # Ninja lower mask wrap
+    mask_pts = [
+        (cx - sc(8), cy - sc(3)),
+        (cx + sc(8), cy - sc(3)),
+        (cx + sc(5), cy + sc(6)),
+        (cx - sc(5), cy + sc(6))
+    ]
+    pygame.draw.polygon(surf, (22, 24, 34), mask_pts)
+    pygame.draw.line(surf, (55, 60, 80), (cx - sc(7), cy + sc(1)), (cx + sc(7), cy + sc(1)), sp(1))
+
+    # 4. Glowing stealth slit eyes
+    eye_core = (255, 255, 255)
+    eye_halo = (180, 215, 255)
+    le_s = (cx - sc(7), cy - sc(8))
+    le_e = (cx - sc(2), cy - sc(6))
+    pygame.draw.line(surf, eye_halo, le_s, le_e, sp(3))
+    pygame.draw.line(surf, eye_core, le_s, le_e, sp(1))
+    re_s = (cx + sc(2), cy - sc(6))
+    re_e = (cx + sc(7), cy - sc(8))
+    pygame.draw.line(surf, eye_halo, re_s, re_e, sp(3))
+    pygame.draw.line(surf, eye_core, re_s, re_e, sp(1))
+
+    # 5. Dual crossed curved stealth daggers
+    glint_p = (t * 1.6) % 2.5
+    for dagger_idx, deg in enumerate((-48, -132)):
+        ia = math.radians(deg)
+        cos_a = math.cos(ia)
+        sin_a = math.sin(ia)
+        perp_x = -sin_a
+        perp_y = cos_a
+
+        tip_x = cx + cos_a * sc(28)
+        tip_y = cy + sin_a * sc(28)
+        base_x = cx + cos_a * sc(7)
+        base_y = cy + sin_a * sc(7)
+        hilt_x = cx - cos_a * sc(5)
+        hilt_y = cy - sin_a * sc(5)
+
+        # Crossguard
+        g_len = sc(8)
+        gx1 = base_x + perp_x * g_len; gy1 = base_y + perp_y * g_len
+        gx2 = base_x - perp_x * g_len; gy2 = base_y - perp_y * g_len
+        pygame.draw.line(surf, (45, 40, 62), (int(gx1), int(gy1)), (int(gx2), int(gy2)), sp(3))
+        pygame.draw.circle(surf, (220, 190, 90), (int(base_x), int(base_y)), sp(2))
+
+        # Handle & pommel ring
+        pygame.draw.line(surf, (26, 26, 36), (int(base_x), int(base_y)), (int(hilt_x), int(hilt_y)), sp(3))
+        pygame.draw.circle(surf, (150, 165, 185), (int(hilt_x), int(hilt_y)), max(1, sp(3)), sp(1))
+
+        # Blade: spine, facet & razor edge
+        pygame.draw.line(surf, (90, 102, 122), (int(base_x), int(base_y)), (int(tip_x), int(tip_y)), sp(4))
+        pygame.draw.line(surf, (170, 190, 215), (int(base_x), int(base_y)), (int(tip_x), int(tip_y)), sp(2))
+        edge_off_x = perp_x * (1.2 * s if dagger_idx == 0 else -1.2 * s)
+        edge_off_y = perp_y * (1.2 * s if dagger_idx == 0 else -1.2 * s)
+        pygame.draw.line(surf, (255, 255, 255),
+                         (int(base_x + edge_off_x), int(base_y + edge_off_y)),
+                         (int(tip_x + edge_off_x), int(tip_y + edge_off_y)), sp(1))
+        pygame.draw.circle(surf, (255, 255, 255), (int(tip_x), int(tip_y)), sp(2))
+
+        # Moving glint
+        if glint_p < 1.0:
+            gx = base_x + (tip_x - base_x) * glint_p
+            gy = base_y + (tip_y - base_y) * glint_p
+            pygame.draw.circle(surf, (255, 255, 255), (int(gx), int(gy)), sp(2))
+
 def draw_accel_icon(surf, cx, cy, t, size=28):
     """Draw the Accelerator icon — scales to any size."""
     s = size / 28.0  # scale factor
@@ -4431,7 +4559,7 @@ def draw_frost_icon(surf, cx, cy, t, size=28):
     surf.blit(nuc, (cx - nr * 2, cy - nr * 2))
 
 
-def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
+def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32, force_skin=None):
     """Draw a tower icon that matches how the tower looks in-game, scaled to fit."""
     # Scale factor: game uses radius ~27 for outer, size param is half-width
     s = size / 27.0  # scale relative to standard tower size
@@ -4485,23 +4613,7 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
         pygame.draw.circle(surf, (40, 200, 255), (cx, cy), sc(21), sp(2))
 
     elif unit_name == "Assassin":
-        # Dark slate body with cold blue rim
-        pygame.draw.circle(surf, (15, 18, 28), (cx, cy), sc(27))
-        pygame.draw.circle(surf, C_ASSASSIN, (cx, cy), sc(21))
-        pygame.draw.circle(surf, (20, 25, 40), (cx, cy), sc(21), sp(3))
-        pygame.draw.circle(surf, (60, 100, 200), (cx, cy), sc(27), sp(2))
-        # Twin crossed daggers in preview
-        for idle_deg in (-50, -130):
-            ia = math.radians(idle_deg)
-            tx2 = cx + int(math.cos(ia) * sc(26))
-            ty2 = cy + int(math.sin(ia) * sc(26))
-            bx2 = cx + int(math.cos(ia) * sc(8))
-            by2 = cy + int(math.sin(ia) * sc(8))
-            pygame.draw.line(surf, (120, 160, 210), (bx2, by2), (tx2, ty2), sp(4))
-            ga = ia + math.pi / 2
-            pygame.draw.line(surf, (40, 60, 90),
-                             (int(bx2 + math.cos(ga)*sc(7)), int(by2 + math.sin(ga)*sc(7))),
-                             (int(bx2 - math.cos(ga)*sc(7)), int(by2 - math.sin(ga)*sc(7))), sp(3))
+        draw_assassin_icon(surf, cx, cy, t, size=size)
 
     elif unit_name == "Militant":
         pygame.draw.circle(surf, C_MILITANT_DARK, (cx, cy), sc(27))
@@ -5361,53 +5473,106 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
         pygame.draw.circle(tip_s, (*C_CP, blink_a), (sc(5), sc(5)), max(1, sc(3)))
         surf.blit(tip_s, (cx - sc(5), ant_tip_y - sc(5)))
 
-    elif unit_name == "Castbound":
-        # ── Используем webm-анимацию (первый/текущий кадр) ───────────────────
-        from units import _CB_WEBM_FRAMES, _CB_WEBM_LOADED, _CB_WEBM_FPS, _cb_load_webm_frames
-        if not _CB_WEBM_LOADED:
-            _cb_load_webm_frames()
-        if _CB_WEBM_FRAMES:
-            fps = max(1.0, _CB_WEBM_FPS)
-            frame_idx = int(t * fps) % len(_CB_WEBM_FRAMES)
-            frame = _CB_WEBM_FRAMES[frame_idx]
-            target_size = max(1, size * 2)
+    elif unit_name in ("Castbound", "Skelebound"):
+        # ── Используем webm/скин анимацию (первый/текущий кадр) ──────────────
+        cur_skin = (force_skin or get_equipped_skin("Castbound"))
+        _skel_skin = (cur_skin == "castbound_skelebound" or unit_name == "Skelebound")
+        _inf_skin = (cur_skin == "castbound_infernal") and not _skel_skin
+        from units import (
+            _CB_WEBM_FRAMES, _CB_WEBM_LOADED, _CB_WEBM_FPS, _cb_load_webm_frames,
+            _CB_INFERNAL_FRAMES, _CB_INFERNAL_LOADED, _cb_load_infernal_frames,
+            _CB_SKELEBOUND_FRAMES, _CB_SKELEBOUND_LOADED, _cb_load_skelebound_frames,
+            _draw_infernal_castbound_fx, _draw_skelebound_castbound_fx
+        )
+        if _skel_skin:
+            if not _CB_SKELEBOUND_LOADED:
+                _cb_load_skelebound_frames()
+            frames_to_use = _CB_SKELEBOUND_FRAMES
+        elif _inf_skin:
+            if not _CB_INFERNAL_LOADED:
+                _cb_load_infernal_frames()
+            frames_to_use = _CB_INFERNAL_FRAMES
+        else:
+            if not _CB_WEBM_LOADED:
+                _cb_load_webm_frames()
+            frames_to_use = _CB_WEBM_FRAMES
+
+        s_icon = size / 32.0
+        target_vis_h = max(1, int(size * 1.5))
+        if _inf_skin:
+            _draw_infernal_castbound_fx(surf, cx, cy, t, s=s_icon, is_behind=True)
+        elif _skel_skin:
+            _draw_skelebound_castbound_fx(surf, cx, cy, t, s=s_icon, is_behind=True)
+
+        if frames_to_use:
+            fps = max(1.0, 1000.0 / 90.0 if _skel_skin else _CB_WEBM_FPS)
+            frame_idx = int(t * fps) % len(frames_to_use)
+            frame = frames_to_use[frame_idx]
             fw, fh = frame.get_size()
             if fw == 0 or fh == 0:
                 scaled = frame
                 scale_w, scale_h = fw, fh
+                surf.blit(scaled, (cx - scale_w // 2, cy - scale_h // 2))
+            elif _skel_skin:
+                # Для skelebound: масштабируем так, чтобы видимый персонаж (1208px из 1392px)
+                # был аккуратно отцентрирован по (cx, cy) и укладывался в заданный размер
+                scale_h = max(1, int(target_vis_h * (fh / 1208.0)))
+                scale_w = max(1, int(scale_h * (fw / float(fh))))
+                scaled = pygame.transform.smoothscale(frame, (scale_w, scale_h))
+                vis_center_ratio = 764.0 / float(fh)
+                blit_x = cx - scale_w // 2
+                blit_y = cy - int(scale_h * vis_center_ratio)
+                surf.blit(scaled, (blit_x, blit_y))
             elif fw >= fh:
+                target_size = max(1, size * 2)
                 scale_w = target_size
                 scale_h = max(1, int(fh * target_size / fw))
+                scaled = pygame.transform.smoothscale(frame, (scale_w, scale_h))
+                surf.blit(scaled, (cx - scale_w // 2, cy - scale_h // 2))
             else:
+                target_size = max(1, size * 2)
                 scale_h = target_size
                 scale_w = max(1, int(fw * target_size / fh))
-            scaled = pygame.transform.smoothscale(frame, (scale_w, scale_h))
-            surf.blit(scaled, (cx - scale_w // 2, cy - scale_h // 2))
+                scaled = pygame.transform.smoothscale(frame, (scale_w, scale_h))
+                surf.blit(scaled, (cx - scale_w // 2, cy - scale_h // 2))
         else:
             P2 = max(2, int(3 * s))
             pulse_cb = abs(math.sin(t * 2.5))
 
-            # Аура
-            aura_r = sc(30)
-            aura_s = pygame.Surface((aura_r * 2, aura_r * 2), pygame.SRCALPHA)
-            aura_a = int(pulse_cb * 50 + 20)
-            pygame.draw.circle(aura_s, (40, 120, 255, aura_a), (aura_r, aura_r), aura_r)
-            surf.blit(aura_s, (cx - aura_r, cy - aura_r))
+            if _inf_skin:
+                _SB  = (120,  15,  15)
+                _SL  = (220,  60,  15)
+                _SW  = (255, 200,  80)
+                _ST  = (255, 255, 180)
+                _SBK = ( 20,   8,   8)
+                _SG  = (255, 130,  20)
+                _SA  = (255, 240, 180)
+                _SGD = (255, 220,  50)
+                _FL  = (
+                    int(min(255, _SL[0] + pulse_cb * 35)),
+                    int(min(255, _SL[1] + pulse_cb * 25)),
+                    min(255, int(_SL[2] + pulse_cb * 10)),
+                )
+            else:
+                aura_r = sc(30)
+                aura_s = pygame.Surface((aura_r * 2, aura_r * 2), pygame.SRCALPHA)
+                aura_a = int(pulse_cb * 50 + 20)
+                pygame.draw.circle(aura_s, (40, 120, 255, aura_a), (aura_r, aura_r), aura_r)
+                surf.blit(aura_s, (cx - aura_r, cy - aura_r))
 
-            # Цвета Stardust Guardian
-            _SB  = (30,  80, 200)
-            _SL  = (60, 140, 255)
-            _SW  = (140, 200, 255)
-            _ST  = (0, 230, 255)
-            _SBK = (10,  20,  60)
-            _SG  = (80, 180, 255)
-            _SA  = (180, 220, 255)
-            _SGD = (255, 220,  50)
-            _FL  = (
-                int(_SL[0] + pulse_cb * 30),
-                int(_SL[1] + pulse_cb * 20),
-                min(255, int(_SL[2] + pulse_cb * 30)),
-            )
+                _SB  = (30,  80, 200)
+                _SL  = (60, 140, 255)
+                _SW  = (140, 200, 255)
+                _ST  = (0, 230, 255)
+                _SBK = (10,  20,  60)
+                _SG  = (80, 180, 255)
+                _SA  = (180, 220, 255)
+                _SGD = (255, 220,  50)
+                _FL  = (
+                    int(_SL[0] + pulse_cb * 30),
+                    int(_SL[1] + pulse_cb * 20),
+                    min(255, int(_SL[2] + pulse_cb * 30)),
+                )
 
             def _cbpx2(dx, dy, col):
                 pygame.draw.rect(surf, col,
@@ -5451,21 +5616,28 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32):
             # Мигающие глаза
             eye_pulse = int(abs(math.sin(t * 3.0)) * 200 + 55)
             eye_pulse = max(0, min(255, int(eye_pulse)))
-            pygame.draw.rect(surf, (eye_pulse, 240, 255),
+            eye_c = (255, 240, eye_pulse) if _inf_skin else (eye_pulse, 240, 255)
+            pygame.draw.rect(surf, eye_c,
                             (cx - 2 * P2 - P2 // 2, cy - 6 * P2 - P2 // 2, P2, P2))
-            pygame.draw.rect(surf, (eye_pulse, 240, 255),
+            pygame.draw.rect(surf, eye_c,
                              (cx + 1 * P2 - P2 // 2, cy - 6 * P2 - P2 // 2, P2, P2))
 
-            # Звёздный пылевой хвост
-            _rng_tail = random.Random(int(t * 12))
-            for _ in range(3):
-                tx2 = cx + _rng_tail.randint(-10, 10)
-                ty2 = cy + _rng_tail.randint(22, 40)
-                tr2 = _rng_tail.randint(1, 3)
-                ta  = _rng_tail.randint(60, 140)
-                ts2 = pygame.Surface((tr2 * 2, tr2 * 2), pygame.SRCALPHA)
-                pygame.draw.circle(ts2, (80, 160, 255, ta), (tr2, tr2), tr2)
-                surf.blit(ts2, (tx2 - tr2, ty2 - tr2))
+            if not _inf_skin:
+                _rng_tail = random.Random(int(t * 12))
+                for _ in range(3):
+                    tx2 = cx + _rng_tail.randint(-10, 10)
+                    ty2 = cy + _rng_tail.randint(22, 40)
+                    tr2 = _rng_tail.randint(1, 3)
+                    ta  = _rng_tail.randint(60, 140)
+                    ts2 = pygame.Surface((tr2 * 2, tr2 * 2), pygame.SRCALPHA)
+                    pygame.draw.circle(ts2, (80, 160, 255, ta), (tr2, tr2), tr2)
+                    surf.blit(ts2, (tx2 - tr2, ty2 - tr2))
+
+        if _skel_skin:
+            head_y = cy - int(target_vis_h * 0.5) if frames_to_use else (cy - int(24 * s_icon))
+            _draw_skelebound_castbound_fx(surf, cx, cy, t, s=s_icon, is_behind=False, head_y=head_y)
+        elif _inf_skin:
+            _draw_infernal_castbound_fx(surf, cx, cy, t, s=s_icon, is_behind=False)
 
     elif unit_name == "The Strongest":
         # ── Pulsing dark crimson aura ─────────────────────────────────────────
@@ -5865,15 +6037,16 @@ def draw_unit_card(surf, unit_name, rarity_key, cx, cy, w=160, h=220, t=0.0, sel
     surf.blit(icon_surf, (bx + 4, by + 8))
 
     # Unit name only — rarity label shown in slots, not on card
+    _card_disp_name = _get_castbound_display_name() if unit_name in ("Castbound", "Skelebound") else unit_name
     name_f = pygame.font.SysFont("consolas", 17, bold=True)
     if rarity_key == "singularity":
         neon_col = (200, 0, 255)
         for ox, oy in [(-2,0),(2,0),(0,-2),(0,2),(-1,-1),(1,-1),(-1,1),(1,1)]:
-            ns_o = name_f.render(unit_name, True, neon_col)
+            ns_o = name_f.render(_card_disp_name, True, neon_col)
             surf.blit(ns_o, ns_o.get_rect(center=(cx + ox, cy + 56 + oy)))
-        ns = name_f.render(unit_name, True, (0, 0, 0))
+        ns = name_f.render(_card_disp_name, True, (0, 0, 0))
     else:
-        ns = name_f.render(unit_name, True, C_WHITE)
+        ns = name_f.render(_card_disp_name, True, C_WHITE)
     surf.blit(ns, ns.get_rect(center=(cx, cy + 56)))
 
 
@@ -5903,9 +6076,9 @@ class MapSelectMenu:
         self.action = None
         # ── Same particles as main menu ───────────────────────────────────────
         MainMenu._ensure_heavy_surfaces()
-        self._wisps = [_VoidWisp() for _ in range(30)]
-        self._dots  = [_VoidDot()  for _ in range(90)]
-        self._motes = [_VoidMote() for _ in range(60)]
+        self._wisps = [_VoidWisp(scatter=True) for _ in range(35)]
+        self._dots  = [_VoidDot(scatter=True)  for _ in range(120)]
+        self._motes = [_VoidMote(scatter=True) for _ in range(90)]
 
     def run(self):
         print("Game.run() started")
@@ -6157,7 +6330,7 @@ class DifficultyMenu:
          (160, 60, 230),
          "Relentless waves. No mercy.",
          ["HP: 100", "Towers cost x1.4", "No skill tree"],
-         ("—", (190, 110, 255))),
+         ("250", (100, 210, 255))),
         ("play_draft",   "DRAFT",   "draft_ico",
          (255, 60, 60),
          "Draft curses every few waves.",
@@ -6363,7 +6536,7 @@ class DifficultyMenu:
                 text_y += st_s.get_height() + 3
 
         # Reward badge — bottom right of card
-        ico_m = load_icon("coin_ico", 14)
+        ico_m = load_icon("shard_ico", 14) if act == "play_hardcore" else load_icon("coin_ico", 14)
         rew_f = pygame.font.SysFont("segoeui", 13, bold=True)
         rew_s = rew_f.render(reward, True, reward_col)
         ico_w2 = (ico_m.get_width() + 3) if (ico_m and reward != "—") else 0
@@ -6447,7 +6620,6 @@ class CreditsScreen:
                         self.running = False
             self._draw()
             pygame.display.flip()
-
     def _draw(self):
         surf = self.screen
         surf.fill(C_BG)
@@ -6577,9 +6749,9 @@ def _load_terraprisma_img(size=38):
 
 class Terraprisma:
     """Floating summon spawned by Castbound. Seeks enemies, attacks them."""
-    DAMAGE    = 100
-    FIRERATE  = 3.0      # attacks per second
-    LIFETIME  = 20.0     # seconds
+    DAMAGE    = 25
+    FIRERATE  = 2.0      # attacks per second
+    LIFETIME  = 15.0     # seconds
     SPEED     = 220.0    # px/s towards target
     ATTACK_RANGE = 180   # px — distance at which it starts attacking
     IDLE_RADIUS  = 55    # px — orbit radius behind owner when idle
@@ -6666,6 +6838,8 @@ class Terraprisma:
                 self._hit_flash = 0.12
                 # Hit visual effect
                 effects.append(FloatingText(e.x, e.y - e.radius - 8, f"-{self.DAMAGE}", (200, 80, 255)))
+                from assets.units import play_castbound_sfx
+                play_castbound_sfx("cb_terraprisma_hit.wav", vol_mult=0.45)
 
         return True  # still alive
 
@@ -6731,157 +6905,468 @@ class AchievementManager:
 
 # ── Achievements Screen ────────────────────────────────────────────────────────
 class AchievementsScreen:
-    def __init__(self, screen):
+    """Modern redesigned Achievements screen with progress tracking, filter tabs,
+    per-achievement claimable rewards, and Claim All."""
+
+    def __init__(self, screen, save_data=None):
         self.screen = screen
+        self.save_data = save_data if save_data is not None else load_save()
         self.t = 0.0
         self.running = True
-        self.btn_back = pygame.Rect(20, 20, 130, 44)
-        self.scroll_y = 0
+        self.btn_back = pygame.Rect(24, 18, 140, 44)
+        self.scroll_y = 0.0
+        self.target_scroll_y = 0.0
+        self.max_scroll = 0.0
+
+        # Tabs: 0 = ALL, 1 = REWARDS (unclaimed), 2 = COMPLETED, 3 = LOCKED
+        self.tab = 0
+        self.tab_labels = ["ВСЕ", "НАГРАДЫ", "ВЫПОЛНЕНО", "ЗАКРЫТО"]
+        self._tab_rects = []
+
+        # Claim buttons stored each frame: list of (ach, rect)
+        self._claim_btns = []
+        self._btn_claim_all = None
+
+        # Floating notification toast
+        self.toast_msg = ""
+        self.toast_t = 0.0
+        self.toast_col = (100, 255, 160)
+
+        # Preloaded icons
+        self.ico_coin = load_icon("coin_ico", 20)
+        self.ico_shard = load_icon("shard_ico", 20)
+        self.ico_coin_sm = load_icon("coin_ico", 15)
+        self.ico_shard_sm = load_icon("shard_ico", 15)
+
+    def _show_toast(self, msg, col=(100, 255, 160)):
+        self.toast_msg = msg
+        self.toast_t = 2.5
+        self.toast_col = col
+        try:
+            sfx_p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "sound", "cb_star_impact.wav")
+            if os.path.exists(sfx_p):
+                snd = pygame.mixer.Sound(sfx_p)
+                vol = 0.0 if SETTINGS.get("sfx_muted") else SETTINGS.get("sfx_volume", 0.7) * 0.7
+                snd.set_volume(vol)
+                snd.play()
+        except Exception:
+            pass
+
+    def _claim(self, ach):
+        ach_id = ach["id"]
+        unlocked = set(self.save_data.get("achievements", []))
+        claimed = set(self.save_data.get("claimed_achievements", []))
+        if ach_id in unlocked and ach_id not in claimed:
+            c = ach.get("coins", 250)
+            s = ach.get("shards", 5)
+            self.save_data["coins"] = self.save_data.get("coins", 0) + c
+            self.save_data["shards"] = self.save_data.get("shards", 0) + s
+            self.save_data.setdefault("claimed_achievements", []).append(ach_id)
+            write_save(self.save_data)
+            self._show_toast(f"+{c} Монет  •  +{s} Осколков", (100, 255, 180))
+
+    def _claim_all(self):
+        unlocked = set(self.save_data.get("achievements", []))
+        claimed = set(self.save_data.get("claimed_achievements", []))
+        unclaimed = [a for a in ACHIEVEMENT_DEFS if a["id"] in unlocked and a["id"] not in claimed]
+        if not unclaimed:
+            return
+        total_c = sum(a.get("coins", 250) for a in unclaimed)
+        total_s = sum(a.get("shards", 5) for a in unclaimed)
+        self.save_data["coins"] = self.save_data.get("coins", 0) + total_c
+        self.save_data["shards"] = self.save_data.get("shards", 0) + total_s
+        cl_list = self.save_data.setdefault("claimed_achievements", [])
+        for a in unclaimed:
+            if a["id"] not in cl_list:
+                cl_list.append(a["id"])
+        write_save(self.save_data)
+        self._show_toast(f"Забрано всё! +{total_c} Монет  •  +{total_s} Осколков!", (255, 220, 80))
 
     def run(self):
         clock = pygame.time.Clock()
         while self.running:
             dt = clock.tick(60) / 1000.0
             self.t += dt
+            if self.toast_t > 0:
+                self.toast_t = max(0.0, self.toast_t - dt)
+
+            # Smooth scroll interpolation
+            self.scroll_y += (self.target_scroll_y - self.scroll_y) * min(1.0, dt * 14.0)
+
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
                     pygame.quit(); import sys; sys.exit()
                 if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
                     self.running = False
+                    return
                 if ev.type == pygame.MOUSEWHEEL:
-                    self.scroll_y = max(0, self.scroll_y - ev.y * 30)
+                    self.target_scroll_y = max(0.0, min(self.max_scroll, self.target_scroll_y - ev.y * 70.0))
                 if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
-                    if self.btn_back.collidepoint(ev.pos):
+                    pos = ev.pos
+                    if self.btn_back.collidepoint(pos):
                         self.running = False
+                        return
+                    # Tabs
+                    for ti, tr in enumerate(self._tab_rects):
+                        if tr.collidepoint(pos):
+                            self.tab = ti
+                            self.target_scroll_y = 0.0
+                            self.scroll_y = 0.0
+                            break
+                    # Claim all button
+                    if self._btn_claim_all and self._btn_claim_all.collidepoint(pos):
+                        self._claim_all()
+                    # Per-achievement claim buttons
+                    for ach, btn_r in self._claim_btns:
+                        if btn_r.collidepoint(pos):
+                            self._claim(ach)
+                            break
             self._draw()
             pygame.display.flip()
 
     def _draw(self):
         surf = self.screen
-        surf.fill(C_BG)
+        W, H = surf.get_size()
+        t = self.t
+        mx, my = pygame.mouse.get_pos()
 
-        # Stars bg
+        # ── Background: Deep space with particles ──────────────────────────────
+        surf.fill((10, 13, 22))
         _rng_bg = random.Random(99)
-        for _ in range(160):
-            sx = _rng_bg.randint(0, SCREEN_W); sy = _rng_bg.randint(0, SCREEN_H)
-            br = int(abs(math.sin(self.t * 1.1 + sx * 0.013)) * 160 + 50)
-            pygame.draw.circle(surf, (br, br, br), (sx, sy), 1)
+        for _ in range(140):
+            sx = _rng_bg.randint(0, W); sy = _rng_bg.randint(0, H)
+            br = int(abs(math.sin(t * 1.1 + sx * 0.013)) * 140 + 40)
+            pygame.draw.circle(surf, (br, br, min(255, br + 35)), (sx, sy), 1)
 
-        # Header
-        pygame.draw.rect(surf, C_PANEL, (0, 0, SCREEN_W, 70))
-        pygame.draw.line(surf, C_BORDER, (0, 70), (SCREEN_W, 70), 2)
-        hf = pygame.font.SysFont("segoeui", 36, bold=True)
-        hs = hf.render("ACHIEVEMENTS", True, C_GOLD)
-        surf.blit(hs, hs.get_rect(center=(SCREEN_W // 2, 35)))
+        # Soft radial ambient glow in center
+        glow_surf = pygame.Surface((W, 350), pygame.SRCALPHA)
+        pygame.draw.ellipse(glow_surf, (25, 40, 75, 45), (W // 2 - 450, 0, 900, 350))
+        surf.blit(glow_surf, (0, 0))
+
+        # ── Data setup ────────────────────────────────────────────────────────
+        unlocked = set(self.save_data.get("achievements", []))
+        claimed = set(self.save_data.get("claimed_achievements", []))
+        total_ach = len(ACHIEVEMENT_DEFS)
+        done_count = len(unlocked)
+        unclaimed_list = [a for a in ACHIEVEMENT_DEFS if a["id"] in unlocked and a["id"] not in claimed]
+        unclaimed_count = len(unclaimed_list)
+
+        # ── Filter items according to tab ─────────────────────────────────────
+        if self.tab == 1:
+            items = unclaimed_list
+        elif self.tab == 2:
+            items = [a for a in ACHIEVEMENT_DEFS if a["id"] in unlocked]
+        elif self.tab == 3:
+            items = [a for a in ACHIEVEMENT_DEFS if a["id"] not in unlocked]
+        else:
+            items = list(ACHIEVEMENT_DEFS)
+
+        # ── Header bar (height: 78) ───────────────────────────────────────────
+        pygame.draw.rect(surf, (14, 18, 30), (0, 0, W, 78))
+        pygame.draw.line(surf, (35, 45, 70), (0, 78), (W, 78), 2)
 
         # Back button
-        mx, my = pygame.mouse.get_pos()
-        hov = self.btn_back.collidepoint(mx, my)
-        pygame.draw.rect(surf, (110, 50, 50) if hov else (80, 40, 40), self.btn_back, border_radius=8)
-        pygame.draw.rect(surf, C_BORDER, self.btn_back, 2, border_radius=8)
-        txt(surf, "← BACK", self.btn_back.center, C_WHITE, font_md, center=True)
+        hov_back = self.btn_back.collidepoint(mx, my)
+        bg_back = (75, 35, 45) if hov_back else (42, 24, 32)
+        brd_back = (220, 80, 100) if hov_back else (120, 50, 65)
+        pygame.draw.rect(surf, bg_back, self.btn_back, border_radius=10)
+        pygame.draw.rect(surf, brd_back, self.btn_back, 2, border_radius=10)
+        txt(surf, "← НАЗАД", self.btn_back.center, C_WHITE, font_md, center=True)
 
-        # Load unlocked
-        ach_data = load_achievements()
-        unlocked = set(ach_data.get("unlocked", []))
+        # Title + Progress
+        f_title = pygame.font.SysFont("segoeui", 26, bold=True)
+        t_title = f_title.render("🏆 ДОСТИЖЕНИЯ", True, (255, 215, 70))
+        title_x = self.btn_back.right + 28
+        surf.blit(t_title, (title_x, 14))
 
-        # Grid layout
-        CARD_W, CARD_H = 340, 100
-        COLS = 4
-        GAP = 24
-        START_X = (SCREEN_W - (CARD_W * COLS + GAP * (COLS - 1))) // 2
-        START_Y = 90
+        # Progress bar
+        prog_ratio = done_count / max(1, total_ach)
+        bar_w, bar_h = 240, 14
+        bar_x = title_x
+        bar_y = 48
+        pygame.draw.rect(surf, (24, 28, 44), (bar_x, bar_y, bar_w, bar_h), border_radius=7)
+        pygame.draw.rect(surf, (55, 65, 95), (bar_x, bar_y, bar_w, bar_h), 1, border_radius=7)
+        if done_count > 0:
+            fill_w = max(10, int(bar_w * prog_ratio))
+            fill_surf = pygame.Surface((fill_w, bar_h), pygame.SRCALPHA)
+            for fx in range(fill_w):
+                frac = fx / max(1, fill_w)
+                col_grad = (int(50 + 190 * frac), int(160 + 55 * frac), int(255 - 190 * frac))
+                pygame.draw.line(fill_surf, col_grad, (fx, 0), (fx, bar_h))
+            pygame.draw.rect(fill_surf, (255, 255, 255, 70), (0, 0, fill_w, bar_h // 2))
+            surf.blit(fill_surf, (bar_x, bar_y))
 
-        # Scrollable zone
-        CONTENT_TOP = 82
-        CONTENT_H = SCREEN_H - CONTENT_TOP
-        n_rows = max(1, (len(ACHIEVEMENT_DEFS) + COLS - 1) // COLS)
-        total_h = n_rows * (CARD_H + GAP)
-        max_scroll = max(0, total_h - CONTENT_H + 40)
-        self.scroll_y = min(self.scroll_y, max_scroll)
+        f_prog = pygame.font.SysFont("segoeui", 13, bold=True)
+        t_prog = f_prog.render(f"{done_count}/{total_ach} ({int(prog_ratio * 100)}%)", True, (190, 205, 235))
+        surf.blit(t_prog, (bar_x + bar_w + 12, bar_y - 1))
 
-        surf.set_clip(pygame.Rect(0, CONTENT_TOP, SCREEN_W, CONTENT_H))
+        # Right side header: Currency counters + Claim All
+        coins = self.save_data.get("coins", 0)
+        shards = self.save_data.get("shards", 0)
 
-        for i, ach in enumerate(ACHIEVEMENT_DEFS):
+        cx_cur = W - 24
+        # Claim All button
+        btn_ca_w, btn_ca_h = 175, 42
+        btn_ca_x = cx_cur - btn_ca_w
+        btn_ca_y = 18
+        self._btn_claim_all = pygame.Rect(btn_ca_x, btn_ca_y, btn_ca_w, btn_ca_h)
+
+        hov_ca = self._btn_claim_all.collidepoint(mx, my)
+        if unclaimed_count > 0:
+            pulse_ca = abs(math.sin(t * 3.5))
+            ca_bg = (int(70 + 40 * pulse_ca), int(55 + 30 * pulse_ca), 15) if hov_ca else (50, 40, 15)
+            ca_brd = (255, 220, 80)
+            pygame.draw.rect(surf, ca_bg, self._btn_claim_all, border_radius=10)
+            pygame.draw.rect(surf, ca_brd, self._btn_claim_all, 2, border_radius=10)
+            f_ca = pygame.font.SysFont("segoeui", 14, bold=True)
+            t_ca = f_ca.render(f"🎁 ЗАБРАТЬ ВСЁ ({unclaimed_count})", True, (255, 230, 110))
+            surf.blit(t_ca, t_ca.get_rect(center=self._btn_claim_all.center))
+        else:
+            pygame.draw.rect(surf, (22, 26, 38), self._btn_claim_all, border_radius=10)
+            pygame.draw.rect(surf, (45, 50, 70), self._btn_claim_all, 1, border_radius=10)
+            f_ca = pygame.font.SysFont("segoeui", 13, bold=True)
+            t_ca = f_ca.render("✓ ВСЁ ЗАБРАНО", True, (110, 120, 140))
+            surf.blit(t_ca, t_ca.get_rect(center=self._btn_claim_all.center))
+
+        # Shards pill
+        sh_pill_w = 115
+        sh_pill_x = btn_ca_x - sh_pill_w - 14
+        sh_rect = pygame.Rect(sh_pill_x, 22, sh_pill_w, 34)
+        pygame.draw.rect(surf, (18, 26, 42), sh_rect, border_radius=8)
+        pygame.draw.rect(surf, (45, 80, 130), sh_rect, 1, border_radius=8)
+        if self.ico_shard:
+            surf.blit(self.ico_shard, (sh_rect.x + 8, sh_rect.centery - self.ico_shard.get_height() // 2))
+        f_cur = pygame.font.SysFont("consolas", 14, bold=True)
+        t_sh = f_cur.render(f"{fmt_num(shards)}", True, (120, 215, 255))
+        surf.blit(t_sh, (sh_rect.x + 34, sh_rect.centery - t_sh.get_height() // 2))
+
+        # Coins pill
+        co_pill_w = 135
+        co_pill_x = sh_pill_x - co_pill_w - 10
+        co_rect = pygame.Rect(co_pill_x, 22, co_pill_w, 34)
+        pygame.draw.rect(surf, (28, 24, 18), co_rect, border_radius=8)
+        pygame.draw.rect(surf, (120, 95, 35), co_rect, 1, border_radius=8)
+        if self.ico_coin:
+            surf.blit(self.ico_coin, (co_rect.x + 8, co_rect.centery - self.ico_coin.get_height() // 2))
+        t_co = f_cur.render(f"{fmt_num(coins)}", True, (255, 215, 75))
+        surf.blit(t_co, (co_rect.x + 34, co_rect.centery - t_co.get_height() // 2))
+
+        # ── Filter Tabs Bar (height: 44, y = 88) ──────────────────────────────
+        tab_counts = [total_ach, unclaimed_count, done_count, total_ach - done_count]
+        self._tab_rects = []
+        tw, th = 175, 34
+        tgap = 10
+        total_tabs_w = len(self.tab_labels) * tw + (len(self.tab_labels) - 1) * tgap
+        tx0 = W // 2 - total_tabs_w // 2
+        ty0 = 88
+
+        f_tab = pygame.font.SysFont("segoeui", 14, bold=True)
+        for ti, label in enumerate(self.tab_labels):
+            tr = pygame.Rect(tx0 + ti * (tw + tgap), ty0, tw, th)
+            self._tab_rects.append(tr)
+            is_active = (self.tab == ti)
+            hov_t = tr.collidepoint(mx, my)
+
+            if is_active:
+                bg_t = (40, 65, 110)
+                brd_t = (100, 160, 255)
+                txt_col = (255, 255, 255)
+            elif hov_t:
+                bg_t = (28, 36, 55)
+                brd_t = (70, 95, 150)
+                txt_col = (210, 225, 250)
+            else:
+                bg_t = (18, 22, 34)
+                brd_t = (40, 48, 70)
+                txt_col = (130, 140, 165)
+
+            pygame.draw.rect(surf, bg_t, tr, border_radius=8)
+            pygame.draw.rect(surf, brd_t, tr, 1 if not is_active else 2, border_radius=8)
+
+            cnt_str = f"{label} ({tab_counts[ti]})"
+            ts_tab = f_tab.render(cnt_str, True, txt_col)
+            surf.blit(ts_tab, ts_tab.get_rect(center=tr.center))
+
+            # Pulse indicator on REWARDS tab if unclaimed > 0
+            if ti == 1 and unclaimed_count > 0:
+                p_rad = int(abs(math.sin(t * 4)) * 2 + 4)
+                pygame.draw.circle(surf, (255, 200, 40), (tr.right - 12, tr.top + 10), p_rad)
+
+        # ── Cards Grid ────────────────────────────────────────────────────────
+        CONTENT_TOP = 134
+        CONTENT_BOTTOM = H - 16
+        CONTENT_H = CONTENT_BOTTOM - CONTENT_TOP
+
+        COLS = 3 if W >= 1350 else 2
+        GAP_X, GAP_Y = 20, 16
+        CARD_W = min(520, (W - 80 - GAP_X * (COLS - 1)) // COLS)
+        CARD_H = 118
+
+        total_grid_w = COLS * CARD_W + (COLS - 1) * GAP_X
+        start_x = W // 2 - total_grid_w // 2
+
+        n_rows = max(1, (len(items) + COLS - 1) // COLS)
+        total_content_h = n_rows * (CARD_H + GAP_Y) + 20
+        self.max_scroll = max(0.0, float(total_content_h - CONTENT_H))
+        self.scroll_y = max(0.0, min(self.max_scroll, self.scroll_y))
+
+        surf.set_clip(pygame.Rect(0, CONTENT_TOP, W, CONTENT_H))
+
+        self._claim_btns = []
+        f_name = pygame.font.SysFont("segoeui", 17, bold=True)
+        f_desc = pygame.font.SysFont("segoeui", 13)
+        f_rew = pygame.font.SysFont("consolas", 13, bold=True)
+        f_btn = pygame.font.SysFont("segoeui", 13, bold=True)
+
+        for i, ach in enumerate(items):
             col = i % COLS
             row = i // COLS
-            cx2 = START_X + col * (CARD_W + GAP) + CARD_W // 2
-            cy2 = START_Y + row * (CARD_H + GAP) + CARD_H // 2 - self.scroll_y
+            card_x = start_x + col * (CARD_W + GAP_X)
+            card_y = CONTENT_TOP + row * (CARD_H + GAP_Y) - int(self.scroll_y) + 8
 
-            if cy2 < CONTENT_TOP - CARD_H or cy2 > SCREEN_H + CARD_H:
+            if card_y < CONTENT_TOP - CARD_H or card_y > CONTENT_BOTTOM:
                 continue
 
+            card_r = pygame.Rect(card_x, card_y, CARD_W, CARD_H)
             is_done = ach["id"] in unlocked
-            border = ach["border"] if is_done else (60, 65, 80)
-            bg = tuple(max(0, c - 110) for c in ach["color"]) if is_done else (22, 27, 38)
+            is_claimed = ach["id"] in claimed
+            hov_card = card_r.collidepoint(mx, my)
 
-            card_rect = pygame.Rect(cx2 - CARD_W // 2, cy2 - CARD_H // 2, CARD_W, CARD_H)
-            draw_rect_alpha(surf, bg, (card_rect.x, card_rect.y, CARD_W, CARD_H), 220, 12)
-            pygame.draw.rect(surf, border, card_rect, 2, border_radius=12)
-
-            # Colored left stripe
-            stripe_col = ach["border"] if is_done else (50, 55, 70)
-            pygame.draw.rect(surf, stripe_col,
-                             pygame.Rect(card_rect.x + 2, card_rect.y + 6, 4, CARD_H - 12),
-                             border_radius=2)
-
-            # Lock / checkmark icon
-            icon_x = card_rect.x + 22
-            icon_y = cy2
-            if is_done:
-                # Pulsing checkmark circle
-                pulse = abs(math.sin(self.t * 1.8 + i * 0.7))
-                r_col = tuple(min(255, int(c * (0.7 + 0.3 * pulse))) for c in ach["border"])
-                pygame.draw.circle(surf, r_col, (icon_x, icon_y), 18)
-                # Hand-drawn checkmark (pygame can't render ✓ glyph reliably)
-                _ck_pts = [
-                    (icon_x - 7, icon_y),
-                    (icon_x - 2, icon_y + 6),
-                    (icon_x + 7, icon_y - 7),
-                ]
-                pygame.draw.lines(surf, C_WHITE, False, _ck_pts, 3)
+            # Card background & border
+            if is_done and not is_claimed:
+                # Unclaimed: warm amber / gold glow
+                pulse = abs(math.sin(t * 3.0 + i * 0.5))
+                c_border = (int(210 + 45 * pulse), int(170 + 45 * pulse), 40)
+                c_bg = (32, 28, 20)
+                draw_rect_alpha(surf, c_bg, card_r, 235, 12)
+                pygame.draw.rect(surf, c_border, card_r, 2, border_radius=12)
+            elif is_done and is_claimed:
+                # Completed & claimed
+                c_border = ach["border"] if hov_card else tuple(int(c * 0.6) for c in ach["border"])
+                c_bg = tuple(max(8, int(c * 0.16)) for c in ach["color"])
+                draw_rect_alpha(surf, c_bg, card_r, 220, 12)
+                pygame.draw.rect(surf, c_border, card_r, 1 if not hov_card else 2, border_radius=12)
             else:
-                pygame.draw.circle(surf, (50, 55, 70), (icon_x, icon_y), 18)
-                # Hand-drawn padlock (pygame cannot render emoji glyphs)
-                _lc = (90, 95, 115)
-                _bx, _by = icon_x - 6, icon_y - 1
-                _bw, _bh = 12, 9
-                pygame.draw.rect(surf, _lc, (_bx, _by, _bw, _bh), border_radius=2)
-                pygame.draw.arc(surf, _lc,
-                                pygame.Rect(icon_x - 5, icon_y - 11, 10, 10),
-                                0, math.pi, 3)
-                pygame.draw.circle(surf, (50, 55, 70), (icon_x, icon_y + 2), 2)
+                # Locked
+                c_border = (50, 56, 75) if hov_card else (35, 40, 56)
+                c_bg = (16, 20, 30)
+                draw_rect_alpha(surf, c_bg, card_r, 210, 12)
+                pygame.draw.rect(surf, c_border, card_r, 1, border_radius=12)
 
-            # Name + desc
-            tx = icon_x + 28
-            name_col = C_WHITE if is_done else (100, 105, 120)
-            nf2 = pygame.font.SysFont("segoeui", 20, bold=True)
-            ns2 = nf2.render(ach["name"], True, name_col)
-            surf.blit(ns2, (tx, cy2 - 24))
-            df2 = pygame.font.SysFont("segoeui", 14)
-            desc_col = (160, 165, 185) if is_done else (70, 75, 90)
-            ds2 = df2.render(ach["desc"], True, desc_col)
-            surf.blit(ds2, (tx, cy2 + 4))
+            # Left Emblem Badge
+            emblem_cx = card_r.x + 38
+            emblem_cy = card_r.centery
+            if is_done:
+                pulse_e = abs(math.sin(t * 2.0 + i * 0.6))
+                col_emblem = tuple(min(255, int(c * (0.8 + 0.2 * pulse_e))) for c in ach["border"])
+                pygame.draw.circle(surf, (col_emblem[0]//3, col_emblem[1]//3, col_emblem[2]//3), (emblem_cx, emblem_cy), 24)
+                pygame.draw.circle(surf, col_emblem, (emblem_cx, emblem_cy), 24, 2)
+                # Star / Trophy emblem
+                _star_pts = []
+                for sp_i in range(10):
+                    ang = math.radians(sp_i * 36 - 90)
+                    r_pt = 13 if sp_i % 2 == 0 else 6
+                    _star_pts.append((emblem_cx + int(math.cos(ang) * r_pt), emblem_cy + int(math.sin(ang) * r_pt)))
+                pygame.draw.polygon(surf, (255, 230, 90), _star_pts)
+            else:
+                # Padlock emblem
+                pygame.draw.circle(surf, (24, 28, 40), (emblem_cx, emblem_cy), 22)
+                pygame.draw.circle(surf, (55, 62, 85), (emblem_cx, emblem_cy), 22, 1)
+                lx, ly = emblem_cx - 7, emblem_cy - 1
+                pygame.draw.rect(surf, (90, 100, 125), (lx, ly, 14, 11), border_radius=2)
+                pygame.draw.arc(surf, (90, 100, 125), pygame.Rect(emblem_cx - 5, emblem_cy - 12, 10, 12), 0, math.pi, 2)
+                pygame.draw.circle(surf, (24, 28, 40), (emblem_cx, emblem_cy + 4), 2)
+
+            # Info text
+            text_x = emblem_cx + 34
+            name_c = C_WHITE if is_done else (120, 125, 145)
+            s_name = f_name.render(ach["name"], True, name_c)
+            surf.blit(s_name, (text_x, card_r.y + 14))
+
+            desc_c = (175, 182, 205) if is_done else (80, 85, 105)
+            s_desc = f_desc.render(ach["desc"], True, desc_c)
+            surf.blit(s_desc, (text_x, card_r.y + 42))
+
+            # Reward pill in card
+            c_rew = ach.get("coins", 250)
+            s_rew = ach.get("shards", 5)
+
+            rew_x = text_x
+            rew_y = card_r.y + 76
+
+            # Coin reward
+            if self.ico_coin_sm:
+                surf.blit(self.ico_coin_sm, (rew_x, rew_y + 1))
+            c_txt_col = (255, 215, 80) if is_done else (115, 100, 50)
+            s_c_txt = f_rew.render(f"+{c_rew}", True, c_txt_col)
+            surf.blit(s_c_txt, (rew_x + 19, rew_y))
+            rew_x += 19 + s_c_txt.get_width() + 14
+
+            # Shard reward
+            if s_rew > 0:
+                if self.ico_shard_sm:
+                    surf.blit(self.ico_shard_sm, (rew_x, rew_y + 1))
+                s_txt_col = (110, 215, 255) if is_done else (50, 95, 115)
+                s_s_txt = f_rew.render(f"+{s_rew}", True, s_txt_col)
+                surf.blit(s_s_txt, (rew_x + 19, rew_y))
+
+            # Right state button / badge
+            btn_w, btn_h = 108, 34
+            btn_x = card_r.right - btn_w - 14
+            btn_y = card_r.centery - btn_h // 2
+            act_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
+
+            if is_done and not is_claimed:
+                # Active Claim button!
+                hov_b = act_rect.collidepoint(mx, my)
+                self._claim_btns.append((ach, act_rect))
+                b_pulse = abs(math.sin(t * 3.5))
+                b_bg = (int(80 + 35 * b_pulse), int(60 + 25 * b_pulse), 20) if hov_b else (55, 45, 18)
+                b_brd = (255, 230, 100) if hov_b else (210, 175, 50)
+                pygame.draw.rect(surf, b_bg, act_rect, border_radius=8)
+                pygame.draw.rect(surf, b_brd, act_rect, 2, border_radius=8)
+                s_btn = f_btn.render("🎁 ЗАБРАТЬ", True, (255, 240, 140))
+                surf.blit(s_btn, s_btn.get_rect(center=act_rect.center))
+            elif is_done and is_claimed:
+                # Claimed badge
+                pygame.draw.rect(surf, (20, 36, 26), act_rect, border_radius=8)
+                pygame.draw.rect(surf, (45, 110, 65), act_rect, 1, border_radius=8)
+                s_btn = f_btn.render("✓ ЗАБРАНО", True, (90, 210, 130))
+                surf.blit(s_btn, s_btn.get_rect(center=act_rect.center))
+            else:
+                # Locked badge
+                pygame.draw.rect(surf, (20, 24, 34), act_rect, border_radius=8)
+                pygame.draw.rect(surf, (40, 46, 62), act_rect, 1, border_radius=8)
+                s_btn = f_btn.render("🔒 ЗАКРЫТО", True, (95, 105, 125))
+                surf.blit(s_btn, s_btn.get_rect(center=act_rect.center))
 
         surf.set_clip(None)
 
-        # Scrollbar
-        if max_scroll > 0:
-            sb_x = SCREEN_W - 10
+        # ── Scrollbar ─────────────────────────────────────────────────────────
+        if self.max_scroll > 0:
+            sb_w = 6
+            sb_x = W - 12
             sb_top = CONTENT_TOP + 4
             sb_h = CONTENT_H - 8
-            pygame.draw.rect(surf, (40, 45, 60), (sb_x - 4, sb_top, 6, sb_h), border_radius=3)
-            thumb_h = max(30, int(sb_h * CONTENT_H / (total_h + 20)))
-            thumb_y = sb_top + int((sb_h - thumb_h) * self.scroll_y / max_scroll)
-            pygame.draw.rect(surf, (100, 120, 180), (sb_x - 4, thumb_y, 6, thumb_h), border_radius=3)
+            pygame.draw.rect(surf, (25, 30, 45), (sb_x, sb_top, sb_w, sb_h), border_radius=3)
+            thumb_h = max(36, int(sb_h * CONTENT_H / max(1, total_content_h)))
+            thumb_y = sb_top + int((sb_h - thumb_h) * (self.scroll_y / self.max_scroll))
+            pygame.draw.rect(surf, (70, 110, 180), (sb_x, thumb_y, sb_w, thumb_h), border_radius=3)
 
-        # Counter bottom-right
-        total_ach = len(ACHIEVEMENT_DEFS)
-        done_ach = len(unlocked)
-        cf3 = pygame.font.SysFont("segoeui", 18, bold=True)
-        cs3 = cf3.render(f"{done_ach}/{total_ach} unlocked", True,
-                         C_GOLD if done_ach == total_ach else (140, 145, 170))
-        surf.blit(cs3, cs3.get_rect(bottomright=(SCREEN_W - 16, SCREEN_H - 10)))
+        # ── Notification Toast Banner ─────────────────────────────────────────
+        if self.toast_t > 0:
+            t_alpha = min(255, int(self.toast_t * 300))
+            f_toast = pygame.font.SysFont("segoeui", 18, bold=True)
+            s_toast = f_toast.render(self.toast_msg, True, self.toast_col)
+            tw, th = s_toast.get_width() + 36, s_toast.get_height() + 18
+            tx = W // 2 - tw // 2
+            ty = H - th - 24
+            t_surf = pygame.Surface((tw, th), pygame.SRCALPHA)
+            pygame.draw.rect(t_surf, (15, 20, 32, min(235, t_alpha)), (0, 0, tw, th), border_radius=10)
+            pygame.draw.rect(t_surf, (*self.toast_col, t_alpha), (0, 0, tw, th), 2, border_radius=10)
+            s_toast.set_alpha(t_alpha)
+            t_surf.blit(s_toast, (18, 9))
+            surf.blit(t_surf, (tx, ty))
 
 
 # ── Global settings ──────────────────────────────────────────────────────────
@@ -7000,11 +7485,17 @@ def load_settings():
             for k in SETTINGS:
                 if k in data: SETTINGS[k] = data[k]
         except Exception: pass
+    try:
+        game_core.SETTINGS.update(SETTINGS)
+    except Exception: pass
 
 def save_settings():
     try:
         import json as _j
         _j.dump(SETTINGS, open(_SETTINGS_FILE,"w"))
+    except Exception: pass
+    try:
+        game_core.SETTINGS.update(SETTINGS)
     except Exception: pass
 
 load_settings()
@@ -7148,7 +7639,6 @@ class InterfaceSettingsScreen:
                         
             self._draw()
             pygame.display.flip()
-
     def _draw(self):
         surf = self.screen
         surf.fill((10, 15, 25))
@@ -7313,7 +7803,7 @@ class InterfaceSettingsScreen:
 # Profile Screen
 # ═══════════════════════════════════════════════════════════════════════════════
 class ProfileScreen:
-    """Displays per-player profile stats: W/L ratio, KD, games, waves, etc."""
+    """Displays per-player profile stats: W/L ratio, KD, games, waves, unlocked towers, tower usage."""
 
     _MODE_LABELS = {
         "easy":     ("Easy",     ( 60, 180, 100)),
@@ -7324,12 +7814,52 @@ class ProfileScreen:
         "sandbox":  ("Sandbox",  (120, 120, 140)),
     }
 
+    _RARITY_RANKS = {
+        "singularity": 6,
+        "early_access": 5,
+        "apex": 4,
+        "epic": 3,
+        "rare": 2,
+        "common": 1,
+        "starter": 0,
+    }
+
     def __init__(self, screen, save_data):
         self.screen      = screen
         self.save_data   = save_data
+        # ── Clean up 'test' mode from profile stats if present ────────────────
+        pst = self.save_data.get("profile_stats")
+        if isinstance(pst, dict):
+            changed = False
+            wbm = pst.get("wins_by_mode", {})
+            if "test" in wbm:
+                test_wins = wbm.pop("test", 0)
+                pst["total_wins"] = max(0, pst.get("total_wins", 0) - test_wins)
+                pst["total_games"] = max(0, pst.get("total_games", 0) - test_wins)
+                changed = True
+            lbm = pst.get("losses_by_mode", {})
+            if "test" in lbm:
+                test_losses = lbm.pop("test", 0)
+                pst["total_losses"] = max(0, pst.get("total_losses", 0) - test_losses)
+                pst["total_games"] = max(0, pst.get("total_games", 0) - test_losses)
+                changed = True
+            if "best_wave_test" in pst:
+                del pst["best_wave_test"]
+                changed = True
+            if "tower_games" not in pst:
+                pst["tower_games"] = {}
+                tot_g = pst.get("total_games", 0)
+                if tot_g > 0:
+                    for t in self.save_data.get("loadout", []):
+                        if t:
+                            pst["tower_games"][t] = tot_g
+                changed = True
+            if changed:
+                write_save(self.save_data)
         self.running     = True
         self.t           = 0.0
-        self.scroll      = 0
+        self.scroll      = 0.0
+        self._max_scroll = 0
         cx = SCREEN_W // 2
         self._cx         = cx
         self.btn_back    = pygame.Rect(cx - 110, SCREEN_H - 68, 220, 46)
@@ -7337,10 +7867,28 @@ class ProfileScreen:
         self._nick_editing  = False
         self._nick_input    = save_data.get("player_nick", "Player")
         self._nick_cursor_t = 0.0   # blink timer
+        # tower filters and sorting
+        self.filter_mode = "all"   # "all", "unlocked", "locked"
+        self.sort_mode   = "games" # "games", "rarity", "name"
+        self._filter_rects = {}
+        self._sort_rect = pygame.Rect(0, 0, 0, 0)
 
     def _nick_rect(self, cy):
         cx = self._cx
-        return pygame.Rect(cx - 160, cy + 118, 320, 38)
+        return pygame.Rect(cx - 160, cy + 115, 320, 36)
+
+    def _get_effective_owned(self):
+        owned = list(self.save_data.get("owned_units", ["Assassin"]))
+        if self.save_data.get("frostcelerator_unlocked"):
+            if "Frostcelerator" not in owned: owned.append("Frostcelerator")
+        if "Cowboy" not in owned and "Golden Cowboy" not in owned: owned.append("Cowboy")
+        owned = ["Cowboy" if u == "Golden Cowboy" else u for u in owned]
+        owned = ["Red Ball" if u == "Felyne" else u for u in owned]
+        if "Twitgunner" not in owned: owned.append("Twitgunner")
+        if self.save_data.get("early_access_purchased"):
+            if "The Strongest" not in owned: owned.append("The Strongest")
+            if "Noiseform" not in owned: owned.append("Noiseform")
+        return set(u for u in owned if u != "hacker_laser_effects_test")
 
     def run(self):
         clock = pygame.time.Clock()
@@ -7354,7 +7902,6 @@ class ProfileScreen:
                 if ev.type == pygame.KEYDOWN:
                     if self._nick_editing:
                         if ev.key == pygame.K_RETURN or ev.key == pygame.K_ESCAPE:
-                            # save nick
                             nick = self._nick_input.strip() or "Player"
                             self._nick_input = nick
                             self.save_data["player_nick"] = nick
@@ -7369,36 +7916,52 @@ class ProfileScreen:
                     else:
                         if ev.key == pygame.K_ESCAPE:
                             self.running = False
-                if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
-                    cy = 120 - self.scroll
-                    nr = self._nick_rect(cy)
-                    if nr.collidepoint(ev.pos):
-                        self._nick_editing = True
-                        self._nick_cursor_t = 0.0
-                    elif self.btn_back.collidepoint(ev.pos):
-                        if self._nick_editing:
-                            nick = self._nick_input.strip() or "Player"
-                            self._nick_input = nick
-                            self.save_data["player_nick"] = nick
-                            from game_core import write_save as _ws
-                            _ws(self.save_data)
-                            self._nick_editing = False
+                if ev.type == pygame.MOUSEBUTTONDOWN:
+                    if ev.button == 1:
+                        cy = 110 - int(self.scroll)
+                        nr = self._nick_rect(cy)
+                        if nr.collidepoint(ev.pos):
+                            self._nick_editing = True
+                            self._nick_cursor_t = 0.0
+                        elif self.btn_back.collidepoint(ev.pos):
+                            if self._nick_editing:
+                                nick = self._nick_input.strip() or "Player"
+                                self._nick_input = nick
+                                self.save_data["player_nick"] = nick
+                                from game_core import write_save as _ws
+                                _ws(self.save_data)
+                                self._nick_editing = False
+                            else:
+                                self.running = False
                         else:
-                            self.running = False
-                    else:
-                        if self._nick_editing:
-                            nick = self._nick_input.strip() or "Player"
-                            self._nick_input = nick
-                            self.save_data["player_nick"] = nick
-                            from game_core import write_save as _ws
-                            _ws(self.save_data)
-                            self._nick_editing = False
+                            clicked_filter = False
+                            for f_mode, f_rect in self._filter_rects.items():
+                                if f_rect.collidepoint(ev.pos):
+                                    self.filter_mode = f_mode
+                                    clicked_filter = True
+                                    break
+                            if not clicked_filter and self._sort_rect.collidepoint(ev.pos):
+                                sort_modes = ["games", "rarity", "name"]
+                                next_idx = (sort_modes.index(self.sort_mode) + 1) % len(sort_modes)
+                                self.sort_mode = sort_modes[next_idx]
+                            elif self._nick_editing:
+                                nick = self._nick_input.strip() or "Player"
+                                self._nick_input = nick
+                                self.save_data["player_nick"] = nick
+                                from game_core import write_save as _ws
+                                _ws(self.save_data)
+                                self._nick_editing = False
+                    elif ev.button == 4:
+                        if not self._nick_editing:
+                            self.scroll = max(0.0, self.scroll - 60)
+                    elif ev.button == 5:
+                        if not self._nick_editing:
+                            self.scroll = min(float(self._max_scroll), self.scroll + 60)
                 if ev.type == pygame.MOUSEWHEEL:
                     if not self._nick_editing:
-                        self.scroll = max(0, self.scroll - ev.y * 30)
+                        self.scroll = max(0.0, min(float(self._max_scroll), self.scroll - ev.y * 60))
             self._draw()
             pygame.display.flip()
-
     def _draw(self):
         surf = self.screen
         mx, my = pygame.mouse.get_pos()
@@ -7416,74 +7979,59 @@ class ProfileScreen:
         kd_approx = f"{kills}" if kills else "—"
         avg_waves = f"{waves//max(1,games)}" if games else "—"
 
-        # ── Header ────────────────────────────────────────────────────────────
-        hdr = pygame.Surface((SCREEN_W, 78), pygame.SRCALPHA)
-        hdr.fill((8, 10, 20, 220))
-        surf.blit(hdr, (0, 0))
-        pygame.draw.line(surf, (45, 50, 75), (0, 78), (SCREEN_W, 78), 1)
-        hf  = pygame.font.SysFont("segoeui", 38, bold=True)
-        hs  = hf.render("PROFILE", True, (200, 215, 255))
-        surf.blit(hs, hs.get_rect(center=(self._cx, 39)))
-
         cx = self._cx
-        cy = 120 - self.scroll
+        cy = 110 - int(self.scroll)
 
         # ── Avatar circle ─────────────────────────────────────────────────────
-        pygame.draw.circle(surf, (25, 30, 55), (cx, cy + 60), 56)
-        pygame.draw.circle(surf, (70, 90, 160), (cx, cy + 60), 56, 2)
-        af = pygame.font.SysFont("segoeui", 42, bold=True)
+        pygame.draw.circle(surf, (25, 30, 55), (cx, cy + 50), 48)
+        pygame.draw.circle(surf, (70, 90, 160), (cx, cy + 50), 48, 2)
+        af = pygame.font.SysFont("segoeui", 36, bold=True)
         _nick_for_av = self.save_data.get("player_nick", "Player")
         av = af.render(_nick_for_av[0].upper() if _nick_for_av else "?", True, (140, 160, 220))
-        surf.blit(av, av.get_rect(center=(cx, cy + 60)))
+        surf.blit(av, av.get_rect(center=(cx, cy + 50)))
 
         # ── Player nick (editable) ──────────────────────────────────────────
         nick_display = self._nick_input if self._nick_editing else self.save_data.get("player_nick", "Player")
         nr = self._nick_rect(cy)
         if self._nick_editing:
-            # input box
             pygame.draw.rect(surf, (18, 22, 42), nr, border_radius=8)
             pygame.draw.rect(surf, (80, 130, 255), nr, 2, border_radius=8)
-            nf2 = pygame.font.SysFont("segoeui", 24, bold=True)
-            # cursor blink
+            nf2 = pygame.font.SysFont("segoeui", 22, bold=True)
             show_cur = int(self._nick_cursor_t * 2) % 2 == 0
             disp_text = nick_display + ("|" if show_cur else " ")
             ns2 = nf2.render(disp_text, True, (210, 230, 255))
             surf.blit(ns2, ns2.get_rect(center=nr.center))
-            # hint
-            hf2 = pygame.font.SysFont("segoeui", 13)
+            hf2 = pygame.font.SysFont("segoeui", 12)
             hs2 = hf2.render("Enter to confirm", True, (60, 80, 140))
-            surf.blit(hs2, hs2.get_rect(center=(cx, nr.bottom + 10)))
+            surf.blit(hs2, hs2.get_rect(center=(cx, nr.bottom + 8)))
         else:
-            nf = pygame.font.SysFont("segoeui", 26, bold=True)
+            nf = pygame.font.SysFont("segoeui", 24, bold=True)
             ns = nf.render(nick_display, True, (210, 220, 255))
-            surf.blit(ns, ns.get_rect(center=(cx, cy + 137)))
-            # pencil edit hint on hover
+            surf.blit(ns, ns.get_rect(center=(cx, cy + 120)))
             hov_nick = nr.collidepoint(mx, my)
             if hov_nick:
                 pygame.draw.rect(surf, (30, 36, 60), nr, border_radius=8)
                 pygame.draw.rect(surf, (50, 70, 120), nr, 1, border_radius=8)
-                surf.blit(ns, ns.get_rect(center=(cx, cy + 137)))
-                ef = pygame.font.SysFont("segoeui", 13)
+                surf.blit(ns, ns.get_rect(center=(cx, cy + 120)))
+                ef = pygame.font.SysFont("segoeui", 12)
                 es = ef.render("✏  Edit name", True, (80, 110, 200))
-                surf.blit(es, es.get_rect(center=(cx, nr.bottom + 10)))
+                surf.blit(es, es.get_rect(center=(cx, nr.bottom + 8)))
 
-        lf  = pygame.font.SysFont("segoeui", 16)
-        ls  = lf.render(f"{games} games played", True, (100, 115, 160))
-        surf.blit(ls, ls.get_rect(center=(cx, cy + 158)))
+        lf = pygame.font.SysFont("segoeui", 15)
+        ls = lf.render(f"{games} matches played", True, (100, 120, 165))
+        surf.blit(ls, ls.get_rect(center=(cx, cy + 144)))
 
         # ── Big W/L ratio card ────────────────────────────────────────────────
-        card_y = cy + 188
-        CARD_W, CARD_H = 860, 110
-        card_rect = pygame.Rect(cx - CARD_W//2, card_y, CARD_W, CARD_H)
-        cs = pygame.Surface((CARD_W, CARD_H), pygame.SRCALPHA)
-        pygame.draw.rect(cs, (12, 14, 28, 240), (0, 0, CARD_W, CARD_H), border_radius=16)
+        CARD_W = 880
+        card_y = cy + 170
+        card_rect = pygame.Rect(cx - CARD_W//2, card_y, CARD_W, 94)
+        cs = pygame.Surface((CARD_W, 94), pygame.SRCALPHA)
+        pygame.draw.rect(cs, (12, 14, 28, 235), (0, 0, CARD_W, 94), border_radius=14)
         surf.blit(cs, card_rect.topleft)
-        pygame.draw.rect(surf, (40, 48, 80), card_rect, 1, border_radius=16)
+        pygame.draw.rect(surf, (40, 48, 80), card_rect, 1, border_radius=14)
 
-        # W/L big display
-        wl_f  = pygame.font.SysFont("consolas", 52, bold=True)
-        wl_lbl = pygame.font.SysFont("segoeui", 14, bold=True)
-
+        wl_f   = pygame.font.SysFont("consolas", 42, bold=True)
+        wl_lbl = pygame.font.SysFont("segoeui", 13, bold=True)
         col_w  = CARD_W // 4
         stats_row = [
             ("W / L",       wl_ratio,  (100, 210, 100) if wins >= losses else (210, 100, 100)),
@@ -7494,51 +8042,52 @@ class ProfileScreen:
         for si, (label, val, col) in enumerate(stats_row):
             sx = card_rect.x + col_w * si + col_w // 2
             vs = wl_f.render(val, True, col)
-            surf.blit(vs, vs.get_rect(center=(sx, card_rect.y + 54)))
+            surf.blit(vs, vs.get_rect(center=(sx, card_rect.y + 45)))
             lb = wl_lbl.render(label, True, (80, 90, 130))
-            surf.blit(lb, lb.get_rect(center=(sx, card_rect.y + 88)))
+            surf.blit(lb, lb.get_rect(center=(sx, card_rect.y + 75)))
 
         # ── Second stats row ──────────────────────────────────────────────────
-        row2_y = card_y + CARD_H + 16
+        row2_y = card_y + 94 + 14
         ROW2 = [
-            ("TOTAL KILLS",   kd_approx,  (255, 180, 40),  240),
-            ("AVG WAVES",     avg_waves,  (120, 200, 255), 240),
-            ("TOTAL WAVES",   str(waves), (160, 140, 255), 240),
+            ("TOTAL KILLS",   kd_approx,  (255, 180, 40)),
+            ("AVG WAVES",     avg_waves,  (120, 200, 255)),
+            ("TOTAL WAVES",   str(waves), (160, 140, 255)),
         ]
         r2w = (CARD_W - 24) // 3
-        for ri, (label, val, col, cw) in enumerate(ROW2):
+        for ri, (label, val, col) in enumerate(ROW2):
             rx = cx - CARD_W//2 + ri * (r2w + 12)
-            r2 = pygame.Rect(rx, row2_y, r2w, 88)
-            rs = pygame.Surface((r2w, 88), pygame.SRCALPHA)
-            pygame.draw.rect(rs, (12, 14, 28, 230), (0, 0, r2w, 88), border_radius=12)
+            r2 = pygame.Rect(rx, row2_y, r2w, 76)
+            rs = pygame.Surface((r2w, 76), pygame.SRCALPHA)
+            pygame.draw.rect(rs, (12, 14, 28, 230), (0, 0, r2w, 76), border_radius=12)
             surf.blit(rs, r2.topleft)
             pygame.draw.rect(surf, (40, 48, 80), r2, 1, border_radius=12)
-            vf2 = pygame.font.SysFont("consolas", 30, bold=True)
+            vf2 = pygame.font.SysFont("consolas", 26, bold=True)
             vs2 = vf2.render(val, True, col)
-            surf.blit(vs2, vs2.get_rect(center=(r2.centerx, r2.y + 38)))
-            lb2 = pygame.font.SysFont("segoeui", 13, bold=True).render(label, True, (70, 80, 120))
-            surf.blit(lb2, lb2.get_rect(center=(r2.centerx, r2.y + 68)))
+            surf.blit(vs2, vs2.get_rect(center=(r2.centerx, r2.y + 32)))
+            lb2 = pygame.font.SysFont("segoeui", 12, bold=True).render(label, True, (70, 80, 120))
+            surf.blit(lb2, lb2.get_rect(center=(r2.centerx, r2.y + 58)))
 
         # ── Per-mode breakdown ────────────────────────────────────────────────
-        sect_y = row2_y + 88 + 28
-        sf  = pygame.font.SysFont("segoeui", 16, bold=True)
+        sect_y = row2_y + 76 + 22
+        sf  = pygame.font.SysFont("segoeui", 15, bold=True)
         sec = sf.render("STATS BY MODE", True, (100, 120, 200))
         surf.blit(sec, (cx - CARD_W//2, sect_y))
         pygame.draw.line(surf, (40, 55, 100),
-                         (cx - CARD_W//2, sect_y + 22),
-                         (cx + CARD_W//2, sect_y + 22), 1)
+                         (cx - CARD_W//2, sect_y + 20),
+                         (cx + CARD_W//2, sect_y + 20), 1)
 
-        wins_by_mode   = pst.get("wins_by_mode",   {})
-        losses_by_mode = pst.get("losses_by_mode", {})
+        wins_by_mode   = {k: v for k, v in pst.get("wins_by_mode", {}).items() if k != "test"}
+        losses_by_mode = {k: v for k, v in pst.get("losses_by_mode", {}).items() if k != "test"}
         all_modes = sorted(set(list(wins_by_mode.keys()) + list(losses_by_mode.keys())))
-
+        modes_bottom = sect_y + 26
         if not all_modes:
-            nof = pygame.font.SysFont("segoeui", 18)
+            nof = pygame.font.SysFont("segoeui", 16)
             nos = nof.render("No games played yet. Go win some!", True, (70, 80, 120))
-            surf.blit(nos, nos.get_rect(center=(cx, sect_y + 60)))
+            surf.blit(nos, nos.get_rect(center=(cx, sect_y + 50)))
+            modes_bottom = sect_y + 70
         else:
             tile_w = min(260, (CARD_W - (len(all_modes)-1)*12) // max(1,len(all_modes)))
-            tile_h = 74
+            tile_h = 68
             tile_x0 = cx - (len(all_modes) * tile_w + (len(all_modes)-1)*12) // 2
             for mi, mode_key in enumerate(all_modes):
                 lbl, acc = self._MODE_LABELS.get(mode_key, (mode_key.title(), (140,140,160)))
@@ -7547,23 +8096,273 @@ class ProfileScreen:
                 mg = mw + ml
                 mr = f"{mw}W / {ml}L"
                 tx = tile_x0 + mi * (tile_w + 12)
-                ty = sect_y + 32
+                ty = sect_y + 26
                 tile = pygame.Rect(tx, ty, tile_w, tile_h)
                 ts2 = pygame.Surface((tile_w, tile_h), pygame.SRCALPHA)
                 pygame.draw.rect(ts2, (12, 14, 28, 230), (0, 0, tile_w, tile_h), border_radius=12)
                 surf.blit(ts2, tile.topleft)
                 pygame.draw.rect(surf, (*acc, 180), tile, 1, border_radius=12)
-                mf1 = pygame.font.SysFont("segoeui", 16, bold=True)
-                mf2 = pygame.font.SysFont("consolas", 18, bold=True)
-                mf3 = pygame.font.SysFont("segoeui", 12)
+                mf1 = pygame.font.SysFont("segoeui", 15, bold=True)
+                mf2 = pygame.font.SysFont("consolas", 17, bold=True)
+                mf3 = pygame.font.SysFont("segoeui", 11)
                 surf.blit(mf1.render(lbl, True, acc),
-                          mf1.render(lbl, True, acc).get_rect(midleft=(tile.x + 12, tile.y + 20)))
+                          mf1.render(lbl, True, acc).get_rect(midleft=(tile.x + 12, tile.y + 18)))
                 wl_s = mf2.render(mr, True, (200, 210, 230))
-                surf.blit(wl_s, wl_s.get_rect(midleft=(tile.x + 12, tile.y + 48)))
+                surf.blit(wl_s, wl_s.get_rect(midleft=(tile.x + 12, tile.y + 44)))
                 gm_s = mf3.render(f"{mg} games", True, (70, 80, 120))
-                surf.blit(gm_s, gm_s.get_rect(midright=(tile.right - 10, tile.y + 64)))
+                surf.blit(gm_s, gm_s.get_rect(midright=(tile.right - 10, tile.y + 58)))
+            modes_bottom = sect_y + 26 + tile_h
 
-        # ── Back button ───────────────────────────────────────────────────────
+        # ══════════════════════════════════════════════════════════════════════════
+        # TOWERS & BATTLE STATS SECTION
+        # ══════════════════════════════════════════════════════════════════════════
+        tower_sect_y = modes_bottom + 28
+        sec_t_f = pygame.font.SysFont("segoeui", 18, bold=True)
+        sec_t_s = sec_t_f.render("TOWERS COLLECTION & USAGE", True, (130, 190, 255))
+        surf.blit(sec_t_s, (cx - CARD_W//2, tower_sect_y))
+
+        owned_units = self._get_effective_owned()
+        pool_units = [u for u in ALL_UNITS_POOL if u["name"] != "hacker_laser_effects_test"]
+        total_towers = len(pool_units)
+        owned_count = sum(1 for u in pool_units if u["name"] in owned_units)
+        locked_count = total_towers - owned_count
+        tower_games = pst.get("tower_games", {})
+        total_tower_runs = sum(tower_games.values())
+
+        # Most played tower
+        most_played = None
+        max_g = -1
+        for u in pool_units:
+            g_cnt = tower_games.get(u["name"], 0)
+            if g_cnt > max_g:
+                max_g = g_cnt
+                most_played = (u["name"], g_cnt)
+
+        # Badges on top-right of section header
+        badge_f = pygame.font.SysFont("segoeui", 12, bold=True)
+        pct_owned = int(owned_count / max(1, total_towers) * 100)
+        badge_text = f"{owned_count}/{total_towers} UNLOCKED ({pct_owned}%)"
+        bdg_col = (50, 220, 130) if owned_count == total_towers else (80, 190, 255)
+        bdg_s = badge_f.render(badge_text, True, bdg_col)
+        bdg_r = bdg_s.get_rect(midright=(cx + CARD_W//2, tower_sect_y + 12))
+        bdg_bg = pygame.Rect(bdg_r.x - 8, bdg_r.y - 3, bdg_r.w + 16, bdg_r.h + 6)
+        pygame.draw.rect(surf, (15, 30, 25) if owned_count == total_towers else (15, 25, 45), bdg_bg, border_radius=6)
+        pygame.draw.rect(surf, (*bdg_col, 160), bdg_bg, 1, border_radius=6)
+        surf.blit(bdg_s, bdg_r)
+
+        pygame.draw.line(surf, (40, 55, 100),
+                         (cx - CARD_W//2, tower_sect_y + 28),
+                         (cx + CARD_W//2, tower_sect_y + 28), 1)
+
+        # Mini summary pills
+        pills_y = tower_sect_y + 36
+        pill_h = 36
+        pill_w = (CARD_W - 24) // 3
+        pills = [
+            ("UNLOCKED TOWERS", f"{owned_count} / {total_towers}", (80, 220, 160)),
+            ("MOST PLAYED", f"{most_played[0]} ({most_played[1]}g)" if most_played and most_played[1] > 0 else "None", (255, 205, 70)),
+            ("TOTAL TOWER RUNS", f"{total_tower_runs} matches", (140, 180, 255)),
+        ]
+        for pi, (plbl, pval, pcol) in enumerate(pills):
+            px = cx - CARD_W//2 + pi * (pill_w + 12)
+            pr = pygame.Rect(px, pills_y, pill_w, pill_h)
+            psurf = pygame.Surface((pill_w, pill_h), pygame.SRCALPHA)
+            pygame.draw.rect(psurf, (14, 18, 34, 220), (0, 0, pill_w, pill_h), border_radius=8)
+            surf.blit(psurf, pr.topleft)
+            pygame.draw.rect(surf, (40, 50, 85), pr, 1, border_radius=8)
+            pl1 = pygame.font.SysFont("segoeui", 11, bold=True).render(plbl, True, (80, 100, 140))
+            surf.blit(pl1, (pr.x + 10, pr.y + 10))
+            pv1 = pygame.font.SysFont("consolas", 14, bold=True).render(pval, True, pcol)
+            surf.blit(pv1, pv1.get_rect(midright=(pr.right - 10, pr.centery)))
+
+        # Controls bar: Filter Tabs & Sort
+        ctrl_y = pills_y + pill_h + 12
+        tab_f = pygame.font.SysFont("segoeui", 12, bold=True)
+        tabs = [
+            ("all", f"ALL ({total_towers})"),
+            ("unlocked", f"UNLOCKED ({owned_count})"),
+            ("locked", f"LOCKED ({locked_count})"),
+        ]
+        self._filter_rects = {}
+        tab_x = cx - CARD_W//2
+        for t_key, t_label in tabs:
+            ts = tab_f.render(t_label, True, (230, 240, 255) if self.filter_mode == t_key else (120, 135, 170))
+            tw = ts.get_width() + 20
+            tr = pygame.Rect(tab_x, ctrl_y, tw, 28)
+            self._filter_rects[t_key] = tr
+            is_active = (self.filter_mode == t_key)
+            is_hov = tr.collidepoint(mx, my)
+            tbg = (30, 55, 95) if is_active else ((22, 28, 48) if is_hov else (12, 16, 30))
+            tbd = (80, 160, 255) if is_active else ((60, 85, 130) if is_hov else (35, 45, 75))
+            pygame.draw.rect(surf, tbg, tr, border_radius=6)
+            pygame.draw.rect(surf, tbd, tr, 1, border_radius=6)
+            surf.blit(ts, ts.get_rect(center=tr.center))
+            tab_x += tw + 8
+
+        # Sort button
+        sort_labels = {
+            "games": "GAMES PLAYED ▼",
+            "rarity": "RARITY ▼",
+            "name": "NAME A-Z ▼",
+        }
+        sort_lbl = f"SORT: {sort_labels.get(self.sort_mode, 'GAMES ▼')}"
+        sort_s = tab_f.render(sort_lbl, True, (255, 215, 90))
+        sort_w = sort_s.get_width() + 22
+        sort_r = pygame.Rect(cx + CARD_W//2 - sort_w, ctrl_y, sort_w, 28)
+        self._sort_rect = sort_r
+        is_shov = sort_r.collidepoint(mx, my)
+        sbg = (40, 36, 18) if is_shov else (26, 23, 12)
+        sbd = (220, 180, 60) if is_shov else (150, 120, 40)
+        pygame.draw.rect(surf, sbg, sort_r, border_radius=6)
+        pygame.draw.rect(surf, sbd, sort_r, 1, border_radius=6)
+        surf.blit(sort_s, sort_s.get_rect(center=sort_r.center))
+
+        # Filter & sort unit list
+        filtered = []
+        for u in pool_units:
+            uname = u["name"]
+            is_owned = uname in owned_units
+            if self.filter_mode == "unlocked" and not is_owned: continue
+            if self.filter_mode == "locked" and is_owned: continue
+            g_cnt = tower_games.get(uname, 0)
+            filtered.append((u, is_owned, g_cnt))
+
+        if self.sort_mode == "games":
+            filtered.sort(key=lambda item: (-item[2], -self._RARITY_RANKS.get(item[0]["rarity"], 0), item[0]["name"]))
+        elif self.sort_mode == "rarity":
+            filtered.sort(key=lambda item: (-self._RARITY_RANKS.get(item[0]["rarity"], 0), -item[2], item[0]["name"]))
+        elif self.sort_mode == "name":
+            filtered.sort(key=lambda item: item[0]["name"])
+
+        # Render Grid
+        grid_y = ctrl_y + 36
+        card_cols = 4
+        gap_x = 12
+        gap_y = 10
+        card_w = (CARD_W - (card_cols - 1) * gap_x) // card_cols
+        card_h = 92
+
+        last_bottom = grid_y
+        if not filtered:
+            msg_f = pygame.font.SysFont("segoeui", 16)
+            msg_s = msg_f.render("No towers in this category.", True, (100, 120, 160))
+            surf.blit(msg_s, msg_s.get_rect(center=(cx, grid_y + 40)))
+            last_bottom = grid_y + 80
+        else:
+            for idx, (u, is_owned, g_cnt) in enumerate(filtered):
+                ci = idx % card_cols
+                ri = idx // card_cols
+                card_x = cx - CARD_W//2 + ci * (card_w + gap_x)
+                card_y = grid_y + ri * (card_h + gap_y)
+                card_r = pygame.Rect(card_x, card_y, card_w, card_h)
+                last_bottom = max(last_bottom, card_r.bottom)
+
+                if card_r.bottom < 80 or card_r.top > SCREEN_H:
+                    continue
+
+                is_hov = card_r.collidepoint(mx, my)
+                rarity = u["rarity"]
+                rd = RARITY_DATA.get(rarity, RARITY_DATA["starter"])
+
+                # Card background
+                card_surf = pygame.Surface((card_w, card_h), pygame.SRCALPHA)
+                if is_owned:
+                    cbg = (20, 26, 46, 240) if is_hov else (14, 18, 32, 230)
+                else:
+                    cbg = (16, 16, 24, 200) if is_hov else (10, 11, 18, 180)
+                pygame.draw.rect(card_surf, cbg, (0, 0, card_w, card_h), border_radius=10)
+                surf.blit(card_surf, card_r.topleft)
+
+                # Card border
+                if is_hov:
+                    cbd = (100, 200, 255) if is_owned else (120, 100, 100)
+                    pygame.draw.rect(surf, cbd, card_r, 2, border_radius=10)
+                else:
+                    cbd = (*rd.get("border", (60, 80, 120))[:3], 150) if is_owned else (40, 42, 55)
+                    pygame.draw.rect(surf, cbd, card_r, 1, border_radius=10)
+
+                # Icon container
+                icon_box = pygame.Rect(card_r.x + 8, card_r.y + 10, 48, 72)
+                ib_surf = pygame.Surface((icon_box.w, icon_box.h), pygame.SRCALPHA)
+                pygame.draw.rect(ib_surf, (8, 10, 18, 220), (0, 0, icon_box.w, icon_box.h), border_radius=8)
+                surf.blit(ib_surf, icon_box.topleft)
+                icon_bd_col = rd.get("border", (60, 80, 120)) if is_owned else (45, 45, 55)
+                pygame.draw.rect(surf, icon_bd_col, icon_box, 1, border_radius=8)
+
+                # Draw tower icon
+                icon_surf = pygame.Surface((44, 44), pygame.SRCALPHA)
+                try:
+                    _draw_tower_icon(icon_surf, u["name"], 22, 22, self.t if is_owned else 0.0, size=21)
+                except:
+                    pass
+                if not is_owned:
+                    dim = pygame.Surface((44, 44), pygame.SRCALPHA)
+                    dim.fill((0, 0, 0, 140))
+                    icon_surf.blit(dim, (0, 0))
+                surf.blit(icon_surf, (icon_box.x + 2, icon_box.y + 14))
+
+                # Text area
+                tx = card_r.x + 64
+                uname_f = pygame.font.SysFont("segoeui", 13, bold=True)
+                disp_name = u["name"]
+                if uname_f.size(disp_name)[0] > 138:
+                    uname_f = pygame.font.SysFont("segoeui", 11, bold=True)
+                ncol = (235, 245, 255) if is_owned else (130, 135, 145)
+                surf.blit(uname_f.render(disp_name, True, ncol), (tx, card_r.y + 10))
+
+                # Rarity badge
+                r_lbl = rd.get("label", rarity.upper())
+                r_col = rd.get("color", (140, 140, 160))
+                rf = pygame.font.SysFont("segoeui", 10, bold=True)
+                rs = rf.render(r_lbl, True, r_col)
+                surf.blit(rs, (tx, card_r.y + 32))
+
+                # Games & Status
+                gf = pygame.font.SysFont("segoeui", 11, bold=True)
+                if is_owned:
+                    if g_cnt > 0:
+                        g_str = f"{g_cnt} games"
+                        g_col = (255, 215, 80) if g_cnt >= 5 else (100, 230, 170)
+                    else:
+                        g_str = "0 games"
+                        g_col = (110, 125, 155)
+                    surf.blit(gf.render(g_str, True, g_col), (tx, card_r.y + 52))
+
+                    # Status tag: OPEN
+                    st_f = pygame.font.SysFont("segoeui", 9, bold=True)
+                    st_s = st_f.render("OPEN", True, (60, 215, 130))
+                    st_r = st_s.get_rect(topleft=(tx, card_r.y + 71))
+                    pygame.draw.rect(surf, (15, 45, 25), (st_r.x - 3, st_r.y - 1, st_r.w + 6, st_r.h + 2), border_radius=3)
+                    pygame.draw.rect(surf, (50, 180, 110), (st_r.x - 3, st_r.y - 1, st_r.w + 6, st_r.h + 2), 1, border_radius=3)
+                    surf.blit(st_s, st_r)
+                else:
+                    surf.blit(gf.render("0 games", True, (110, 110, 125)), (tx, card_r.y + 52))
+                    st_f = pygame.font.SysFont("segoeui", 9, bold=True)
+                    st_s = st_f.render("LOCKED", True, (215, 85, 85))
+                    st_r = st_s.get_rect(topleft=(tx, card_r.y + 71))
+                    pygame.draw.rect(surf, (45, 20, 20), (st_r.x - 3, st_r.y - 1, st_r.w + 6, st_r.h + 2), border_radius=3)
+                    pygame.draw.rect(surf, (180, 60, 60), (st_r.x - 3, st_r.y - 1, st_r.w + 6, st_r.h + 2), 1, border_radius=3)
+                    surf.blit(st_s, st_r)
+
+        # Compute max scroll
+        total_content_h = last_bottom + 90 - (110 - int(self.scroll))
+        self._max_scroll = max(0, total_content_h - (SCREEN_H - 120))
+
+        # ── Fixed Top Bar ─────────────────────────────────────────────────────
+        hdr = pygame.Surface((SCREEN_W, 78))
+        hdr.fill((9, 11, 22))
+        surf.blit(hdr, (0, 0))
+        pygame.draw.line(surf, (45, 50, 75), (0, 78), (SCREEN_W, 78), 1)
+        hf  = pygame.font.SysFont("segoeui", 38, bold=True)
+        hs  = hf.render("PROFILE", True, (200, 215, 255))
+        surf.blit(hs, hs.get_rect(center=(self._cx, 39)))
+
+        # ── Fixed Bottom Bar ──────────────────────────────────────────────────
+        bbar = pygame.Surface((SCREEN_W, 80))
+        bbar.fill((9, 11, 22))
+        surf.blit(bbar, (0, SCREEN_H - 80))
+        pygame.draw.line(surf, (45, 50, 75), (0, SCREEN_H - 80), (SCREEN_W, SCREEN_H - 80), 1)
+
         hov  = self.btn_back.collidepoint(mx, my)
         bb   = pygame.Surface((self.btn_back.w, self.btn_back.h), pygame.SRCALPHA)
         pygame.draw.rect(bb, (70, 30, 30, 220) if hov else (40, 22, 22, 200),
@@ -7574,6 +8373,15 @@ class ProfileScreen:
         bk_f = pygame.font.SysFont("segoeui", 22, bold=True)
         bk_s = bk_f.render("← BACK", True, (240, 200, 200) if hov else (180, 150, 150))
         surf.blit(bk_s, bk_s.get_rect(center=self.btn_back.center))
+
+        # Scrollbar
+        if self._max_scroll > 0:
+            track_h = SCREEN_H - 180
+            thumb_h = max(30, int(track_h * (SCREEN_H / max(1, total_content_h))))
+            thumb_y = 85 + int((self.scroll / self._max_scroll) * (track_h - thumb_h))
+            sb_x = SCREEN_W - 14
+            pygame.draw.rect(surf, (20, 25, 45), (sb_x, 85, 6, track_h), border_radius=3)
+            pygame.draw.rect(surf, (80, 130, 200), (sb_x, thumb_y, 6, thumb_h), border_radius=3)
 
 
 class SettingsScreen:
@@ -7610,8 +8418,8 @@ class SettingsScreen:
         # ── Sliders (AUDIO tab) ───────────────────────────────────────────────
         SL_X = self._card.x + 72
         SL_W = self._card.w - 144
-        self._bar_music = pygame.Rect(SL_X, self._card.y + 108, SL_W, 12)
-        self._bar_sfx   = pygame.Rect(SL_X, self._card.y + 228, SL_W, 12)
+        self._bar_music = pygame.Rect(SL_X, self._card.y + 40, SL_W, 12)
+        self._bar_sfx   = pygame.Rect(SL_X, self._card.y + 82, SL_W, 12)
 
         # ── GRAPHICS toggles ──────────────────────────────────────────────────
         self._gfx_toggles = [
@@ -7636,7 +8444,6 @@ class SettingsScreen:
             ("auto_skip",            _t("settings.auto_skip")),
             ("sell_confirm",         _t("settings.sell_confirm")),
             ("fast_forward_default", _t("settings.fast_forward")),
-            ("wave_navigator",       _t("settings.wave_navigator")),
             ("linux_mode",           _t("settings.linux_mode")),
         ]
         self._toggle_rects_cache = {}
@@ -7708,7 +8515,6 @@ class SettingsScreen:
             ("auto_skip",            _t("settings.auto_skip")),
             ("sell_confirm",         _t("settings.sell_confirm")),
             ("fast_forward_default", _t("settings.fast_forward")),
-            ("wave_navigator",       _t("settings.wave_navigator")),
             ("linux_mode",           _t("settings.linux_mode")),
         ]
 
@@ -7734,7 +8540,7 @@ class SettingsScreen:
         TW = (usable_w - 24) // 2
         TH = 46; GAP = 10
         CX = self._card.x + 72
-        start_y = (self._bar_sfx.bottom + 52) if tab_i == 0 else (self._card.y + 54)
+        start_y = (self._card.y + 160) if tab_i == 0 else (self._card.y + 54)
         rects = []
         for i, (k, lbl) in enumerate(keys):
             col = i % 2; row = i // 2
@@ -8063,23 +8869,20 @@ class SettingsScreen:
 
         # ══ AUDIO tab ═════════════════════════════════════════════════════════
         if self._tab == 0:
-            acc = _TAB_ACCENTS[0]
+            acc = (160, 100, 255)   # violet for both sliders
 
-            # Music
-            self._draw_section_header(surf, _t("settings.music_volume").upper(), acc, lx, card.y + 30, w_inner)
+            # Music slider (no section header)
             self._draw_slider(surf, self._bar_music,
                               SETTINGS["music_volume"], SETTINGS["music_muted"],
                               _t("settings.music_volume"), acc)
 
-            # SFX
-            sfx_acc = _TAB_ACCENTS[1]
-            self._draw_section_header(surf, _t("settings.sfx_volume").upper(), sfx_acc, lx, card.y + 150, w_inner)
+            # SFX slider (no section header)
             self._draw_slider(surf, self._bar_sfx,
                               SETTINGS["sfx_volume"], SETTINGS["sfx_muted"],
-                              _t("settings.sfx_volume"), sfx_acc)
+                              _t("settings.sfx_volume"), acc)
 
             # Other toggles
-            other_y = self._bar_sfx.bottom + 36
+            other_y = self._card.y + 122
             misc_acc = (160, 120, 255)
             self._draw_section_header(surf, "OTHER", misc_acc, lx, other_y, w_inner)
             for rect, key, lbl in self._get_tab_toggles(0):
@@ -8373,7 +9176,7 @@ class SettingsScreen:
 # ═══════════════════════════════════════════════════════════════════════════════
 import json as _json_mod
 
-SKINS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skins.json")
+SKINS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "save.json")
 
 # Skin definitions: id, unit_name, name, rarity, description
 ALL_SKIN_DEFS = [
@@ -8393,21 +9196,49 @@ ALL_SKIN_DEFS = [
         "desc":      "The legendary ball from Red Ball 4. Eyes included.",
         "price":     1000,
     },
+    {
+        "id":        "castbound_infernal",
+        "unit_name": "Castbound",
+        "name":      "Infernal Castbound",
+        "rarity":    "singularity",
+        "desc":      "Molten solar guardian with orbiting fire blades.",
+        "price":     2500,
+    },
+    {
+        "id":        "castbound_skelebound",
+        "unit_name": "Castbound",
+        "name":      "Skelebound",
+        "rarity":    "singularity",
+        "desc":      "Undead sorcerer crowned in animated spectral soulfire.",
+        "price":     2500,
+        "free":      True,
+    },
 ]
 
 def load_skins():
-    """Load skins save data: {owned: [...], equipped: {unit_name: skin_id}}"""
+    """Load skins save data from unified save.json: {owned: [...], equipped: {unit_name: skin_id}}"""
     if os.path.exists(SKINS_FILE):
         try:
-            with open(SKINS_FILE, "r") as f:
-                return _json_mod.load(f)
+            with open(SKINS_FILE, "r", encoding="utf-8") as f:
+                data = _json_mod.load(f)
+            return data.get("skins", {"owned": [], "equipped": {}})
         except: pass
     return {"owned": [], "equipped": {}}
 
-def write_skins(data):
+def write_skins(skins_data):
+    # Read full save, update skins section, write back
+    if os.path.exists(SKINS_FILE):
+        try:
+            with open(SKINS_FILE, "r", encoding="utf-8") as f:
+                save = _json_mod.load(f)
+        except:
+            save = {}
+    else:
+        save = {}
+    save["skins"] = skins_data
     try:
-        with open(SKINS_FILE, "w") as f:
-            _json_mod.dump(data, f)
+        with open(SKINS_FILE, "w", encoding="utf-8") as f:
+            _json_mod.dump(save, f, ensure_ascii=False)
     except: pass
 
 def get_equipped_skin(unit_name):
@@ -8475,7 +9306,6 @@ class SkinPickerScreen:
                     self._handle_click(ev.pos)
             self._draw()
             pygame.display.flip()
-
     def _card_rect(self, idx):
         x = self._px + self._gap + idx * (self._cw + self._gap)
         y = self._py + 56
@@ -8519,7 +9349,8 @@ class SkinPickerScreen:
 
         # Title
         tf = pygame.font.SysFont("segoeui", 22, bold=True)
-        ts = tf.render(f"Skins: {self.unit_name}", True, (200, 220, 255))
+        disp_title_unit = _get_castbound_display_name() if self.unit_name in ("Castbound", "Skelebound") else self.unit_name
+        ts = tf.render(f"Skins: {disp_title_unit}", True, (200, 220, 255))
         surf.blit(ts, ts.get_rect(center=(cx, py2 + 28)))
 
         # Close button
@@ -8558,15 +9389,19 @@ class SkinPickerScreen:
             pcy = cy3 + 100
 
             if is_default:
-                # Default — show plain unit circle
-                _col_map2 = {
-                    "Archer": C_ARCHER, "Assassin": C_ASSASSIN,
-                    "Accelerator": C_ACCEL, "Lifestealer": C_LIFESTEALER,
-                }
-                uc = _col_map2.get(self.unit_name, (120, 120, 160))
-                pygame.draw.circle(surf, (20, 15, 35), (pcx, pcy), 38)
-                pygame.draw.circle(surf, uc, (pcx, pcy), 30)
-                pygame.draw.circle(surf, (255, 255, 255), (pcx, pcy), 30, 2)
+                if self.unit_name == "Assassin":
+                    draw_assassin_icon(surf, pcx, pcy, t, size=34)
+                elif self.unit_name == "Castbound":
+                    _draw_tower_icon(surf, "Castbound", pcx, pcy - 6, t, size=34, force_skin="default")
+                else:
+                    _col_map2 = {
+                        "Archer": C_ARCHER, "Assassin": C_ASSASSIN,
+                        "Accelerator": C_ACCEL, "Lifestealer": C_LIFESTEALER,
+                    }
+                    uc = _col_map2.get(self.unit_name, (120, 120, 160))
+                    pygame.draw.circle(surf, (20, 15, 35), (pcx, pcy), 38)
+                    pygame.draw.circle(surf, uc, (pcx, pcy), 30)
+                    pygame.draw.circle(surf, (255, 255, 255), (pcx, pcy), 30, 2)
                 df2 = pygame.font.SysFont("segoeui", 13)
                 ds3 = df2.render("default", True, (140, 150, 180))
                 surf.blit(ds3, ds3.get_rect(center=(pcx, pcy + 48)))
@@ -8586,6 +9421,9 @@ class SkinPickerScreen:
                         a2 = math.radians(-90 + pi2 * 36)
                         spts.append((ssx2 + int(math.cos(a2)*r2), ssy2 + int(math.sin(a2)*r2)))
                     pygame.draw.polygon(surf, (255, 220, 60), spts)
+            elif opt["id"] in ("castbound_infernal", "castbound_skelebound"):
+                # Castbound skins preview
+                _draw_tower_icon(surf, "Castbound", pcx, pcy - 6, t, size=34, force_skin=opt["id"])
 
             # Name
             nf2 = pygame.font.SysFont("segoeui", 16, bold=True)
@@ -8664,7 +9502,6 @@ class ShopScreen:
                     self._handle_click(ev.pos)
             self._draw()
             pygame.display.flip()
-
     def _handle_key(self, ev):
         for i in range(2):
             if not self._ex_active[i]:
@@ -9134,6 +9971,8 @@ class ShopScreen:
                     blush = pygame.Surface((14, 8), pygame.SRCALPHA)
                     pygame.draw.ellipse(blush, (255, 120, 120, 100), (0, 0, 14, 8))
                     surf.blit(blush, (pcx + bx_off - 7, pcy + by_off))
+            elif skin["id"] in ("castbound_infernal", "castbound_skelebound"):
+                _draw_tower_icon(surf, "Castbound", preview_cx, preview_cy - 10, t, size=46, force_skin=skin["id"])
 
             nf = pygame.font.SysFont("segoeui", 22, bold=True)
             ns = nf.render(skin["name"], True, C_WHITE)
@@ -9433,96 +10272,119 @@ class _MenuDrip:
 # ── Void Heart particle classes ───────────────────────────────────────────────
 
 class _VoidDot:
-    """Small black/dark floating speck — Hollow Knight void aesthetic."""
-    __slots__ = ("x","y","size","speed","drift","alpha","color")
-    def __init__(self):
-        self.reset()
-    def reset(self):
-        self.x     = random.uniform(0, SCREEN_W)
-        self.y     = random.uniform(0, SCREEN_H)
-        self.size  = random.uniform(1.0, 3.5)
-        self.speed = random.uniform(0.05, 0.35)
-        self.drift = random.uniform(-0.12, 0.12)
-        self.alpha = random.randint(60, 180)
-        # mostly near-black, occasional very dark navy/purple
+    """Small floating speck — softly visible on the dark menu background."""
+    __slots__ = ("x","y","size","speed","drift","phase","base_alpha","color")
+    def __init__(self, scatter=True):
+        self.reset(scatter=scatter)
+    def reset(self, scatter=False):
+        self.x          = random.uniform(0, SCREEN_W)
+        self.y          = random.uniform(0, SCREEN_H) if scatter else SCREEN_H + random.uniform(5, 30)
+        self.size       = random.uniform(0.8, 2.2)
+        self.speed      = random.uniform(0.04, 0.22)
+        self.drift      = random.uniform(-0.10, 0.10)
+        self.base_alpha = random.randint(70, 160)
+        self.phase      = random.uniform(0, 6.28)
+        # Visible-on-dark palette: muted teals, lavenders, steel blues, soft cyans
         self.color = random.choice([
-            (5, 5, 8), (8, 6, 10), (12, 8, 15), (6, 8, 14),
-            (20, 12, 30), (10, 10, 10),
+            ( 60,  80, 120),   # steel blue
+            ( 50,  90, 110),   # teal-blue
+            ( 70,  60, 110),   # muted lavender
+            ( 40, 100, 120),   # dark cyan
+            ( 80,  80, 100),   # blue-grey
+            ( 55,  70, 140),   # indigo
+            ( 30,  80,  90),   # dark teal
+            ( 90,  70, 130),   # dusty violet
         ])
     def update(self):
-        self.y -= self.speed
-        self.x += self.drift
-        self.alpha -= 0.25
-        if self.y < -5 or self.alpha <= 0:
-            self.reset(); self.y = SCREEN_H + 5
+        self.y     -= self.speed
+        self.x     += self.drift
+        self.phase += 0.022
+        if self.y < -5:
+            self.reset(scatter=False)
     def draw(self, surf):
-        if self.alpha <= 0: return
+        alpha = int(self.base_alpha * (0.5 + 0.5 * math.sin(self.phase)))
+        if alpha < 4: return
         sz = max(1, int(self.size))
         s = pygame.Surface((sz*2+2, sz*2+2), pygame.SRCALPHA)
-        pygame.draw.circle(s, (*self.color, int(self.alpha)),
-                           (sz+1, sz+1), sz)
+        pygame.draw.circle(s, (*self.color, alpha), (sz+1, sz+1), sz)
         surf.blit(s, (int(self.x-sz), int(self.y-sz)))
 
 
 class _VoidMote:
-    """Pale blue-white glowing mote — like the light specks in the void art."""
+    """Softly glowing mote — teal/cyan/lavender specks rising through the dark."""
     __slots__ = ("x","y","vx","vy","life","max_life","size","hue")
-    def __init__(self):
-        self.reset()
-    def reset(self):
-        self.x        = random.uniform(SCREEN_W*0.02, SCREEN_W*0.98)
-        self.y        = random.uniform(SCREEN_H*0.3, SCREEN_H)
-        self.vx       = random.uniform(-0.4, 0.4)
-        self.vy       = random.uniform(-1.2, -0.3)
-        self.life     = random.uniform(0.7, 1.0)
-        self.max_life = self.life
-        self.size     = random.uniform(1.0, 2.8)
-        # soft white / icy blue
+    def __init__(self, scatter=True):
+        self.reset(scatter=scatter)
+    def reset(self, scatter=False):
+        self.x        = random.uniform(SCREEN_W*0.01, SCREEN_W*0.99)
+        self.y        = random.uniform(0, SCREEN_H) if scatter else SCREEN_H + random.uniform(5, 50)
+        self.vx       = random.uniform(-0.3, 0.3)
+        self.vy       = random.uniform(-0.7, -0.2)
+        self.max_life = random.uniform(3.5, 6.5)
+        self.life     = random.uniform(0, self.max_life) if scatter else self.max_life
+        self.size     = random.uniform(0.8, 2.0)
+        # palette matching dark bg: teal, cyan, lavender, blue-white, soft mint
         self.hue      = random.choice([
-            (200, 220, 255), (180, 210, 255), (220, 235, 255), (240, 245, 255),
+            (100, 200, 230),  # bright cyan-teal
+            (120, 180, 255),  # soft sky blue
+            (160, 140, 240),  # lavender
+            ( 80, 210, 200),  # mint-teal
+            (200, 220, 255),  # ice blue-white
+            (100, 220, 180),  # aquamarine
+            (140, 160, 230),  # periwinkle
         ])
     def update(self, dt):
         self.x   += self.vx
-        self.vy  -= 0.005
         self.y   += self.vy
-        self.life -= dt * 0.45
-        if self.life <= 0: self.reset()
+        self.life -= dt
+        if self.life <= 0 or self.y < -10:
+            self.reset(scatter=False)
     def draw(self, surf):
-        ratio = self.life / self.max_life
-        alpha = int(200 * ratio)
-        sz    = max(1, int(self.size * (0.5 + 0.5*ratio)))
-        s = pygame.Surface((sz*2+4, sz*2+4), pygame.SRCALPHA)
-        # outer glow
-        pygame.draw.circle(s, (*self.hue, int(alpha*0.35)), (sz+2, sz+2), sz+2)
-        # inner bright dot
-        pygame.draw.circle(s, (*self.hue, alpha), (sz+2, sz+2), sz)
-        surf.blit(s, (int(self.x-sz-2), int(self.y-sz-2)))
+        # Fade in for first 20%, fade out for last 20%
+        p = self.life / self.max_life
+        fade  = min(p * 5, 1.0, (1.0 - p) * 5)
+        alpha = int(170 * fade)
+        if alpha < 4: return
+        sz = max(1, int(self.size))
+        s  = pygame.Surface((sz*2+6, sz*2+6), pygame.SRCALPHA)
+        pygame.draw.circle(s, (*self.hue, int(alpha*0.20)), (sz+3, sz+3), sz+3)   # outer halo
+        pygame.draw.circle(s, (*self.hue, int(alpha*0.50)), (sz+3, sz+3), sz+1)   # mid glow
+        pygame.draw.circle(s, (*self.hue, alpha),           (sz+3, sz+3), max(1, sz))  # core
+        surf.blit(s, (int(self.x-sz-3), int(self.y-sz-3)))
 
 
 class _VoidWisp:
-    """Slow drifting translucent void tendril / wisp — large, very faint."""
+    """Slow drifting translucent wisp — soft blob drifting across the whole screen."""
     __slots__ = ("x","y","vx","vy","life","max_life","radius","color")
-    def __init__(self):
-        self.reset(start_offscreen=True)
-    def reset(self, start_offscreen=False):
-        self.x        = random.uniform(-60, SCREEN_W+60)
-        self.y        = SCREEN_H + random.uniform(20, 120) if start_offscreen else random.uniform(0, SCREEN_H)
-        self.vx       = random.uniform(-0.3, 0.3)
-        self.vy       = random.uniform(-0.5, -0.15)
-        self.life     = random.uniform(0.6, 1.0)
-        self.max_life = self.life
-        self.radius   = random.randint(18, 50)
+    def __init__(self, scatter=True):
+        self.reset(scatter=scatter)
+    def reset(self, scatter=False):
+        self.x        = random.uniform(-30, SCREEN_W+30)
+        self.y        = random.uniform(0, SCREEN_H) if scatter else SCREEN_H + random.uniform(20, 80)
+        self.vx       = random.uniform(-0.20, 0.20)
+        self.vy       = random.uniform(-0.3, -0.08)
+        self.max_life = random.uniform(6.0, 12.0)
+        self.life     = random.uniform(0, self.max_life) if scatter else self.max_life
+        self.radius   = random.randint(10, 28)   # smaller — subtle blobs, not huge blobs
+        # Slightly visible on dark: muted teal/blue/violet blobs
         self.color    = random.choice([
-            (30, 30, 45), (20, 25, 50), (15, 15, 30), (40, 20, 55),
+            ( 30,  70, 100),
+            ( 40,  50,  90),
+            ( 50,  30,  80),
+            ( 20,  60,  80),
+            ( 60,  40, 100),
+            ( 25,  65,  75),
         ])
     def update(self, dt):
         self.x   += self.vx
         self.y   += self.vy
-        self.life -= dt * 0.22
-        if self.life <= 0: self.reset()
+        self.life -= dt
+        if self.life <= 0 or self.y < -60:
+            self.reset(scatter=False)
     def draw(self, surf):
-        ratio = self.life / self.max_life
-        alpha = int(55 * ratio * ratio)
+        p     = self.life / self.max_life
+        fade  = min(p * 3, 1.0, (1.0 - p) * 3)
+        alpha = int(55 * fade * fade)
         if alpha < 2: return
         r = max(3, self.radius)
         s = pygame.Surface((r*2+2, r*2+2), pygame.SRCALPHA)
@@ -9664,10 +10526,10 @@ class MainMenu:
                     pygame.Rect(_sm_x0 + _si * (sm_w + sm_gap), _sm_y, sm_w, sm_h))
 
 
-        # ── Void particles: black/dark drifting dots, glowing motes, void wisps
-        self._particles  = [_VoidDot()    for _ in range(90)]
-        self._embers     = [_VoidMote()   for _ in range(60)]
-        self._void_wisps = [_VoidWisp()   for _ in range(30)]
+        # ── Void particles: visible floating specks, glowing motes, soft wisps
+        self._particles  = [_VoidDot(scatter=True)   for _ in range(120)]
+        self._embers     = [_VoidMote(scatter=True)   for _ in range(90)]
+        self._void_wisps = [_VoidWisp(scatter=True)   for _ in range(35)]
         self._drips      = []
         self._drip_timer = 0.0
 
@@ -9690,6 +10552,9 @@ class MainMenu:
 
         # Fade-in only on first open
         self._fade_alpha = 255 if first_open else 0
+
+        # Multiplayer disabled notice timer
+        self._mp_msg_t = 0.0
 
         # ── Hardcore button (used by _draw_modern) ────────────────────────────
         hc_w, hc_h = 180, 52
@@ -9892,8 +10757,7 @@ class MainMenu:
                     if self.btn_profile.collidepoint(pos):      self.action = "profile"
                     if self.btn_settings.collidepoint(pos):     self.action = "settings"
                     if self.btn_quit.collidepoint(pos):         self.action = "quit"
-                    if self.btn_multiplayer.collidepoint(pos):  self.action = "multiplayer"
-                    # Easter egg: clicking the "Click on me" splash swaps it to "spasibo"
+                    if self.btn_multiplayer.collidepoint(pos):  self._mp_msg_t = 3.0
                     if (_CURRENT_SPLASH == "Click on me" and not MainMenu._splash_clicked
                             and self._splash_rect is not None
                             and self._splash_rect.collidepoint(pos)):
@@ -9904,6 +10768,21 @@ class MainMenu:
                             and self._splash_rect.collidepoint(pos)):
                         self.action = "coins100"
             self._draw()
+            # ── Multiplayer disabled toast ────────────────────────────────────
+            if self._mp_msg_t > 0:
+                self._mp_msg_t = max(0.0, self._mp_msg_t - dt)
+                _mp_alpha = min(255, int(self._mp_msg_t * 255))
+                _mp_f  = pygame.font.SysFont("segoeui", 22, bold=True)
+                _mp_s  = _mp_f.render("Мультиплеер закрыт до переработки", True, (255, 220, 80))
+                _mp_w, _mp_h = _mp_s.get_width() + 32, _mp_s.get_height() + 18
+                _mp_x  = SCREEN_W // 2 - _mp_w // 2
+                _mp_y  = SCREEN_H - _mp_h - 28
+                _mp_bg = pygame.Surface((_mp_w, _mp_h), pygame.SRCALPHA)
+                pygame.draw.rect(_mp_bg, (20, 20, 30, min(220, _mp_alpha)), (0, 0, _mp_w, _mp_h), border_radius=10)
+                pygame.draw.rect(_mp_bg, (200, 160, 20, _mp_alpha),         (0, 0, _mp_w, _mp_h), 2, border_radius=10)
+                _mp_s.set_alpha(_mp_alpha)
+                self.screen.blit(_mp_bg, (_mp_x, _mp_y))
+                self.screen.blit(_mp_s, (_mp_x + 16, _mp_y + 9))
             pygame.display.flip()
         return self.action
 
@@ -11555,7 +12434,7 @@ ALL_UNITS_POOL = [
     {"name": "Lifestealer",    "rarity": "common"},
     {"name": "Archer",         "rarity": "rare"},
     {"name": "Red Ball",       "rarity": "rare"},
-    {"name": "Farm",           "rarity": "starter"},
+    {"name": "Farm",           "rarity": "rare"},
     {"name": "Swarmer",        "rarity": "common"},
     {"name": "Freezer",        "rarity": "starter"},
     {"name": "Frost Blaster",  "rarity": "common"},
@@ -11657,6 +12536,7 @@ UNIT_BASE_STATS = {
     "Control Panel":  {"cost": 5000, "limit": 1,  "damage": 0,     "firerate": 0.0,   "range": 6,   "income": None},
     "hacker_laser_effects_test": {"cost": 7500, "limit": 1, "damage": 15, "firerate": 0.19, "range": 7.5, "income": None},
     "Castbound":      {"cost": 400,  "limit": 5,  "damage": 4,     "firerate": 0.8,   "range": 6.2, "income": None},
+    "Skelebound":     {"cost": 400,  "limit": 5,  "damage": 4,     "firerate": 0.8,   "range": 6.2, "income": None},
     "The Strongest":  {"cost": 350,  "limit": 5,  "damage": 6,     "firerate": 1.30,  "range": 5,   "income": None},
     "Railgunner":     {"cost": 1500, "limit": 4,  "damage": 45,    "firerate": 2.5,   "range": 12,  "income": None},
     "xw5yt":          {"cost": 800,  "limit": 2,  "damage": 15,    "firerate": 1.2,   "range": 8,   "income": None},
@@ -11696,6 +12576,7 @@ UNIT_DESCRIPTIONS = {
     "Control Panel":  "A remote support station. Use 'Remote Control' to buff a nearby tower with boosted Range, Damage, or Firerate for a chosen duration.",
     "hacker_laser_effects_test": "??? ERROR 404 UNIT NOT FOUND ???",
     "Castbound":      "\"The culmination of a journey forged into the ultimate tower\"",
+    "Skelebound":     "\"The culmination of a journey forged into the ultimate tower\"",
     "The Strongest":  "Scale of the Dragon",
     "Railgunner":     "A heavy long-range sniper that charges up, then fires a piercing rail beam straight through every enemy in its path.",
     "xw5yt":          "A blood-fueled dev tower. Unlocks a Frenzy buff, a passive slow, and a Blood Nova explosion as it levels up.",
@@ -11754,8 +12635,10 @@ class LoadoutScreen:
         if "owned_units" not in self.save_data:
             self.save_data["owned_units"] = ["Assassin"]
         self.selected  = None   # (rarity, idx) or None
-        self.scroll_y  = 0
-        self.btn_back  = pygame.Rect(20, 20, 120, 40)
+        self.scroll_y  = 0.0
+        self.target_scroll_y = 0.0
+        self._max_scroll = 0
+        self.btn_back  = pygame.Rect(20, 16, 120, 38)
         self.btn_random = None   # built each frame in _draw (above the slots)
         self.msg       = ""
         self.msg_timer = 0.0
@@ -11767,6 +12650,18 @@ class LoadoutScreen:
         self._slot_select  = False  # True = waiting for slot click after EQUIP
         self._btn_equip    = None
         self._btn_unequip  = None
+        # Ambient particles
+        self._bg_particles = [
+            {
+                'x': random.uniform(0, SCREEN_W),
+                'y': random.uniform(0, SCREEN_H),
+                'speed': random.uniform(18, 48),
+                'size': random.uniform(1.2, 2.8),
+                'alpha': random.randint(40, 130),
+                'col': random.choice([(0, 210, 255), (120, 80, 255), (40, 220, 180), (255, 180, 60)])
+            }
+            for _ in range(40)
+        ]
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def _owned_units(self):
@@ -11837,6 +12732,17 @@ class LoadoutScreen:
             dt = clock.tick(60) / 1000.0
             self.t += dt
             if self.msg_timer > 0: self.msg_timer -= dt
+
+            # Smooth scrolling interpolation
+            self.scroll_y += (self.target_scroll_y - self.scroll_y) * min(1.0, dt * 14.0)
+
+            # Update ambient particles
+            for p in getattr(self, '_bg_particles', []):
+                p['y'] -= p['speed'] * dt
+                if p['y'] < -10:
+                    p['y'] = SCREEN_H + 10
+                    p['x'] = random.uniform(0, SCREEN_W)
+
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
                     pygame.quit(); sys.exit()
@@ -11845,12 +12751,12 @@ class LoadoutScreen:
                 if ev.type == pygame.MOUSEWHEEL:
                     mx2, _ = pygame.mouse.get_pos()
                     if mx2 >= int(SCREEN_W * self._SPLIT):
-                        self.scroll_y = max(0, self.scroll_y - ev.y * 36)
+                        max_s = max(0, getattr(self, '_max_scroll', 0))
+                        self.target_scroll_y = max(0.0, min(float(max_s), self.target_scroll_y - ev.y * 54.0))
                 if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
                     self._handle_click(ev.pos)
             self._draw()
             pygame.display.flip()
-        self.save_data["loadout"] = self.loadout
         write_save(self.save_data)
 
     def _handle_click(self, pos):
@@ -11944,7 +12850,8 @@ class LoadoutScreen:
             for k in range(5):
                 if self.loadout[k] == uname:
                     self.loadout[k] = None
-            self._show_msg(f"{uname} unequipped")
+            disp_msg_name = _get_castbound_display_name() if uname in ("Castbound", "Skelebound") else uname
+            self._show_msg(f"{disp_msg_name} unequipped")
             return
 
         for si, sr in enumerate(self._slot_rects(left_w)):
@@ -11960,7 +12867,8 @@ class LoadoutScreen:
                             self.loadout[k] = None; break
                     self.loadout[si] = uname
                     self._slot_select = False
-                    self._show_msg(f"{uname} equipped!")
+                    disp_msg_name = _get_castbound_display_name() if uname in ("Castbound", "Skelebound") else uname
+                    self._show_msg(f"{disp_msg_name} equipped!")
                 elif self.selected is not None:
                     sel_r, sel_i = self.selected
                     units_r = self._units_for_rarity(sel_r)
@@ -11987,133 +12895,144 @@ class LoadoutScreen:
         self._skin_btns = []   # reset each frame
 
         surf = self.screen
-        surf.fill(C_BG)
+        surf.fill((10, 13, 20))
+
+        # ── Ambient Background Particles ──────────────────────────────────────
+        for p in getattr(self, '_bg_particles', []):
+            alpha = int(p['alpha'] * (0.65 + 0.35 * math.sin(self.t * 2.8 + p['x'] * 0.05)))
+            alpha = max(10, min(255, alpha))
+            sz = int(p['size'])
+            ps = pygame.Surface((sz * 2 + 2, sz * 2 + 2), pygame.SRCALPHA)
+            pygame.draw.circle(ps, (*p['col'], alpha), (sz + 1, sz + 1), sz)
+            surf.blit(ps, (int(p['x'] - sz), int(p['y'] - sz)))
+
+        # Subtle cyber grid lines in background
+        for gy in range(TOP + 20, SCREEN_H, 60):
+            pygame.draw.line(surf, (15, 20, 32), (0, gy), (SCREEN_W, gy), 1)
 
         # ── Top bar ──────────────────────────────────────────────────────────
-        pygame.draw.rect(surf, C_PANEL,  (0, 0, SCREEN_W, 70))
-        pygame.draw.line(surf, C_BORDER, (0, 70), (SCREEN_W, 70), 2)
+        pygame.draw.rect(surf, (14, 18, 30), (0, 0, SCREEN_W, TOP))
+        pygame.draw.line(surf, (0, 200, 240), (0, TOP - 1), (SCREEN_W, TOP - 1), 2)
+        # Faint cyan glow line under top bar
+        top_glow = pygame.Surface((SCREEN_W, 3), pygame.SRCALPHA)
+        top_glow.fill((0, 200, 240, 40))
+        surf.blit(top_glow, (0, TOP))
+
+        # Title
         txt(surf, "LOADOUT", (SCREEN_W // 2, 35), C_CYAN, font_xl, center=True)
 
         mx, my = pygame.mouse.get_pos()
 
-        # Coins
-        coins  = self.save_data.get("coins", 0)
-        ico_c  = load_icon("coin_ico", 28)
-        coin_s = font_lg.render(f" {fmt_num(coins)}", True, C_WHITE)
-        tcw    = (ico_c.get_width() if ico_c else 0) + coin_s.get_width()
-        ccx    = SCREEN_W - 14 - tcw
-        if ico_c:
-            surf.blit(ico_c,  (ccx, 18 + (coin_s.get_height() - ico_c.get_height()) // 2))
-            surf.blit(coin_s, (ccx + ico_c.get_width(), 18))
-        else:
-            txt(surf, f"Coins: {fmt_num(coins)}", (SCREEN_W - 14, 18), C_GOLD, font_lg, right=True)
+        # Currencies (right side of top bar)
+        coins = self.save_data.get("coins", 0)
+        shards = self.save_data.get("shards", 0)
+        ico_c = load_icon("coin_ico", 24)
+        ico_sh = load_icon("shard_ico", 20)
 
-        # Shards (shown to the left of coins)
-        shards   = self.save_data.get("shards", 0)
-        ico_sh   = load_icon("shard_ico", 22)
-        shard_col = C_WHITE
-        shard_s  = font_lg.render(f" {fmt_num(shards)}", True, C_WHITE)
-        tsw      = (ico_sh.get_width() if ico_sh else 0) + shard_s.get_width()
-        scx      = ccx - tsw - 24
+        # Coins pill
+        coin_str = fmt_num(coins)
+        c_font = font_md
+        c_val_s = c_font.render(coin_str, True, (255, 220, 80))
+        c_pill_w = 42 + c_val_s.get_width() + 18
+        c_pill_rect = pygame.Rect(SCREEN_W - 16 - c_pill_w, 16, c_pill_w, 38)
+        pygame.draw.rect(surf, (22, 26, 40), c_pill_rect, border_radius=12)
+        pygame.draw.rect(surf, (60, 75, 105), c_pill_rect, 1, border_radius=12)
+        if ico_c:
+            surf.blit(ico_c, (c_pill_rect.x + 10, c_pill_rect.centery - ico_c.get_height() // 2))
+        c_val_x = c_pill_rect.x + 10 + (ico_c.get_width() + 6 if ico_c else 0)
+        surf.blit(c_val_s, (c_val_x, c_pill_rect.centery - c_val_s.get_height() // 2))
+
+        # Shards pill
+        sh_str = fmt_num(shards)
+        sh_val_s = c_font.render(sh_str, True, (200, 180, 255))
+        sh_pill_w = 38 + sh_val_s.get_width() + 18
+        sh_pill_rect = pygame.Rect(c_pill_rect.x - sh_pill_w - 12, 16, sh_pill_w, 38)
+        pygame.draw.rect(surf, (22, 26, 40), sh_pill_rect, border_radius=12)
+        pygame.draw.rect(surf, (80, 65, 120), sh_pill_rect, 1, border_radius=12)
         if ico_sh:
-            surf.blit(ico_sh,  (scx, 18 + (shard_s.get_height() - ico_sh.get_height()) // 2))
-            surf.blit(shard_s, (scx + ico_sh.get_width(), 18))
-        else:
-            shard_lbl = font_lg.render(f"◆ {fmt_num(shards)}", True, C_WHITE)
-            surf.blit(shard_lbl, shard_lbl.get_rect(right=ccx - 24, centery=29))
+            surf.blit(ico_sh, (sh_pill_rect.x + 10, sh_pill_rect.centery - ico_sh.get_height() // 2))
+        sh_val_x = sh_pill_rect.x + 10 + (ico_sh.get_width() + 6 if ico_sh else 0)
+        surf.blit(sh_val_s, (sh_val_x, sh_pill_rect.centery - sh_val_s.get_height() // 2))
 
         # Back button
         hov_b = self.btn_back.collidepoint(mx, my)
-        pygame.draw.rect(surf, (110,50,50) if hov_b else (80,40,40), self.btn_back, border_radius=8)
-        pygame.draw.rect(surf, C_BORDER, self.btn_back, 2, border_radius=8)
-        txt(surf, "← BACK", self.btn_back.center, C_WHITE, font_md, center=True)
+        b_bg = (40, 52, 80) if hov_b else (22, 28, 44)
+        b_bd = (0, 220, 255) if hov_b else (60, 80, 115)
+        pygame.draw.rect(surf, b_bg, self.btn_back, border_radius=10)
+        pygame.draw.rect(surf, b_bd, self.btn_back, 2 if hov_b else 1, border_radius=10)
+        txt(surf, "← BACK", self.btn_back.center, (0, 240, 255) if hov_b else C_WHITE, font_md, center=True)
 
         # ── Vertical divider ─────────────────────────────────────────────────
-        pygame.draw.line(surf, C_BORDER, (panel_x, TOP), (panel_x, SCREEN_H), 2)
+        pygame.draw.line(surf, (28, 38, 58), (panel_x, TOP), (panel_x, SCREEN_H), 2)
 
         # ── LEFT zone — background + detail panel + loadout slots ─────────────
-        # Subtle background tint
-        left_bg = pygame.Surface((left_w, SCREEN_H - TOP), pygame.SRCALPHA)
-        left_bg.fill((12, 15, 24, 180))
-        surf.blit(left_bg, (0, TOP))
-
-        # ── LOADOUT SLOTS — bottom of left zone ──────────────────────────────
         slot_rects = self._slot_rects(left_w)
 
         # ── RANDOM loadout button — above the slots ──────────────────────────
-        _rb_w, _rb_h = 180, 40
+        _rb_w, _rb_h = 220, 38
         self.btn_random = pygame.Rect(left_w // 2 - _rb_w // 2,
-                                      slot_rects[0].top - _rb_h - 18, _rb_w, _rb_h)
+                                      slot_rects[0].top - _rb_h - 16, _rb_w, _rb_h)
         _rb_hov = self.btn_random.collidepoint(mx, my)
-        pygame.draw.rect(surf, (60, 45, 100) if _rb_hov else (38, 30, 64),
-                         self.btn_random, border_radius=10)
-        pygame.draw.rect(surf, (150, 120, 230) if _rb_hov else (95, 75, 150),
-                         self.btn_random, 2, border_radius=10)
-        _rb_s = font_md.render("RANDOM", True,
-                               (235, 220, 255) if _rb_hov else (180, 165, 210))
-        surf.blit(_rb_s, _rb_s.get_rect(center=self.btn_random.center))
+        rb_bg = (68, 45, 115) if _rb_hov else (34, 25, 58)
+        rb_bd = (180, 130, 255) if _rb_hov else (100, 70, 155)
+        pygame.draw.rect(surf, rb_bg, self.btn_random, border_radius=10)
+        pygame.draw.rect(surf, rb_bd, self.btn_random, 2 if _rb_hov else 1, border_radius=10)
+        rb_txt = "RANDOM LOADOUT"
+        rb_s = font_md.render(rb_txt, True, (245, 230, 255) if _rb_hov else (195, 175, 230))
+        surf.blit(rb_s, rb_s.get_rect(center=self.btn_random.center))
 
-        _col_map_slot = {
-            "Assassin": C_ASSASSIN,        "Lifestealer": C_LIFESTEALER,
-            "Militant": C_MILITANT,        "Swarmer":     C_SWARMER,
-            "Archer":   C_ARCHER,          "Red Ball":    C_REDBALL,
-            "Farm":     C_FARM,            "Freezer":     C_FREEZER,
-            "Frost Blaster": C_FROSTBLASTER, "Sledger":   C_SLEDGER,
-            "Gladiator": C_GLADIATOR,      "Toxic Gunner": C_TOXICGUN,
-            "Slasher":  C_SLASHER,         "Golden Cowboy": C_GCOWBOY, "Cowboy": C_GCOWBOY,
-            "Hallow Punk": C_HALLOWPUNK,   "Spotlight Tech": C_SPOTLIGHT,
-            "Jester":   C_JESTER,
-            "Harvester": C_HARVESTER,
-            "Noiseform": C_NOISEFORM,
-            "The Strongest": C_STRONGEST,
-            "Railgunner": C_RAIL,
-            "xw5yt": C_XW,
-        }
-
-        # Slot-select hint arrow
+        # ── LOADOUT SLOTS — bottom of left zone ──────────────────────────────
         if self._slot_select:
-            hint_s = font_md.render("▼  Choose a slot  ▼", True, (80, 220, 140))
-            surf.blit(hint_s, hint_s.get_rect(center=(left_w // 2, slot_rects[0].top - 84)))
+            pulse_y = int(math.sin(self.t * 6.0) * 4)
+            hint_s = font_md.render("▼  CHOOSE A SLOT TO EQUIP  ▼", True, (40, 255, 140))
+            surf.blit(hint_s, hint_s.get_rect(center=(left_w // 2, slot_rects[0].top - 68 + pulse_y)))
 
         for si, sr in enumerate(slot_rects):
             uname = self.loadout[si]
             hov3  = sr.collidepoint(mx, my)
-            # Highlight empty slots when in slot-select mode
+            # Slot card styling
             if self._slot_select and not uname:
-                bg_col = (20, 60, 40)
+                p_val = 0.5 + 0.5 * math.sin(self.t * 8.0)
+                bg_col = (18, 52, 34)
+                bd_col = (int(50 + p_val * 50), int(200 + p_val * 55), int(120 + p_val * 50))
+                bd_w = 3
             elif self._slot_select and uname:
-                bg_col = (50, 35, 10)
+                bg_col = (45, 36, 18)
+                bd_col = (200, 150, 40)
+                bd_w = 2
             elif hov3:
-                bg_col = (50, 60, 90)
+                bg_col = (30, 40, 62)
+                bd_col = (0, 210, 255)
+                bd_w = 2
             else:
-                bg_col = C_SLOT_BG
-            pygame.draw.rect(surf, bg_col, sr, border_radius=8)
-            bd_col = (60, 200, 100) if (self._slot_select and not uname and hov3) else \
-                     (80, 200, 100) if self._slot_select else C_BORDER
-            pygame.draw.rect(surf, bd_col, sr, 2, border_radius=8)
+                bg_col = (18, 22, 34)
+                bd_col = (45, 55, 80)
+                bd_w = 1
+
+            pygame.draw.rect(surf, bg_col, sr, border_radius=10)
+            pygame.draw.rect(surf, bd_col, sr, bd_w, border_radius=10)
+
+            # Slot number tag "01", "02", etc.
+            slot_tag_s = font_sm.render(f"0{si+1}", True, (90, 110, 150))
+            surf.blit(slot_tag_s, (sr.x + 8, sr.y + 6))
 
             if uname:
                 rarity = next((u["rarity"] for u in ALL_UNITS_POOL if u["name"] == uname), "starter")
-                rd     = RARITY_DATA[rarity]
+                rd     = RARITY_DATA.get(rarity, RARITY_DATA["starter"])
                 icx, icy = sr.centerx, sr.centery - 10
-                eq_skin_id = get_equipped_skin(uname)
-                skin_def = next((s for s in ALL_SKIN_DEFS if s["id"] == eq_skin_id), None) if eq_skin_id else None
-                if skin_def and skin_def["id"] == "archer_star":
-                    pygame.draw.circle(surf, (30, 20, 50), (icx, icy), 22)
-                    pygame.draw.circle(surf, (200, 160, 40), (icx, icy), 18)
-                    pygame.draw.circle(surf, (255, 220, 80), (icx, icy), 12)
-                    for si2 in range(5):
-                        sa2 = math.radians(self.t * 120 + si2 * 72)
-                        ssx = icx + int(math.cos(sa2) * 22)
-                        ssy = icy + int(math.sin(sa2) * 22)
-                        pygame.draw.circle(surf, (255, 220, 60), (ssx, ssy), 3)
-                else:
-                    _draw_tower_icon(surf, uname, icx, icy, self.t, size=20)
-                txt(surf, uname, (sr.centerx, sr.bottom - 20), C_WHITE, font_sm, center=True)
+                # Gentle breathing animation for equipped unit in slot
+                float_off = math.sin(self.t * 2.2 + si * 1.2) * 2.0
+                _draw_tower_icon(surf, uname, icx, int(icy + float_off), self.t, size=22)
+
+                # Unit name label
+                disp_slot_name = _get_castbound_display_name() if uname in ("Castbound", "Skelebound") else uname
+                txt(surf, disp_slot_name, (sr.centerx, sr.bottom - 22), C_WHITE, font_sm, center=True)
+
+                # Rarity chip
                 if rarity == "apex":
-                    _blit_apex_label(surf, rd["label"], font_sm, (sr.centerx, sr.bottom - 7), center=True)
+                    _blit_apex_label(surf, rd["label"], font_sm, (sr.centerx, sr.bottom - 8), center=True)
                 elif rarity == "singularity":
-                    _pos = (sr.centerx, sr.bottom - 7)
+                    _pos = (sr.centerx, sr.bottom - 8)
                     for _ox, _oy in [(-1,0),(1,0),(0,-1),(0,1)]:
                         _so = font_sm.render(rd["label"], True, (200, 0, 255))
                         surf.blit(_so, _so.get_rect(center=(_pos[0]+_ox, _pos[1]+_oy)))
@@ -12122,24 +13041,31 @@ class LoadoutScreen:
                 else:
                     _lbl2 = rd.get("label", rarity.replace("_"," ").title() if "_" in rarity else rarity.capitalize())
                     rs2 = font_sm.render(_lbl2, True, rd["text_col"])
-                    surf.blit(rs2, rs2.get_rect(center=(sr.centerx, sr.bottom - 7)))
+                    surf.blit(rs2, rs2.get_rect(center=(sr.centerx, sr.bottom - 8)))
+
+                # Hover remove icon "✕"
+                if hov3:
+                    x_s = font_sm.render("✕", True, (255, 100, 100))
+                    surf.blit(x_s, (sr.right - 14, sr.y + 5))
             else:
-                txt(surf, f"SLOT {si+1}", (sr.centerx, sr.centery), (60,70,100), font_sm, center=True)
+                empty_lbl = "+ PLACE" if self._slot_select else "+ EMPTY"
+                empty_col = (60, 220, 130) if self._slot_select else (60, 75, 105)
+                txt(surf, empty_lbl, (sr.centerx, sr.centery), empty_col, font_sm, center=True)
 
         # ── DETAIL PANEL — upper left zone ───────────────────────────────────
         self._btn_equip   = None
         self._btn_unequip = None
 
-        SLOT_TOP = slot_rects[0].top - 50   # top of slot area (including label)
-        DETAIL_TOP  = TOP + 8
-        DETAIL_H    = SLOT_TOP - DETAIL_TOP - 8
-        DETAIL_AREA = pygame.Rect(8, DETAIL_TOP, left_w - 16, DETAIL_H)
+        SLOT_TOP    = slot_rects[0].top - 70
+        DETAIL_TOP  = TOP + 12
+        DETAIL_H    = SLOT_TOP - DETAIL_TOP - 10
+        DETAIL_AREA = pygame.Rect(14, DETAIL_TOP, left_w - 28, DETAIL_H)
 
         if self.detail_unit:
             uname = self.detail_unit
             rarity = next((u["rarity"] for u in ALL_UNITS_POOL if u["name"] == uname), "starter")
-            rd = RARITY_DATA[rarity]
-            # Build stats from a fresh level-0 instance so values are always accurate
+            rd = RARITY_DATA.get(rarity, RARITY_DATA["starter"])
+
             _name_to_cls_ld = {
                 "Assassin": Assassin, "Accelerator": Accelerator,
                 "Frostcelerator": Frostcelerator,
@@ -12183,23 +13109,22 @@ class LoadoutScreen:
                 stats = _static
             desc  = UNIT_DESCRIPTIONS.get(uname, "")
             is_equipped = uname in self.loadout
+            owned = self._owned_units()
+            is_owned = uname in owned
 
             PANEL_X = DETAIL_AREA.x
             PANEL_Y = DETAIL_AREA.y
             PANEL_W = DETAIL_AREA.w
             PANEL_H = DETAIL_AREA.h
 
-            # Background card
+            # Background card with glassmorphism & rarity-tinted border
             bg_surf = pygame.Surface((PANEL_W, PANEL_H), pygame.SRCALPHA)
-            pygame.draw.rect(bg_surf, (10, 12, 20, 235), (0, 0, PANEL_W, PANEL_H), border_radius=14)
-            glow_col = rd["border"]
-            pygame.draw.rect(bg_surf, (*glow_col, 90), (0, 0, PANEL_W, PANEL_H), 2, border_radius=14)
+            pygame.draw.rect(bg_surf, (12, 16, 26, 235), (0, 0, PANEL_W, PANEL_H), border_radius=14)
+            glow_col = rd.get("border", (0, 200, 240))
+            pygame.draw.rect(bg_surf, (*glow_col, 80), (0, 0, PANEL_W, PANEL_H), 2, border_radius=14)
             surf.blit(bg_surf, (PANEL_X, PANEL_Y))
 
-            # Layout: LEFT = name + stats flush to left edge, tower visual centered horizontally
-            TEXT_X  = PANEL_X + 10   # text starts at left edge of panel
-
-            # ── Tower name & class — top-left ───────────────────────────────
+            # ── Header: Name & Badges ─────────────────────────────────────────
             _UNIT_CLASS = {
                 "Assassin": "Offense", "Militant": "Offense", "Twitgunner": "Offense",
                 "Farm": "Support", "Freezer": "Defense", "Gladiator": "Offense",
@@ -12216,142 +13141,217 @@ class LoadoutScreen:
                 "Railgunner": "Offense",
                 "xw5yt": "Offense",
             }
-            _unit_class = _UNIT_CLASS.get(uname, "")
-            name_f = pygame.font.SysFont("segoeui", 26, bold=True)
-            cls_f  = pygame.font.SysFont("segoeui", 17, bold=True)
-            name_s = name_f.render(uname, True, C_WHITE)
-            cls_s  = cls_f.render(_unit_class, True, C_WHITE)
-            surf.blit(name_s, (TEXT_X, PANEL_Y + 10))
-            surf.blit(cls_s,  (TEXT_X, PANEL_Y + 10 + name_s.get_height() + 3))
-            rar_s = cls_s  # keep rar_s alias so STAT_Y0 calc below still works
+            _u_class = _UNIT_CLASS.get(uname, "Combat")
+            name_f = pygame.font.SysFont("segoeui", 28, bold=True)
+            chip_f = pygame.font.SysFont("segoeui", 13, bold=True)
 
-            # ── STATS — icon + value rows, left-aligned ───────────────────────
-            stat_f  = pygame.font.SysFont("segoeui", 18, bold=True)
-            ICO_SZ  = 22
-            ROW_H   = 32
-            STAT_Y0 = PANEL_Y + 10 + name_s.get_height() + rar_s.get_height() + 16
+            disp_detail_name = _get_castbound_display_name() if uname in ("Castbound", "Skelebound") else uname
+            name_s = name_f.render(disp_detail_name, True, C_WHITE)
+            surf.blit(name_s, (PANEL_X + 18, PANEL_Y + 14))
 
+            # Badges row: [⚔ Offense] [★ Apex] [✓ Owned / 🔒 Locked]
+            badge_x = PANEL_X + 18
+            badge_y = PANEL_Y + 14 + name_s.get_height() + 4
+
+            # Rarity chip
+            rar_lbl = rd.get("label", rarity.upper())
+            rar_s = chip_f.render(rar_lbl, True, rd.get("text_col", (255, 255, 255)))
+            rar_rect = pygame.Rect(badge_x, badge_y, rar_s.get_width() + 14, 22)
+            pygame.draw.rect(surf, (30, 24, 45), rar_rect, border_radius=6)
+            pygame.draw.rect(surf, glow_col, rar_rect, 1, border_radius=6)
+            surf.blit(rar_s, (rar_rect.x + 7, rar_rect.y + 2))
+            badge_x += rar_rect.w + 8
+
+            # Ownership chip
+            own_lbl = "UNLOCKED" if is_owned else "LOCKED"
+            own_col = (60, 230, 130) if is_owned else (230, 80, 80)
+            own_bg = (18, 48, 28) if is_owned else (50, 20, 24)
+            own_bd = (40, 160, 90) if is_owned else (140, 45, 55)
+            own_s = chip_f.render(own_lbl, True, own_col)
+            own_rect = pygame.Rect(badge_x, badge_y, own_s.get_width() + 14, 22)
+            pygame.draw.rect(surf, own_bg, own_rect, border_radius=6)
+            pygame.draw.rect(surf, own_bd, own_rect, 1, border_radius=6)
+            surf.blit(own_s, (own_rect.x + 7, own_rect.y + 2))
+
+            # ── 3D Pedestal & Animated Unit Hologram ──────────────────────────
+            # Place visualizer in upper right portion of panel
+            VIS_CX = PANEL_X + int(PANEL_W * 0.72)
+            VIS_CY = PANEL_Y + 160
+            PED_CY = VIS_CY + 52
+
+            # Holographic light shaft
+            shaft = pygame.Surface((180, 110), pygame.SRCALPHA)
+            pygame.draw.polygon(shaft, (*glow_col, 22), [(45, 0), (135, 0), (180, 110), (0, 110)])
+            surf.blit(shaft, (VIS_CX - 90, PED_CY - 100))
+
+            # Holographic Pedestal (Concentric glowing ellipses with rotating tick marks)
+            ped_w, ped_h = 160, 42
+            ped_surf = pygame.Surface((ped_w + 20, ped_h + 20), pygame.SRCALPHA)
+            # Outer ring
+            pygame.draw.ellipse(ped_surf, (*glow_col, 50), (10, 10, ped_w, ped_h), 2)
+            # Inner bright ring
+            pygame.draw.ellipse(ped_surf, (*glow_col, 160), (22, 16, ped_w - 24, ped_h - 12), 2)
+            # Center disc glow
+            pygame.draw.ellipse(ped_surf, (*glow_col, 35), (32, 21, ped_w - 44, ped_h - 22))
+
+            # Rotating ticks around pedestal
+            num_ticks = 8
+            for ti in range(num_ticks):
+                ang = math.radians(self.t * 36.0 + ti * (360.0 / num_ticks))
+                tx = (ped_w // 2 + 10) + math.cos(ang) * (ped_w // 2 - 2)
+                ty = (ped_h // 2 + 10) + math.sin(ang) * (ped_h // 2 - 2)
+                pygame.draw.circle(ped_surf, (*glow_col, 200), (int(tx), int(ty)), 2)
+
+            surf.blit(ped_surf, (VIS_CX - (ped_w + 20) // 2, PED_CY - (ped_h + 20) // 2))
+
+            # Floating / breathing animation for the tower icon
+            hover_dy = math.sin(self.t * 2.4) * 6.0
+            _draw_tower_icon(surf, uname, VIS_CX, int(VIS_CY + hover_dy), self.t,
+                             size=110 if uname == "Castbound" else 72)
+
+            # ── STATS: Modern Glass Cards (Left side of panel) ────────────────
+            STAT_X0 = PANEL_X + 18
+            STAT_Y0 = badge_y + 36
+            STAT_W  = int(PANEL_W * 0.44)
+            CARD_H  = 38
+            GAP_Y   = 8
+
+            dmg_val = stats.get("damage")
+            fr_val  = stats.get("firerate")
+            rng_val = stats.get("range")
+            cst_val = stats.get("cost")
+            lmt_val = stats.get("limit")
+            inc_val = stats.get("income")
+
+            dps_str = f"{dmg_val / fr_val:.1f}" if (dmg_val is not None and fr_val and fr_val > 0) else "—"
+
+            stat_items = []
             if uname == "Farm":
-                stat_defs = [
-                    ("money_ico", "cost",   "{}"),
-                    ("limit_ico", "limit",  "{}"),
-                    ("money_ico", "income", "{}"),
-                ]
+                stat_items.append(("money_ico",  "PLACEMENT COST", f"${cst_val}" if cst_val is not None else "—", (255, 215, 60)))
+                stat_items.append(("limit_ico",  "TOWER LIMIT",    f"{lmt_val} MAX" if lmt_val is not None else "UNLIMITED", (160, 200, 255)))
+                stat_items.append(("money_ico",  "ROUND INCOME",   f"+${inc_val}" if inc_val is not None else "VARIABLE", (80, 240, 140)))
             else:
-                stat_defs = [
-                    ("money_ico",    "cost",     "{}"),
-                    ("limit_ico",    "limit",    "{}"),
-                    ("damage_ico",   "damage",   "{}"),
-                    ("firerate_ico", "firerate", "{:.2f}"),
-                    ("range_ico",    "range",    "{}"),
-                ]
-                if stats.get("income") is not None:
-                    stat_defs.append(("money_ico", "income", "${}"))
+                stat_items.append(("damage_ico",   "DAMAGE",      f"{dmg_val}" if dmg_val is not None else "—", (255, 100, 100)))
+                stat_items.append(("firerate_ico", "FIRE RATE",   f"{fr_val:.2f}s" if fr_val is not None else "—", (255, 180, 70)))
+                stat_items.append(("range_ico",    "RANGE",       f"{rng_val} TILES" if rng_val is not None else "—", (120, 220, 255)))
+                stat_items.append(("damage_ico",   "EST. DPS",    f"{dps_str}", (255, 130, 200)))
+                stat_items.append(("money_ico",    "BASE COST",   f"${cst_val}" if cst_val is not None else "—", (255, 220, 80)))
+                stat_items.append(("limit_ico",    "LIMIT",       f"{lmt_val}" if lmt_val is not None else "—", (180, 190, 215)))
 
-            for ri, (ico_name, key, fmt) in enumerate(stat_defs):
-                sy = STAT_Y0 + ri * ROW_H
-                if sy + ROW_H > PANEL_Y + PANEL_H - 95:
+            s_title_f = pygame.font.SysFont("segoeui", 11, bold=True)
+            s_val_f   = pygame.font.SysFont("segoeui", 16, bold=True)
+
+            for idx, (ico_n, lbl, val_s_txt, val_col) in enumerate(stat_items):
+                cy_item = STAT_Y0 + idx * (CARD_H + GAP_Y)
+                if cy_item + CARD_H > PANEL_Y + PANEL_H - 170:
                     break
+                card_r = pygame.Rect(STAT_X0, cy_item, STAT_W, CARD_H)
+                pygame.draw.rect(surf, (18, 23, 36), card_r, border_radius=8)
+                pygame.draw.rect(surf, (38, 48, 72), card_r, 1, border_radius=8)
+
                 # Icon
-                ico_img = load_icon(ico_name, ICO_SZ)
-                ico_y   = sy + (ROW_H - ICO_SZ) // 2
-                if ico_img:
-                    surf.blit(ico_img, (TEXT_X, ico_y))
-                    val_x = TEXT_X + ICO_SZ + 8
-                else:
-                    # Fallback colored circle
-                    pygame.draw.circle(surf, (100, 120, 160), (TEXT_X + ICO_SZ // 2, sy + ROW_H // 2), ICO_SZ // 2)
-                    val_x = TEXT_X + ICO_SZ + 8
-                val = stats.get(key)
-                val_str = fmt.format(val) if val is not None else "—"
-                val_s = stat_f.render(val_str, True, C_WHITE)
-                surf.blit(val_s, (val_x, sy + (ROW_H - val_s.get_height()) // 2))
+                ico_pic = load_icon(ico_n, 20)
+                if ico_pic:
+                    surf.blit(ico_pic, (card_r.x + 8, card_r.centery - ico_pic.get_height() // 2))
 
-            # ── Tower visual — centered horizontally in the panel ─────────────
-            VIS_CX = PANEL_X + PANEL_W // 2
-            VIS_CY = PANEL_Y + (PANEL_H - 90) // 2 + 10   # above description strip
-            _draw_tower_icon(surf, uname, VIS_CX, VIS_CY, self.t, size=110 if uname == "Castbound" else 72)
+                # Labels
+                lbl_surf = s_title_f.render(lbl, True, (110, 130, 165))
+                surf.blit(lbl_surf, (card_r.x + 34, card_r.y + 4))
 
-            # ── SKINS button — left side, above description ───────────────────
+                val_surf = s_val_f.render(val_s_txt, True, val_col)
+                surf.blit(val_surf, (card_r.x + 34, card_r.y + 16))
+
+            # ── SKINS button — under visualizer ──────────────────────────────
             has_skins = any(s["unit_name"] == uname and own_skin(s["id"]) for s in ALL_SKIN_DEFS)
-            SK_BTN_W  = int(PANEL_W * 0.30)
+            SK_BTN_W  = 170
             SK_BTN_H  = 34
-            SK_BTN_X  = PANEL_X + 8
-            SK_BTN_Y  = PANEL_Y + PANEL_H - 72 - 44 - SK_BTN_H - 6  # just above desc strip
-            sk_btn_r  = pygame.Rect(SK_BTN_X, SK_BTN_Y, SK_BTN_W, SK_BTN_H)
+            sk_btn_r  = pygame.Rect(VIS_CX - SK_BTN_W // 2, PED_CY + 32, SK_BTN_W, SK_BTN_H)
             sk_hov    = sk_btn_r.collidepoint(mx, my)
-            eq_sk     = get_equipped_skin(uname) if has_skins else None
+
             if has_skins:
-                sk_bg  = (100, 50, 160) if sk_hov else (72, 30, 120)
-                sk_brd = (200, 140, 255) if sk_hov else (150, 90, 220)
+                sk_bg  = (85, 42, 145) if sk_hov else (52, 24, 92)
+                sk_brd = (210, 150, 255) if sk_hov else (145, 80, 215)
+                sk_col = (240, 210, 255) if sk_hov else (200, 170, 235)
+                sk_lbl = "SKINS (CUSTOMIZE)"
             else:
-                sk_bg  = (35, 28, 50)
-                sk_brd = (70, 55, 90)
+                sk_bg  = (24, 20, 34)
+                sk_brd = (55, 45, 70)
+                sk_col = (85, 75, 100)
+                sk_lbl = "NO SKINS OWNED"
+
             pygame.draw.rect(surf, sk_bg,  sk_btn_r, border_radius=8)
-            pygame.draw.rect(surf, sk_brd, sk_btn_r, 2, border_radius=8)
-            sk_f   = pygame.font.SysFont("segoeui", 16, bold=True)
-            sk_lbl = "★ SKINS" if has_skins else "NO SKINS"
-            sk_col = (220, 180, 255) if has_skins else (80, 65, 100)
-            sk_s   = sk_f.render(sk_lbl, True, sk_col)
-            # truncate label if too wide
-            while sk_s.get_width() > SK_BTN_W - 10 and len(sk_lbl) > 4:
-                sk_lbl = sk_lbl[:-1]
-                sk_s   = sk_f.render(sk_lbl + "…", True, sk_col)
+            pygame.draw.rect(surf, sk_brd, sk_btn_r, 2 if (has_skins and sk_hov) else 1, border_radius=8)
+            sk_s = chip_f.render(sk_lbl, True, sk_col)
             surf.blit(sk_s, sk_s.get_rect(center=sk_btn_r.center))
             if has_skins:
                 self._skin_btns.append((sk_btn_r, uname))
 
             # ── Description strip — bottom of panel ───────────────────────────
-            DESC_H  = 72
-            DESC_Y  = PANEL_Y + PANEL_H - DESC_H - 44
-            desc_bg = pygame.Surface((PANEL_W - 4, DESC_H), pygame.SRCALPHA)
-            desc_bg.fill((5, 8, 15, 210))
-            surf.blit(desc_bg, (PANEL_X + 2, DESC_Y))
+            DESC_H  = 68
+            DESC_Y  = PANEL_Y + PANEL_H - DESC_H - 62
+            desc_bg = pygame.Surface((PANEL_W - 28, DESC_H), pygame.SRCALPHA)
+            pygame.draw.rect(desc_bg, (8, 12, 22, 200), (0, 0, PANEL_W - 28, DESC_H), border_radius=8)
+            pygame.draw.rect(desc_bg, (30, 42, 65), (0, 0, PANEL_W - 28, DESC_H), 1, border_radius=8)
+            surf.blit(desc_bg, (PANEL_X + 14, DESC_Y))
 
-            desc_f = pygame.font.SysFont("segoeui", 16, italic=True) if uname == "Castbound" else pygame.font.SysFont("segoeui", 16)
+            desc_f = pygame.font.SysFont("segoeui", 14, italic=True)
             words  = desc.split()
             lines2 = []
             cur_line = ""
             for w2 in words:
                 test = (cur_line + " " + w2).strip()
-                if desc_f.size(test)[0] < PANEL_W - 20:
+                if desc_f.size(test)[0] < PANEL_W - 56:
                     cur_line = test
                 else:
                     if cur_line: lines2.append(cur_line)
                     cur_line = w2
             if cur_line: lines2.append(cur_line)
-            for li, ln in enumerate(lines2[:4]):
-                ls3 = desc_f.render(ln, True, C_WHITE)
-                surf.blit(ls3, (PANEL_X + 10, DESC_Y + 6 + li * 17))
+            for li, ln in enumerate(lines2[:3]):
+                ls3 = desc_f.render(ln, True, (190, 205, 230))
+                surf.blit(ls3, (PANEL_X + 26, DESC_Y + 8 + li * 18))
 
-            # ── EQUIP / UNEQUIP button — centered, 50% width, above bottom ─────
-            BTN_H  = 44
-            BTN_W  = int(PANEL_W * 0.50)
-            BTN_Y  = PANEL_Y + PANEL_H - BTN_H - 18
+            # ── EQUIP / UNEQUIP / CANCEL button — bottom-center ───────────────
+            BTN_H  = 46
+            BTN_W  = int(PANEL_W * 0.70)
+            BTN_Y  = PANEL_Y + PANEL_H - BTN_H - 10
             btn_r2 = pygame.Rect(PANEL_X + (PANEL_W - BTN_W) // 2, BTN_Y, BTN_W, BTN_H)
-            btn_f  = pygame.font.SysFont("segoeui", 22, bold=True)
+            btn_f  = pygame.font.SysFont("segoeui", 19, bold=True)
 
             if is_equipped:
                 hov_u = btn_r2.collidepoint(mx, my)
-                bg2   = (80, 82, 95) if hov_u else (55, 57, 68)
-                bd2   = (180, 185, 200) if hov_u else (120, 125, 145)
+                bg2   = (110, 42, 42) if hov_u else (68, 28, 30)
+                bd2   = (255, 100, 100) if hov_u else (180, 60, 65)
                 pygame.draw.rect(surf, bg2, btn_r2, border_radius=10)
-                pygame.draw.rect(surf, bd2, btn_r2, 2, border_radius=10)
-                ul_s  = btn_f.render("UNEQUIP", True, C_WHITE)
+                pygame.draw.rect(surf, bd2, btn_r2, 2 if hov_u else 1, border_radius=10)
+                ul_s  = btn_f.render("UNEQUIP TOWER", True, C_WHITE)
                 surf.blit(ul_s, ul_s.get_rect(center=btn_r2.center))
                 self._btn_unequip = btn_r2
-            else:
-                hov_e = btn_r2.collidepoint(mx, my)
-                pulse = abs(math.sin(self.t * 2.2))
-                g_val = int(150 + pulse * 35)
-                bg2   = (25, g_val, 55) if hov_e else (18, 110, 45)
-                bd2   = (70, 255, 110) if hov_e else (45, 195, 85)
+            elif self._slot_select:
+                hov_c = btn_r2.collidepoint(mx, my)
+                p_pulse = 0.5 + 0.5 * math.sin(self.t * 6.0)
+                bg2   = (120, 60, 18) if hov_c else (80, 40, 12)
+                bd2   = (255, int(150 + p_pulse * 80), 40)
                 pygame.draw.rect(surf, bg2, btn_r2, border_radius=10)
                 pygame.draw.rect(surf, bd2, btn_r2, 2, border_radius=10)
-                eq_lbl = "CANCEL" if self._slot_select else "EQUIP"
-                eq_s   = btn_f.render(eq_lbl, True, C_WHITE)
+                eq_s   = btn_f.render("CANCEL SELECTION", True, C_WHITE)
                 surf.blit(eq_s, eq_s.get_rect(center=btn_r2.center))
                 self._btn_equip = btn_r2
+            elif is_owned:
+                hov_e = btn_r2.collidepoint(mx, my)
+                p_pulse = 0.5 + 0.5 * math.sin(self.t * 3.5)
+                bg2   = (28, 140, 65) if hov_e else (18, 95, 42)
+                bd2   = (70, int(220 + p_pulse * 35), 120)
+                pygame.draw.rect(surf, bg2, btn_r2, border_radius=10)
+                pygame.draw.rect(surf, bd2, btn_r2, 2 if hov_e else 1, border_radius=10)
+                eq_s   = btn_f.render("EQUIP TOWER", True, C_WHITE)
+                surf.blit(eq_s, eq_s.get_rect(center=btn_r2.center))
+                self._btn_equip = btn_r2
+            else:
+                # Locked unit - disabled action button
+                pygame.draw.rect(surf, (28, 32, 45), btn_r2, border_radius=10)
+                pygame.draw.rect(surf, (55, 60, 80), btn_r2, 1, border_radius=10)
+                lck_s = btn_f.render("UNIT LOCKED (BUY ON RIGHT)", True, (110, 120, 145))
+                surf.blit(lck_s, lck_s.get_rect(center=btn_r2.center))
 
         else:
             # No unit selected — show hint
@@ -12360,7 +13360,7 @@ class LoadoutScreen:
             surf.blit(hint_s, hint_s.get_rect(center=(left_w // 2, TOP + (SLOT_TOP - TOP) // 2)))
 
 
-        # ── RIGHT zone — scrollable rarity sections ──────────────────────────
+        # ── RIGHT zone — scrollable rarity catalog ────────────────────────────
         CONTENT_TOP = TOP
         CONTENT_BOT = SCREEN_H
         CONTENT_H   = CONTENT_BOT - CONTENT_TOP
@@ -12368,29 +13368,32 @@ class LoadoutScreen:
 
         total_h    = self._total_content_h()
         max_scroll = max(0, total_h - CONTENT_H + 20)
-        self.scroll_y = min(self.scroll_y, max_scroll)
+        self._max_scroll = max_scroll
+        self.scroll_y = min(self.scroll_y, float(max_scroll))
 
-        # Scrollbar
+        # Modern slim scrollbar
         if max_scroll > 0:
-            sbx = SCREEN_W - 8
-            pygame.draw.rect(surf, (40,45,60),   (sbx-4, CONTENT_TOP, 6, CONTENT_H), border_radius=3)
+            sbx = SCREEN_W - 7
+            pygame.draw.rect(surf, (20, 25, 38), (sbx - 3, CONTENT_TOP + 6, 5, CONTENT_H - 12), border_radius=3)
             tsh = CONTENT_H + max_scroll
-            th  = max(30, int(CONTENT_H * CONTENT_H / tsh))
-            ty  = CONTENT_TOP + int((CONTENT_H - th) * self.scroll_y / max_scroll)
-            pygame.draw.rect(surf, (100,120,180), (sbx-4, ty, 6, th), border_radius=3)
+            th  = max(36, int(CONTENT_H * CONTENT_H / tsh))
+            ty  = CONTENT_TOP + 6 + int((CONTENT_H - 12 - th) * (self.scroll_y / max_scroll))
+            pygame.draw.rect(surf, (0, 180, 220), (sbx - 3, ty, 5, th), border_radius=3)
 
-        surf.set_clip(pygame.Rect(panel_x, CONTENT_TOP, RIGHT_W - 12, CONTENT_H))
+        surf.set_clip(pygame.Rect(panel_x + 2, CONTENT_TOP, RIGHT_W - 14, CONTENT_H))
 
         owned = self._owned_units()
-        self._card_hits = []
-        self._buy_hits  = []
+        self._card_hits      = []
+        self._buy_hits       = []
         self._shard_buy_hits = []
 
-        sec_y   = CONTENT_TOP + 8 - self.scroll_y
+        sec_y   = CONTENT_TOP + 10 - int(self.scroll_y)
         label_f = pygame.font.SysFont("segoeui", 18, bold=True)
+        count_f = pygame.font.SysFont("segoeui", 13, bold=True)
         price_f = pygame.font.SysFont("consolas", 12, bold=True)
-        lock_f  = pygame.font.SysFont("segoeui", 20)
-        excl_f  = pygame.font.SysFont("segoeui", 11)
+        badge_f = pygame.font.SysFont("segoeui", 11, bold=True)
+
+        SHARD_PRICES = {"Jester": 300, "Korzhik": 1500, "Control Panel": 500, "xw5yt": 2000}
 
         for rarity in self._RARITY_ORDER:
             units_sec = self._units_for_rarity(rarity)
@@ -12403,11 +13406,13 @@ class LoadoutScreen:
                 _rarity_label = rarity.replace("_", " ").title() if "_" in rarity else rarity.capitalize()
                 if rarity in RARITY_DATA and "label" in RARITY_DATA[rarity] and ("_" in rarity or rarity in ("apex", "singularity")):
                     _rarity_label = RARITY_DATA[rarity]["label"]
+
+                # Section header text
                 if rarity == "apex":
                     ls2 = _render_gradient_text(_rarity_label, label_f, _APEX_GRAD_COLORS)
-                    surf.blit(ls2, (panel_x + 16, hdr_y))
+                    surf.blit(ls2, (panel_x + 18, hdr_y))
                 elif rarity == "singularity":
-                    _hx, _hy = panel_x + 16, hdr_y
+                    _hx, _hy = panel_x + 18, hdr_y
                     for _ox, _oy in [(-2,0),(2,0),(0,-2),(0,2),(-1,-1),(1,-1),(-1,1),(1,1)]:
                         _go = label_f.render(_rarity_label, True, (200, 0, 255))
                         surf.blit(_go, (_hx + _ox, _hy + _oy))
@@ -12415,10 +13420,16 @@ class LoadoutScreen:
                     surf.blit(ls2, (_hx, _hy))
                 else:
                     ls2 = label_f.render(_rarity_label, True, hdr_col)
-                    surf.blit(ls2, (panel_x + 16, hdr_y))
-                ul_y = hdr_y + ls2.get_height() + 2
-                pygame.draw.line(surf, hdr_line,
-                                 (panel_x + 16, ul_y), (SCREEN_W - 16, ul_y), 1)
+                    surf.blit(ls2, (panel_x + 18, hdr_y))
+
+                # Unlocked count pill: "3 / 5"
+                n_owned_sec = sum(1 for u in units_sec if u["name"] in owned)
+                cnt_str = f"  {n_owned_sec} / {len(units_sec)}"
+                cnt_s = count_f.render(cnt_str, True, (110, 140, 175))
+                surf.blit(cnt_s, (panel_x + 22 + ls2.get_width(), hdr_y + 3))
+
+                ul_y = hdr_y + ls2.get_height() + 4
+                pygame.draw.line(surf, hdr_line, (panel_x + 18, ul_y), (SCREEN_W - 20, ul_y), 1)
 
             for i, u in enumerate(units_sec):
                 col_i = i % self._COLS
@@ -12429,8 +13440,9 @@ class LoadoutScreen:
                 if cy2 + self._CH // 2 < CONTENT_TOP - 4 or cy2 - self._CH // 2 > CONTENT_BOT + 4:
                     continue
 
-                is_owned = u["name"] in owned
-                is_sel   = (self.selected == (rarity, i)) and is_owned
+                is_owned  = u["name"] in owned
+                is_sel    = (self.detail_unit == u["name"])
+                is_in_lo  = u["name"] in self.loadout
 
                 draw_unit_card(surf, u["name"], rarity, cx2, cy2,
                                self._CW, self._CH,
@@ -12439,64 +13451,73 @@ class LoadoutScreen:
                 card_r = pygame.Rect(cx2 - self._CW // 2, cy2 - self._CH // 2,
                                      self._CW, self._CH)
 
+                # ── "✓ EQUIPPED" badge — top of card if in loadout ────────────
+                if is_in_lo and is_owned:
+                    eq_b_s = badge_f.render("EQUIPPED", True, (40, 255, 160))
+                    eq_b_r = pygame.Rect(cx2 - eq_b_s.get_width() // 2 - 6,
+                                         card_r.y + 4,
+                                         eq_b_s.get_width() + 12, 15)
+                    pygame.draw.rect(surf, (10, 35, 22), eq_b_r, border_radius=4)
+                    pygame.draw.rect(surf, (35, 200, 110), eq_b_r, 1, border_radius=4)
+                    surf.blit(eq_b_s, (eq_b_r.x + 6, eq_b_r.y + 1))
+
+                # ── Pulsing selection border when this card is inspected ───────
+                if is_sel:
+                    p_sel = 0.5 + 0.5 * math.sin(self.t * 5.0)
+                    sel_col = (0, int(195 + p_sel * 60), int(215 + p_sel * 40))
+                    pygame.draw.rect(surf, sel_col, card_r, 2, border_radius=10)
+
                 if is_owned:
                     self._card_hits.append((card_r, rarity, i))
                 else:
+                    # Dark overlay for locked cards
                     dim = pygame.Surface((self._CW, self._CH), pygame.SRCALPHA)
-                    dim.fill((0, 0, 0, 160))
-                    mask = pygame.Surface((self._CW, self._CH), pygame.SRCALPHA)
-                    pygame.draw.rect(mask, (255,255,255,255),
-                                     (0,0,self._CW,self._CH), border_radius=16)
-                    dim.blit(mask, (0,0), special_flags=pygame.BLEND_RGBA_MIN)
+                    pygame.draw.rect(dim, (0, 0, 0, 155), (0, 0, self._CW, self._CH), border_radius=14)
                     surf.blit(dim, card_r.topleft)
 
-                    if rarity == "apex":
-                        SHARD_PRICES = {"Jester": 300, "Korzhik": 1500, "Control Panel": 500, "xw5yt": 2000}
-                        shard_price = SHARD_PRICES.get(u["name"])
-                        if shard_price is not None:
-                            shards_have = self.save_data.get("shards", 0)
-                            can_buy_s   = shards_have >= shard_price
-                            btn_r       = pygame.Rect(cx2 - 52, cy2 + 22, 104, 24)
-                            btn_hov     = btn_r.collidepoint(mx, my)
-                            btn_bg  = (60, 90, 10) if (can_buy_s and btn_hov) else \
-                                      (40, 60,  8) if can_buy_s else (70, 55, 10)
-                            btn_bd  = (200, 220, 40) if can_buy_s else (140, 110, 20)
-                            pygame.draw.rect(surf, btn_bg, btn_r, border_radius=5)
-                            pygame.draw.rect(surf, btn_bd, btn_r, 2, border_radius=5)
-                            ico_sh2 = load_icon("shard_ico", 12)
-                            ps2     = price_f.render(f" {shard_price}", True,
-                                                     (255,220,60) if can_buy_s else (140,120,40))
-                            pw3   = (ico_sh2.get_width() if ico_sh2 else 0) + ps2.get_width()
-                            px4   = btn_r.centerx - pw3 // 2
-                            if ico_sh2:
-                                surf.blit(ico_sh2, (px4, btn_r.centery - 6))
-                                surf.blit(ps2, (px4 + ico_sh2.get_width(),
-                                                btn_r.centery - ps2.get_height()//2))
-                            else:
-                                lbl_sh = price_f.render(f"◆ {shard_price}", True,
-                                                        (255,220,60) if can_buy_s else (140,120,40))
-                                surf.blit(lbl_sh, lbl_sh.get_rect(center=btn_r.center))
-                            self._shard_buy_hits.append((btn_r, u))
+                    # Buy button
+                    shard_price = SHARD_PRICES.get(u["name"])
+                    if shard_price is not None:
+                        can_buy_s = self.save_data.get("shards", 0) >= shard_price
+                        btn_r     = pygame.Rect(cx2 - 50, cy2 + 20, 100, 26)
+                        btn_hov   = btn_r.collidepoint(mx, my)
+                        btn_bg    = (75, 60, 15) if (can_buy_s and btn_hov) else \
+                                    (48, 38,  8) if can_buy_s else (65, 22, 22)
+                        btn_bd    = (230, 195, 45) if can_buy_s else (155, 50, 50)
+                        pygame.draw.rect(surf, btn_bg, btn_r, border_radius=6)
+                        pygame.draw.rect(surf, btn_bd, btn_r, 2 if btn_hov else 1, border_radius=6)
+                        ico_sh2 = load_icon("shard_ico", 13)
+                        ps2 = price_f.render(f" {shard_price}", True,
+                                             (255, 220, 60) if can_buy_s else (140, 120, 40))
+                        pw3 = (ico_sh2.get_width() if ico_sh2 else 0) + ps2.get_width()
+                        px4 = btn_r.centerx - pw3 // 2
+                        if ico_sh2:
+                            surf.blit(ico_sh2, (px4, btn_r.centery - ico_sh2.get_height() // 2))
+                            surf.blit(ps2, (px4 + ico_sh2.get_width(),
+                                            btn_r.centery - ps2.get_height() // 2))
+                        else:
+                            surf.blit(ps2, ps2.get_rect(center=btn_r.center))
+                        self._shard_buy_hits.append((btn_r, u))
                     else:
                         price = UNIT_SHOP_PRICES.get(u["name"], 0)
                         if price is not None:
                             can_buy = self.save_data.get("coins", 0) >= price
-                            btn_r   = pygame.Rect(cx2 - 48, cy2 + 22, 96, 24)
+                            btn_r   = pygame.Rect(cx2 - 48, cy2 + 20, 96, 26)
                             btn_hov = btn_r.collidepoint(mx, my)
-                            btn_bg  = (40,110,40) if (can_buy and btn_hov) else \
-                                      (26,68,26) if can_buy else (70,26,26)
-                            btn_bd  = (80,200,80) if can_buy else (160,55,55)
-                            pygame.draw.rect(surf, btn_bg, btn_r, border_radius=5)
-                            pygame.draw.rect(surf, btn_bd, btn_r, 2, border_radius=5)
-                            ico_m = load_icon("coin_ico", 12)
-                            ps    = price_f.render(f" {price}", True,
-                                                   C_GOLD if can_buy else (140,95,95))
-                            pw2   = (ico_m.get_width() if ico_m else 0) + ps.get_width()
-                            px3   = btn_r.centerx - pw2 // 2
+                            btn_bg  = (35, 100, 35) if (can_buy and btn_hov) else \
+                                      (22,  62, 22) if can_buy else (65, 22, 22)
+                            btn_bd  = (80, 215, 80) if can_buy else (160, 50, 50)
+                            pygame.draw.rect(surf, btn_bg, btn_r, border_radius=6)
+                            pygame.draw.rect(surf, btn_bd, btn_r, 2 if btn_hov else 1, border_radius=6)
+                            ico_m = load_icon("coin_ico", 13)
+                            ps = price_f.render(f" {price}", True,
+                                                C_GOLD if can_buy else (140, 95, 95))
+                            pw2 = (ico_m.get_width() if ico_m else 0) + ps.get_width()
+                            px3 = btn_r.centerx - pw2 // 2
                             if ico_m:
-                                surf.blit(ico_m, (px3, btn_r.centery - 6))
+                                surf.blit(ico_m, (px3, btn_r.centery - ico_m.get_height() // 2))
                                 surf.blit(ps, (px3 + ico_m.get_width(),
-                                               btn_r.centery - ps.get_height()//2))
+                                               btn_r.centery - ps.get_height() // 2))
                             else:
                                 surf.blit(ps, ps.get_rect(center=btn_r.center))
                             self._buy_hits.append((btn_r, u))
@@ -12504,15 +13525,6 @@ class LoadoutScreen:
             sec_y += sec_h
 
         surf.set_clip(None)
-
-        # ── Message ──────────────────────────────────────────────────────────
-        if self.msg_timer > 0:
-            ms = font_ru_lg.render(self.msg, True, C_GOLD)
-            draw_rect_alpha(surf, (0,0,0),
-                            (SCREEN_W//2 - ms.get_width()//2 - 10,
-                             SCREEN_H//2 - 20, ms.get_width()+20, 36), 180, 8)
-            surf.blit(ms, ms.get_rect(center=(SCREEN_W//2, SCREEN_H//2)))
-
 
 # ── Pause Menu ──────────────────────────────────────────────────────────────────
 class PauseMenu:
@@ -12562,6 +13574,7 @@ class Game:
         self._elapsed=0.0      # total play time in seconds (affected by speed)
         self._real_elapsed=0.0  # real wall-clock play time (unaffected by speed)
         self._end_coin_reward=0  # coins earned this run
+        self._end_shard_reward=0  # shards earned this run (hardcore mode)
         self.player_hp=100; self.player_maxhp=100; self.money=600
         self.enemies=[]; self.units=[]; self.effects=[]
         self._peer_units = []  # populated by MultiplayerGame subclass
@@ -12652,6 +13665,7 @@ class Game:
         self._frosty_bgm_track = 1        # 1 or 2 — which track plays next
         self._frosty_bgm_stopped = False  # True once wave 40 starts (don't restart)
         self.ui=UI(self.save_data)
+        self.ui.mode = mode
         self.ui.admin_mode = admin_mode or (mode == "sandbox")
         self.ui.cost_mult = 1.4 if mode == "hardcore" else 1.0
         # Apply fast-forward default setting (only if the Timescale Pass is owned)
@@ -12698,7 +13712,8 @@ class Game:
         # Achievement manager
         self.ach_mgr = AchievementManager()
         self._wave_coin_accum = 0.0  # fractional coin accumulator for per-wave rewards
-        self._last_coin_wave = 0  # last wave number for which profile coins were paid
+        self._wave_shard_accum = 0.0  # fractional shard accumulator for per-wave rewards
+        self._last_coin_wave = 0  # last wave number for which profile coins/shards were paid
         # track if easy-mode boss was let through (free_pass ach)
         self._easy_boss_leaked = False
         self._easy_boss_let_through = False  # boss reached end with hp < player hp
@@ -12807,8 +13822,16 @@ class Game:
         # Fallen: 750 total / 40 waves = 18.75 per wave
         # Frosty: 1500 total / 40 waves = 37.5 per wave
         # Infernal: 500 total / 34 waves ≈ 14.7 per wave
-        # Hardcore: no coins/shards — in-game money given per wave (see wave bonus section)
+        # Hardcore awards shards per wave (250 shards total / 50 waves = 5 shards per wave)
         if self.mode == "hardcore":
+            rate = 250.0 / HARDCORE_MAX_WAVES
+            self._wave_shard_accum += waves_done * rate
+            whole = int(self._wave_shard_accum)
+            if whole > 0:
+                self._wave_shard_accum -= whole
+                self._end_shard_reward += whole
+                self.save_data["shards"] = self.save_data.get("shards", 0) + whole
+                write_save(self.save_data)
             return
         rate = {"easy": 12.5, "fallen": 18.75, "frosty": 37.5, "infernal": 14.7}.get(self.mode, 12.5)
         self._wave_coin_accum += waves_done * rate
@@ -13492,7 +14515,9 @@ class Game:
                         idx = slot_keys[ev.key]; UType = self.ui.SLOT_TYPES[idx]
                         if UType is None: pass
                         elif self.mode != "sandbox" and self.money < int(UType.PLACE_COST * getattr(self.ui, 'cost_mult', 1.0)): self.ui.show_msg("Not enough money!")
-                        elif self.mode != "sandbox" and (lambda lim, own: lim is not None and sum(1 for u in own if type(u)==UType) >= lim)(UNIT_LIMITS.get(UType.NAME), [u for u in self.units if not getattr(u,'_mp_peer',False)]): self.ui.show_msg(f"Limit: {UNIT_LIMITS.get(UType.NAME)} {UType.NAME}!")
+                        elif self.mode != "sandbox" and (lambda lim, own: lim is not None and sum(1 for u in own if type(u)==UType) >= lim)(UNIT_LIMITS.get(UType.NAME), [u for u in self.units if not getattr(u,'_mp_peer',False)]):
+                            _lim_disp3 = _get_castbound_display_name() if UType.NAME in ("Castbound", "Skelebound") else UType.NAME
+                            self.ui.show_msg(f"Limit: {UNIT_LIMITS.get(UType.NAME)} {_lim_disp3}!")
                         else:
                             mx2, my2 = pygame.mouse.get_pos()
                             self.ui.selected_slot = idx
@@ -14052,13 +15077,35 @@ class Game:
                                for e in dead_reached):
                             self.ach_mgr.try_grant("king_victim")
                     # ── Profile stats: record loss ────────────────────────────
-                    _mode_key = self.mode if self.mode else "easy"
-                    _pst = self.save_data.setdefault("profile_stats", {})
-                    _pst["total_games"]  = _pst.get("total_games", 0) + 1
-                    _pst["total_losses"] = _pst.get("total_losses", 0) + 1
-                    _pst.setdefault("losses_by_mode", {})[_mode_key] = _pst.get("losses_by_mode", {}).get(_mode_key, 0) + 1
-                    _pst["total_waves"]  = _pst.get("total_waves", 0) + self.wave_mgr.wave
-                    _pst["best_wave_" + _mode_key] = max(_pst.get("best_wave_" + _mode_key, 0), self.wave_mgr.wave)
+                    if self.mode != "test":
+                        _mode_key = self.mode if self.mode else "easy"
+                        _pst = self.save_data.setdefault("profile_stats", {})
+                        _pst["total_games"]  = _pst.get("total_games", 0) + 1
+                        _pst["total_losses"] = _pst.get("total_losses", 0) + 1
+                        _pst.setdefault("losses_by_mode", {})[_mode_key] = _pst.get("losses_by_mode", {}).get(_mode_key, 0) + 1
+                        _pst["total_waves"]  = _pst.get("total_waves", 0) + self.wave_mgr.wave
+                        _pst["best_wave_" + _mode_key] = max(_pst.get("best_wave_" + _mode_key, 0), self.wave_mgr.wave)
+                        _used_towers = set(t for t in self.save_data.get("loadout", []) if t)
+                        _rev_cls = {
+                            "Assassin": "Assassin", "Twitgunner": "Twitgunner", "Felyne": "Korzhik",
+                            "Conduit": "Conduit", "Accelerator": "Accelerator", "Frostcelerator": "Frostcelerator",
+                            "Lifestealer": "Lifestealer", "Archer": "Archer", "RedBall": "Red Ball", "Farm": "Farm",
+                            "Swarmer": "Swarmer", "Freezer": "Freezer", "FrostBlaster": "Frost Blaster",
+                            "Sledger": "Sledger", "Gladiator": "Gladiator", "ToxicGunner": "Toxic Gunner",
+                            "Slasher": "Slasher", "GoldenCowboy": "Cowboy", "HallowPunk": "Hallow Punk",
+                            "SpotlightTech": "Spotlight Tech", "Snowballer": "Snowballer", "Commando": "Commando",
+                            "Warlock": "Warlock", "Caster": "Caster", "Jester": "Jester", "RubberDuck": "Rubber Duck",
+                            "Harvester": "Harvester", "ControlPanel": "Control Panel", "Castbound": "Castbound",
+                            "TheStrongest": "The Strongest", "Railgunner": "Railgunner", "xw5yt": "xw5yt", "Noiseform": "Noiseform"
+                        }
+                        for u in getattr(self, "units", []):
+                            cn = type(u).__name__
+                            tn = _rev_cls.get(cn) or getattr(u, "NAME", None) or cn
+                            if tn and tn != "hacker_laser_effects_test":
+                                _used_towers.add(tn)
+                        _tg = _pst.setdefault("tower_games", {})
+                        for _tn in _used_towers:
+                            _tg[_tn] = _tg.get(_tn, 0) + 1
                     # ── grand_slam chain broken on loss — reset
                     self.save_data["_gs_chain"] = []
                     write_save(self.save_data)
@@ -14185,10 +15232,10 @@ class Game:
                 if self._void_script_active:
                     self._update_test_boss(dt)
 
-                # Castbound: track damage dealt → charge Terraprisma bar
-                _CB_CHARGE_MAX = 1500
+                # Castbound: track damage dealt → charge Terraprisma bar (unlocked at lv3+)
+                _CB_CHARGE_MAX = 2500
                 for u in self.units:
-                    if not isinstance(u, Castbound):
+                    if not isinstance(u, Castbound) or not getattr(u, '_terra_unlocked', False):
                         continue
                     # Init attrs if missing
                     if not hasattr(u, '_terraprisma_charge'):
@@ -14205,6 +15252,8 @@ class Game:
                         u._terraprisma_charge -= _CB_CHARGE_MAX
                         idx = len(u._terraprismas)
                         u._terraprismas.append(Terraprisma(u, idx))
+                        from assets.units import play_castbound_sfx
+                        play_castbound_sfx("cb_terraprisma_summon.wav", vol_mult=0.85)
                     if u._terraprisma_charge >= _CB_CHARGE_MAX and len(u._terraprismas) >= 3:
                         u._terraprisma_charge = _CB_CHARGE_MAX  # cap when full
                     # Update Terraprismas
@@ -14590,6 +15639,10 @@ class Game:
                             self._end_coin_reward += 1
                             self.save_data["coins"] = self.save_data.get("coins", 0) + 1
                             self._wave_coin_accum = 0.0
+                        if self.mode == "hardcore" and self._wave_shard_accum >= 0.5:
+                            self._end_shard_reward += 1
+                            self.save_data["shards"] = self.save_data.get("shards", 0) + 1
+                            self._wave_shard_accum = 0.0
                         write_save(self.save_data)
                         # ── Grant achievements on win ──
                         if self.mode == "fallen":
@@ -14684,14 +15737,36 @@ class Game:
                                 _dl_pr[_dlqid] = min(max(_dlcur, self.wave_mgr.wave), _dltgt)
                         write_save(self.save_data)
                         # ── Profile stats: record win ────────────────────
-                        _mode_key_w = self.mode if self.mode else "easy"
-                        _pst_w = self.save_data.setdefault("profile_stats", {})
-                        _pst_w["total_games"] = _pst_w.get("total_games", 0) + 1
-                        _pst_w["total_wins"]  = _pst_w.get("total_wins", 0) + 1
-                        _pst_w.setdefault("wins_by_mode", {})[_mode_key_w] = _pst_w.get("wins_by_mode", {}).get(_mode_key_w, 0) + 1
-                        _pst_w["total_waves"] = _pst_w.get("total_waves", 0) + self.wave_mgr.wave
-                        _pst_w["total_kills"] = _pst_w.get("total_kills", 0) + getattr(self, "_total_kills", 0)
-                        _pst_w["total_earned"] = _pst_w.get("total_earned", 0) + getattr(self, "_total_earned", 0)
+                        if self.mode != "test":
+                            _mode_key_w = self.mode if self.mode else "easy"
+                            _pst_w = self.save_data.setdefault("profile_stats", {})
+                            _pst_w["total_games"] = _pst_w.get("total_games", 0) + 1
+                            _pst_w["total_wins"]  = _pst_w.get("total_wins", 0) + 1
+                            _pst_w.setdefault("wins_by_mode", {})[_mode_key_w] = _pst_w.get("wins_by_mode", {}).get(_mode_key_w, 0) + 1
+                            _pst_w["total_waves"] = _pst_w.get("total_waves", 0) + self.wave_mgr.wave
+                            _pst_w["total_kills"] = _pst_w.get("total_kills", 0) + getattr(self, "_total_kills", 0)
+                            _pst_w["total_earned"] = _pst_w.get("total_earned", 0) + getattr(self, "_total_earned", 0)
+                            _used_towers_w = set(t for t in self.save_data.get("loadout", []) if t)
+                            _rev_cls_w = {
+                                "Assassin": "Assassin", "Twitgunner": "Twitgunner", "Felyne": "Korzhik",
+                                "Conduit": "Conduit", "Accelerator": "Accelerator", "Frostcelerator": "Frostcelerator",
+                                "Lifestealer": "Lifestealer", "Archer": "Archer", "RedBall": "Red Ball", "Farm": "Farm",
+                                "Swarmer": "Swarmer", "Freezer": "Freezer", "FrostBlaster": "Frost Blaster",
+                                "Sledger": "Sledger", "Gladiator": "Gladiator", "ToxicGunner": "Toxic Gunner",
+                                "Slasher": "Slasher", "GoldenCowboy": "Cowboy", "HallowPunk": "Hallow Punk",
+                                "SpotlightTech": "Spotlight Tech", "Snowballer": "Snowballer", "Commando": "Commando",
+                                "Warlock": "Warlock", "Caster": "Caster", "Jester": "Jester", "RubberDuck": "Rubber Duck",
+                                "Harvester": "Harvester", "ControlPanel": "Control Panel", "Castbound": "Castbound",
+                                "TheStrongest": "The Strongest", "Railgunner": "Railgunner", "xw5yt": "xw5yt", "Noiseform": "Noiseform"
+                            }
+                            for u in getattr(self, "units", []):
+                                cn = type(u).__name__
+                                tn = _rev_cls_w.get(cn) or getattr(u, "NAME", None) or cn
+                                if tn and tn != "hacker_laser_effects_test":
+                                    _used_towers_w.add(tn)
+                            _tg_w = _pst_w.setdefault("tower_games", {})
+                            for _tn in _used_towers_w:
+                                _tg_w[_tn] = _tg_w.get(_tn, 0) + 1
                         write_save(self.save_data)
                         self.win=True
                         try:
@@ -15416,18 +16491,25 @@ class Game:
         start_x=SCREEN_W//2-total_panels_w//2
         panel_y=SCREEN_H//2-190
 
-        # Coins panel (left)
+        # Reward panel (left) — Shards for Hardcore, Coins for other modes
         cp_x=start_x
         cp_y=panel_y
         draw_rect_alpha(surf,(10,12,22),(cp_x,cp_y,cp_w,cp_h),230,14)
         pygame.draw.rect(surf,(50,55,80),(cp_x,cp_y,cp_w,cp_h),2,border_radius=14)
-        ico_m=load_icon("coin_ico",64)
+        is_hc = (self.mode == "hardcore")
+        ico_name = "shard_ico" if is_hc else "coin_ico"
+        ico_m=load_icon(ico_name,64)
         if ico_m:
             surf.blit(ico_m,(cp_x+cp_w//2-32,cp_y+22))
-        reward=self._end_coin_reward  # coins earned during this run (per wave)
-        total_coins=self.save_data.get("coins",0)
         cf=pygame.font.SysFont("segoeui",28,bold=True)
-        cs=cf.render(f"{total_coins} Coins",True,C_GOLD)
+        if is_hc:
+            reward=getattr(self, '_end_shard_reward', 0)
+            total_shards=self.save_data.get("shards",0)
+            cs=cf.render(f"{total_shards} Shards",True,(100,200,255))
+        else:
+            reward=self._end_coin_reward  # coins earned during this run (per wave)
+            total_coins=self.save_data.get("coins",0)
+            cs=cf.render(f"{total_coins} Coins",True,C_GOLD)
         surf.blit(cs,cs.get_rect(center=(cp_x+cp_w//2,cp_y+cp_h-52)))
         if reward>0:
             rs2=pygame.font.SysFont("segoeui",22).render(f"+{reward} earned",True,(100,220,100))
@@ -15544,17 +16626,541 @@ def _run_multiplayer(screen, save_data):
                             self.action = "play_hardcore"
             self._draw()
             pygame.display.flip()
-        return self.action
+
+
+# ── Startup Intro Animation ─────────────────────────────────────────────────────────
+def run_intro_animation(screen):
+    """Cinematic startup animation:
+    - Deep space background with subtle radial glow
+    - 'Python' smoothly fades in in bold crimson red in the center
+    - A razor-sharp red slash cuts across 'thon' with screen shake, chromatic aberration, and sparks
+    - 'thon' splits into two glowing halves that fall and tumble into the dark void
+    - 'tds' smoothly appears in pure radiant white after 'Py' to form 'Pytds'
+    - Light glint sweeps across the completed title
+    - Skippable with Space/Enter/Esc/Click
+    """
+    try:
+        clock = pygame.time.Clock()
+        W, H = screen.get_size()
+        cx, cy = W // 2, H // 2
+
+        font_size = max(52, min(100, int(84 * (H / 720.0))))
+        sub_size  = max(12, min(24, int(16 * (H / 720.0))))
+        font_logo = pygame.font.SysFont("segoeui", font_size, bold=True)
+        font_sub  = pygame.font.SysFont("segoeui", sub_size, bold=True)
+
+        RED_COLOR   = (245, 32, 32)
+        WHITE_COLOR = (255, 255, 255)
+
+        surf_py   = font_logo.render("Py",   True, RED_COLOR)
+        surf_thon = font_logo.render("thon", True, RED_COLOR)
+        surf_tds  = font_logo.render("tds",  True, WHITE_COLOR)
+        surf_sub  = font_sub.render("T O W E R   D E F E N S E   S I M U L A T O R", True, (185, 200, 225))
+
+        w_py, h_py     = surf_py.get_size()
+        w_thon, h_thon = surf_thon.get_size()
+        w_tds, h_tds   = surf_tds.get_size()
+        w_sub, h_sub   = surf_sub.get_size()
+
+        w_python    = w_py + w_thon
+        init_py_x   = cx - w_python // 2
+        init_thon_x = init_py_x + w_py
+        text_y      = cy - h_py // 2
+
+        w_pytds    = w_py + w_tds
+        final_py_x = cx - w_pytds // 2
+
+        # Diagonal cut across "thon"
+        cut_y_start = int(h_thon * 0.18)
+        cut_y_end   = int(h_thon * 0.82)
+        pts_top = [(0, 0), (w_thon, 0), (w_thon, cut_y_end), (0, cut_y_start)]
+        pts_bot = [(0, cut_y_start), (w_thon, cut_y_end), (w_thon, h_thon), (0, h_thon)]
+
+        top_mask = pygame.Surface((w_thon, h_thon), pygame.SRCALPHA)
+        pygame.draw.polygon(top_mask, (255, 255, 255, 255), pts_top)
+        top_piece = surf_thon.copy()
+        top_piece.blit(top_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+        bot_mask = pygame.Surface((w_thon, h_thon), pygame.SRCALPHA)
+        pygame.draw.polygon(bot_mask, (255, 255, 255, 255), pts_bot)
+        bot_piece = surf_thon.copy()
+        bot_piece.blit(bot_mask, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+        # ── Pre-bake a subtle radial glow behind the title ────────────────────
+        glow_r = int(min(W, H) * 0.38)
+        bg_glow = pygame.Surface((glow_r*2, glow_r*2), pygame.SRCALPHA)
+        for gi in range(glow_r, 0, -4):
+            t_g = gi / glow_r
+            ga  = int(38 * (1 - t_g) * (1 - t_g))
+            pygame.draw.circle(bg_glow, (60, 10, 10, ga), (glow_r, glow_r), gi)
+
+        # ── Ambient floating ash / dust particles ─────────────────────────────
+        # [x, y, vx, vy, size, alpha, phase, phase_speed]
+        ambient_motes = []
+        for _ in range(55):
+            ambient_motes.append([
+                random.uniform(0, W), random.uniform(0, H),
+                random.uniform(-15, 15), random.uniform(-18, -50),
+                random.uniform(1.0, 2.8),
+                random.randint(20, 80),
+                random.uniform(0, 6.28),
+                random.uniform(0.6, 1.4),
+            ])
+
+        slash_sparks    = []
+        slash_triggered = False
+
+        top_pos = [float(init_thon_x), float(text_y)]
+        top_vel = [2.2, -3.2]
+        top_rot = 0.0
+
+        bot_pos = [float(init_thon_x), float(text_y)]
+        bot_vel = [-1.8, 1.8]
+        bot_rot = 0.0
+
+        sim_time      = 0.0
+        TOTAL_DUR     = 4.7
+        fade_out_start = 4.2
+        fade_out_dur   = 0.5
+
+        # Chromatic aberration surfaces (pre-alloc)
+        chrom_surf_r = pygame.Surface((W, H), pygame.SRCALPHA)
+        chrom_surf_b = pygame.Surface((W, H), pygame.SRCALPHA)
+
+        running = True
+        while running and sim_time < TOTAL_DUR:
+            dt = clock.tick(60) / 1000.0
+            if dt > 0.05: dt = 0.016
+            sim_time += dt
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit(); sys.exit()
+                elif event.type in (pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN):
+                    running = False; break
+
+            if not running:
+                break
+
+            # ── Slash trigger at 1.65s ─────────────────────────────────────────
+            if sim_time >= 1.65 and not slash_triggered:
+                slash_triggered = True
+                try:
+                    sfx_p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "sound", "slash.mp3")
+                    if os.path.exists(sfx_p):
+                        snd = pygame.mixer.Sound(sfx_p)
+                        vol = 0.0 if SETTINGS.get("sfx_muted") else SETTINGS.get("sfx_volume", 0.7)
+                        snd.set_volume(vol)
+                        snd.play()
+                except Exception:
+                    pass
+
+                sx1 = init_thon_x - 30; sy1 = text_y + cut_y_start - 12
+                sx2 = init_thon_x + w_thon + 35; sy2 = text_y + cut_y_end + 14
+                for _ in range(65):
+                    f_seg = random.random()
+                    spx = sx1 + (sx2 - sx1) * f_seg
+                    spy = sy1 + (sy2 - sy1) * f_seg
+                    spd = random.uniform(80, 400)
+                    ang = math.atan2(sy2 - sy1, sx2 - sx1) + math.pi / 2 + random.uniform(-1.0, 1.0)
+                    if random.random() < 0.5: ang += math.pi
+                    slash_sparks.append([
+                        spx, spy,
+                        math.cos(ang) * spd, math.sin(ang) * spd,
+                        random.choice([(255,255,255),(255,200,60),(255,60,60),(220,20,20),(255,140,0)]),
+                        random.uniform(2.0, 5.0),
+                        random.uniform(0.30, 0.80),
+                        0.0
+                    ])
+
+            # Screen shake during slash
+            shake_x, shake_y = 0.0, 0.0
+            if 1.65 <= sim_time < 1.95:
+                decay   = 1.0 - (sim_time - 1.65) / 0.3
+                mag     = 15.0 * decay
+                shake_x = random.uniform(-mag, mag)
+                shake_y = random.uniform(-mag, mag)
+
+            # ── Draw ──────────────────────────────────────────────────────────
+            screen.fill((0, 0, 0))
+
+            # Radial background glow (intensifies near slash)
+            glow_alpha_mul = 1.0
+            if 1.65 <= sim_time < 2.5:
+                glow_alpha_mul = 1.0 + 2.5 * max(0, 1.0 - (sim_time - 1.65) / 0.85)
+            glow_copy = bg_glow.copy()
+            if glow_alpha_mul != 1.0:
+                glow_copy.set_alpha(min(255, int(255 * min(glow_alpha_mul, 3.0) / 3.0)))
+            screen.blit(glow_copy, (cx - glow_r, cy - glow_r))
+
+            # 1. Ambient motes
+            for m in ambient_motes:
+                m[0] += m[2] * dt
+                m[1] += m[3] * dt
+                m[6] += m[7] * dt
+                if m[1] < -10:
+                    m[1] = H + 10; m[0] = random.uniform(0, W)
+                pulse_a = int(m[5] * (0.4 + 0.6 * abs(math.sin(m[6]))))
+                if pulse_a < 2: continue
+                ms = pygame.Surface((max(2, int(m[4]*2+2)), max(2, int(m[4]*2+2))), pygame.SRCALPHA)
+                r_sz = max(1, int(m[4]))
+                pygame.draw.circle(ms, (200, 30, 30, pulse_a), (r_sz+1, r_sz+1), r_sz)
+                screen.blit(ms, (int(m[0]-r_sz), int(m[1]-r_sz)))
+
+            # 2. Main title sequence
+            if sim_time < 1.65:
+                in_prog  = min(1.0, max(0.0, (sim_time - 0.3) / 1.0))
+                in_ease  = in_prog * (2.0 - in_prog)
+                cur_alpha = int(255 * in_ease)
+
+                if cur_alpha > 0:
+                    s_py   = surf_py.copy();   s_py.set_alpha(cur_alpha)
+                    s_thon = surf_thon.copy(); s_thon.set_alpha(cur_alpha)
+                    screen.blit(s_py,   (init_py_x   + shake_x, text_y + shake_y))
+                    screen.blit(s_thon, (init_thon_x + shake_x, text_y + shake_y))
+            else:
+                shift_p  = min(1.0, max(0.0, (sim_time - 1.9) / 0.7))
+                ease_s   = shift_p * shift_p * (3 - 2 * shift_p)
+                cur_py_x = init_py_x + (final_py_x - init_py_x) * ease_s
+
+                screen.blit(surf_py, (cur_py_x + shake_x, text_y + shake_y))
+
+                # Falling severed halves of "thon"
+                if sim_time < 2.9:
+                    top_pos[0] += top_vel[0] * dt * 60
+                    top_pos[1] += top_vel[1] * dt * 60
+                    top_vel[1] += 9.8 * dt * 2.2
+                    top_rot    += 32.0 * dt
+
+                    bot_pos[0] += bot_vel[0] * dt * 60
+                    bot_pos[1] += bot_vel[1] * dt * 60
+                    bot_vel[1] += 12.0 * dt * 2.2
+                    bot_rot    -= 28.0 * dt
+
+                    piece_alpha = int(255 * max(0.0, 1.0 - max(0.0, sim_time - 2.05) / 0.65))
+                    if piece_alpha > 0:
+                        for piece, pos, rot in [(top_piece, top_pos, top_rot), (bot_piece, bot_pos, bot_rot)]:
+                            orig_r = piece.get_rect(topleft=(pos[0], pos[1]))
+                            rp = pygame.transform.rotate(piece, rot)
+                            rp.set_alpha(piece_alpha)
+                            rr = rp.get_rect(center=orig_r.center)
+                            screen.blit(rp, (rr.x + shake_x, rr.y + shake_y))
+
+                # "tds" slides in
+                if sim_time >= 2.2:
+                    tds_p     = min(1.0, max(0.0, (sim_time - 2.2) / 0.65))
+                    ease_tds  = math.sin(tds_p * math.pi * 0.5)
+                    tds_a     = int(255 * ease_tds)
+                    tds_slide = int((1.0 - ease_tds) * 18)
+                    cur_tds_x = cur_py_x + w_py + 2 + tds_slide
+                    s_tds = surf_tds.copy(); s_tds.set_alpha(tds_a)
+                    screen.blit(s_tds, (cur_tds_x + shake_x, text_y + shake_y))
+
+                # Glint sweep
+                if 3.0 <= sim_time < 3.8:
+                    glint_p = (sim_time - 3.0) / 0.8
+                    gx = cur_py_x - 20 + glint_p * (w_pytds + 40)
+                    gy = text_y + h_py // 2
+                    glint_alpha = int(255 * math.sin(glint_p * math.pi))
+                    if glint_alpha > 0:
+                        glint_s = pygame.Surface((140, 140), pygame.SRCALPHA)
+                        gcx, gcy = 70, 70
+                        for gw, ga_mul in [(3, 0.15), (2, 0.5), (1, 1.0)]:
+                            pygame.draw.line(glint_s, (255,255,255,int(glint_alpha*ga_mul)), (gcx-55,gcy), (gcx+55,gcy), gw)
+                        star_pts = [(gcx,gcy-20),(gcx+4,gcy),(gcx,gcy+20),(gcx-4,gcy)]
+                        pygame.draw.polygon(glint_s, (255,255,255,glint_alpha), star_pts)
+                        pygame.draw.circle(glint_s, (255,255,255,glint_alpha), (gcx,gcy), 3)
+                        pygame.draw.circle(glint_s, (255,220,220,int(glint_alpha*0.4)), (gcx,gcy), 12)
+                        screen.blit(glint_s, (int(gx-gcx), int(gy-gcy)))
+
+                # Subtitle
+                if sim_time >= 3.1:
+                    sub_p = min(1.0, (sim_time - 3.1) / 0.6)
+                    sub_a = int(210 * sub_p)
+                    if sub_a > 0:
+                        s_sub = surf_sub.copy(); s_sub.set_alpha(sub_a)
+                        screen.blit(s_sub, (cx - w_sub//2 + shake_x, text_y + h_py + int(18*(H/720.0)) + shake_y))
+
+            # 3. Slash beam
+            if 1.65 <= sim_time < 1.95:
+                sl_p = (sim_time - 1.65) / 0.3
+                sl_a = int(255 * (1.0 - sl_p) ** 1.3)
+                if sl_a > 0:
+                    sx1 = init_thon_x - 30; sy1 = text_y + cut_y_start - 12
+                    sx2 = init_thon_x + w_thon + 35; sy2 = text_y + cut_y_end + 14
+                    slash_surf = pygame.Surface((W, H), pygame.SRCALPHA)
+                    pygame.draw.line(slash_surf, (220,20,20,int(sl_a*0.35)), (int(sx1),int(sy1)), (int(sx2),int(sy2)), 22)
+                    pygame.draw.line(slash_surf, (255,45,45,int(sl_a*0.75)), (int(sx1),int(sy1)), (int(sx2),int(sy2)), 9)
+                    pygame.draw.line(slash_surf, (255,255,255,sl_a),         (int(sx1),int(sy1)), (int(sx2),int(sy2)), 3)
+                    screen.blit(slash_surf, (shake_x, shake_y))
+
+            # 4. Chromatic aberration at impact (1.65s → 1.80s)
+            if 1.65 <= sim_time < 1.80:
+                ca_p     = (sim_time - 1.65) / 0.15
+                ca_str   = int(8 * (1.0 - ca_p))
+                if ca_str > 0:
+                    # Blit the current screen content offset in R and B channels
+                    chrom_snap = screen.copy()
+                    r_surf = pygame.Surface((W, H), pygame.SRCALPHA)
+                    r_surf.fill((255, 0, 0, 0))
+                    r_surf.blit(chrom_snap, (ca_str, 0))
+                    r_surf.set_alpha(80)
+                    screen.blit(r_surf, (0, 0), special_flags=pygame.BLEND_ADD)
+                    b_surf = pygame.Surface((W, H), pygame.SRCALPHA)
+                    b_surf.blit(chrom_snap, (-ca_str, 0))
+                    b_surf.set_alpha(60)
+                    screen.blit(b_surf, (0, 0), special_flags=pygame.BLEND_ADD)
+
+            # 5. Red flash overlay
+            if 1.65 <= sim_time < 1.82:
+                flash_p = (sim_time - 1.65) / 0.17
+                flash_a = int(130 * (1.0 - flash_p))
+                if flash_a > 0:
+                    flash_s = pygame.Surface((W, H), pygame.SRCALPHA)
+                    flash_s.fill((255, 40, 40, flash_a))
+                    screen.blit(flash_s, (0, 0))
+
+            # 6. Sparks
+            for sp in slash_sparks:
+                sp[7] += dt
+                if sp[7] < sp[6]:
+                    sp[0] += sp[2] * dt
+                    sp[1] += sp[3] * dt
+                    sp[3] += 140.0 * dt
+                    sp_life_frac = 1.0 - sp[7] / sp[6]
+                    sp_alpha = int(255 * sp_life_frac)
+                    sp_r = max(1, int(sp[5] * sp_life_frac))
+                    sp_s = pygame.Surface((sp_r*2+2, sp_r*2+2), pygame.SRCALPHA)
+                    pygame.draw.circle(sp_s, (*sp[4], sp_alpha), (sp_r+1,sp_r+1), sp_r)
+                    screen.blit(sp_s, (int(sp[0]-sp_r-1+shake_x), int(sp[1]-sp_r-1+shake_y)))
+
+            # 7. Fade out
+            if sim_time >= fade_out_start:
+                fo_p = min(1.0, (sim_time - fade_out_start) / fade_out_dur)
+                fo_a = int(255 * fo_p)
+                if fo_a > 0:
+                    fo_s = pygame.Surface((W, H), pygame.SRCALPHA)
+                    fo_s.fill((0, 0, 0, fo_a))
+                    screen.blit(fo_s, (0, 0))
+
+            pygame.display.flip()
+
+    except Exception as e:
+        print("Intro animation exception (bypassed safely):", e)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
+
+# ── Save-file migration dialog ────────────────────────────────────────────────
+def _run_save_migration_dialog(screen):
+    """
+    TEMPORARY: detects old save files (savegame.json / achievements.json /
+    skins.json) and offers to merge them into a single save.json, then deletes
+    the originals.  Returns True if migration was performed or declined.
+    """
+    import json as _mig_json, shutil as _mig_shutil
+
+    _base = os.path.dirname(os.path.abspath(__file__))
+    _NEW_SAVE   = os.path.join(_base, "save.json")
+    _OLD_SAVE   = os.path.join(_base, "savegame.json")
+    _OLD_ACH    = os.path.join(_base, "achievements.json")
+    _OLD_SKINS  = os.path.join(_base, "skins.json")
+
+    _old_files_found = [p for p in (_OLD_SAVE, _OLD_ACH, _OLD_SKINS) if os.path.exists(p)]
+
+    # Nothing to migrate
+    if not _old_files_found:
+        return False
+
+    # Already migrated (new file exists) — just offer cleanup
+    _already_has_new = os.path.exists(_NEW_SAVE)
+
+    # ── Draw helper ─────────────────────────────────────────────────────────
+    def _draw_dialog(hover_btn):
+        SW, SH = screen.get_size()
+        # Dim overlay
+        overlay = pygame.Surface((SW, SH), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        screen.blit(overlay, (0, 0))
+
+        # Card
+        CW, CH = 760, 400
+        cx, cy = SW // 2, SH // 2
+        card = pygame.Rect(cx - CW // 2, cy - CH // 2, CW, CH)
+        cs = pygame.Surface((CW, CH), pygame.SRCALPHA)
+        pygame.draw.rect(cs, (12, 15, 30, 245), (0, 0, CW, CH), border_radius=18)
+        screen.blit(cs, card.topleft)
+        pygame.draw.rect(screen, (50, 120, 200), card, 2, border_radius=18)
+
+        # Icon + title
+        tf = pygame.font.SysFont("segoeui", 30, bold=True)
+        ts = tf.render("💾  Save Migration", True, (170, 215, 255))
+        screen.blit(ts, ts.get_rect(center=(cx, card.top + 36)))
+
+        pygame.draw.line(screen, (40, 60, 100),
+                         (card.left + 24, card.top + 62),
+                         (card.right - 24, card.top + 62), 1)
+
+        # Body text
+        mf = pygame.font.SysFont("segoeui", 17)
+        lines_txt = [
+            "Обнаружены старые файлы сохранения:",
+            "",
+        ] + [f"  •  {os.path.basename(p)}" for p in _old_files_found] + [
+            "",
+            "Хочешь объединить их в один файл save.json",
+            "и удалить старые?",
+            "",
+            "ℹ  settings.json остаётся без изменений.",
+            "⚠  Это действие нельзя отменить.",
+        ]
+        ty = card.top + 76
+        for txt_line in lines_txt:
+            col = (90, 100, 130) if txt_line.startswith("⚠") else \
+                  (120, 220, 120) if txt_line.startswith("  •") else \
+                  (200, 215, 255)
+            ls = mf.render(txt_line, True, col)
+            screen.blit(ls, ls.get_rect(center=(cx, ty)))
+            ty += 24
+
+        # Buttons
+        btn_yes = pygame.Rect(cx - 220, card.bottom - 68, 200, 44)
+        btn_no  = pygame.Rect(cx + 20,  card.bottom - 68, 200, 44)
+
+        for btn, lbl, is_yes in [(btn_yes, "✓  Конвертировать", True),
+                                  (btn_no,  "✗  Пропустить",    False)]:
+            is_hov = (btn == hover_btn)
+            if is_yes:
+                bg  = (30, 100, 60, 230) if is_hov else (20, 70, 40, 210)
+                bd  = (60, 200, 100) if is_hov else (40, 140, 70)
+                tc  = (140, 255, 180) if is_hov else (100, 220, 140)
+            else:
+                bg  = (100, 40, 40, 230) if is_hov else (70, 25, 25, 210)
+                bd  = (200, 70, 70) if is_hov else (140, 50, 50)
+                tc  = (255, 160, 160) if is_hov else (200, 120, 120)
+            bs = pygame.Surface((btn.w, btn.h), pygame.SRCALPHA)
+            pygame.draw.rect(bs, bg, (0, 0, btn.w, btn.h), border_radius=10)
+            screen.blit(bs, btn.topleft)
+            pygame.draw.rect(screen, bd, btn, 2, border_radius=10)
+            bf = pygame.font.SysFont("segoeui", 18, bold=True)
+            bls = bf.render(lbl, True, tc)
+            screen.blit(bls, bls.get_rect(center=btn.center))
+
+        return btn_yes, btn_no
+
+    # ── Event loop ───────────────────────────────────────────────────────────
+    clock = pygame.time.Clock()
+    hover_btn = None
+    while True:
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            if ev.type == pygame.MOUSEMOTION:
+                mx, my = ev.pos
+                btn_yes, btn_no = _draw_dialog(None)  # get rects
+                hover_btn = btn_yes if btn_yes.collidepoint(mx, my) else \
+                            btn_no  if btn_no.collidepoint(mx, my) else None
+            if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                btn_yes, btn_no = _draw_dialog(None)
+                if btn_yes.collidepoint(ev.pos):
+                    # ── Merge & write save.json ──────────────────────────
+                    try:
+                        merged = {}
+                        # 1) game save
+                        if os.path.exists(_OLD_SAVE):
+                            with open(_OLD_SAVE, "r", encoding="utf-8") as _f:
+                                merged.update(_mig_json.load(_f))
+                        # 2) achievements
+                        if os.path.exists(_OLD_ACH):
+                            with open(_OLD_ACH, "r", encoding="utf-8") as _f:
+                                _ach = _mig_json.load(_f)
+                                merged["achievements"] = _ach.get("unlocked", [])
+                        # 3) skins
+                        if os.path.exists(_OLD_SKINS):
+                            with open(_OLD_SKINS, "r", encoding="utf-8") as _f:
+                                merged["skins"] = _mig_json.load(_f)
+                        # Write new unified save
+                        with open(_NEW_SAVE, "w", encoding="utf-8") as _f:
+                            _mig_json.dump(merged, _f, ensure_ascii=False, indent=2)
+                        # Remove old files
+                        for _p in _old_files_found:
+                            try:
+                                os.remove(_p)
+                            except Exception:
+                                pass
+                        # Success splash
+                        _show_migration_result(screen, True, _old_files_found)
+                    except Exception as _e:
+                        _show_migration_result(screen, False, [], str(_e))
+                    return True
+                elif btn_no.collidepoint(ev.pos):
+                    return False
+
+        # Redraw
+        btn_yes, btn_no = _draw_dialog(hover_btn)
+        pygame.display.flip()
+        clock.tick(60)
+
+
+def _show_migration_result(screen, success, deleted_files, err=""):
+    """Brief result splash shown for 2 seconds after migration attempt."""
+    SW, SH = screen.get_size()
+    clock = pygame.time.Clock()
+    t = 0.0
+    while t < 2.2:
+        dt = clock.tick(60) / 1000.0
+        t += dt
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            if ev.type == pygame.KEYDOWN or ev.type == pygame.MOUSEBUTTONDOWN:
+                return  # skip
+
+        alpha = max(0, min(255, int(255 * (1.0 - (t - 1.6) / 0.6)))) if t > 1.6 else 255
+        overlay = pygame.Surface((SW, SH), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 180))
+        screen.blit(overlay, (0, 0))
+
+        CW, CH = 600, 200
+        cx, cy = SW // 2, SH // 2
+        card = pygame.Rect(cx - CW // 2, cy - CH // 2, CW, CH)
+        cs = pygame.Surface((CW, CH), pygame.SRCALPHA)
+        col_bd = (40, 180, 80) if success else (200, 60, 60)
+        pygame.draw.rect(cs, (10, 25, 15, 240) if success else (30, 10, 10, 240),
+                         (0, 0, CW, CH), border_radius=16)
+        screen.blit(cs, card.topleft)
+        pygame.draw.rect(screen, col_bd, card, 2, border_radius=16)
+
+        if success:
+            msg1 = "✓  Конвертация успешна!"
+            msg2 = f"Создан save.json  •  Удалено {len(deleted_files)} файл(ов)"
+            col1 = (100, 255, 150)
+        else:
+            msg1 = "✗  Ошибка конвертации"
+            msg2 = err[:72] if err else "Неизвестная ошибка"
+            col1 = (255, 100, 100)
+
+        f1 = pygame.font.SysFont("segoeui", 26, bold=True)
+        f2 = pygame.font.SysFont("segoeui", 16)
+        s1 = f1.render(msg1, True, col1)
+        s2 = f2.render(msg2, True, (160, 170, 190))
+        screen.blit(s1, s1.get_rect(center=(cx, cy - 20)))
+        screen.blit(s2, s2.get_rect(center=(cx, cy + 20)))
+
+        pygame.display.flip()
+
+
 if __name__ == "__main__":
     print("START")
     # Apply saved display settings (fullscreen/windowed + resolution) on startup
     screen = _apply_display_mode()
     pygame.display.set_caption("Tower Defense")
+    # ── TEMP: offer save-file migration before anything else ──────────────────
+    _run_save_migration_dialog(screen)
+    # ─────────────────────────────────────────────────────────────────────────
     save_data = load_save()
     print("save_data loaded:", list(save_data.keys()))
+    run_intro_animation(screen)
     _first_open = True
 
     while True:
@@ -15572,7 +17178,8 @@ if __name__ == "__main__":
             save_data = _run_multiplayer(screen, save_data)
 
         elif action == "achievements":
-            AchievementsScreen(screen).run()
+            AchievementsScreen(screen, save_data).run()
+            save_data = load_save()
 
         elif action == "quests":
             qs_result = QuestsScreen(screen, save_data).run()

@@ -14,7 +14,7 @@ from game_core import (
     font_sm, font_md, font_lg,
     get_map_path, dist, path_progress, txt, draw_rect_alpha, load_icon,
     UNIT_LIMITS, SETTINGS,
-    SwordEffect, WhirlwindEffect, FloatingText, BloodSlashEffect,
+    SwordEffect, WhirlwindEffect, FloatingText, BloodSlashEffect, AssassinSlashEffect,
 )
 
 def _dm(): """Return current debuff duration multiplier from skill tree."""; return getattr(_game_core_ref, "DEBUFF_MULT", 1.0)
@@ -161,83 +161,192 @@ class Assassin(Unit):
             self.total_damage+=self.damage
             self._swing_angle = math.degrees(math.atan2(t[0].y-self.py, t[0].x-self.px))
             self._swing_t = 0.0
-            effects.append(SwordEffect(self.px,self.py,self._swing_angle))
+            effects.append(AssassinSlashEffect(self.px,self.py,self._swing_angle))
 
     def draw(self, surf):
         cx,cy=int(self.px),int(self.py)
+        t = pygame.time.get_ticks() * 0.001
+        pulse = abs(math.sin(t * 2.8))
 
-        # ── Body — dark slate with cold blue rim ──────────────────────────────
-        pygame.draw.circle(surf,(15,18,28),(cx,cy),27)
-        pygame.draw.circle(surf,self.COLOR,(cx,cy),21)
-        # Shadow cloak detail: subtle inner darker ring
-        pygame.draw.circle(surf,(20,25,40),(cx,cy),21,3)
-        # Cold blue outer rim — "ghost ring"
-        pygame.draw.circle(surf,(60,100,200),(cx,cy),27,2)
+        # ── 1. Pulsing shadow mist aura ───────────────────────────────────────
+        aura_r = 33 + int(pulse * 4)
+        aura_s = pygame.Surface((aura_r * 2 + 4, aura_r * 2 + 4), pygame.SRCALPHA)
+        pygame.draw.circle(aura_s, (32, 12, 54, int(42 + pulse * 38)), (aura_r + 2, aura_r + 2), aura_r)
+        surf.blit(aura_s, (cx - aura_r - 2, cy - aura_r - 2))
 
-        # ── Sword swing animation ─────────────────────────────────────────────
+        # ── 2. Body mantle & shoulder pauldrons ───────────────────────────────
+        pygame.draw.circle(surf, (14, 15, 24), (cx, cy), 26)
+        pygame.draw.circle(surf, (24, 25, 38), (cx, cy), 22)
+        # Signature midnight-purple trim
+        pygame.draw.circle(surf, (155, 65, 235), (cx, cy), 21, 2)
+
+        # Shoulder pauldrons
+        pygame.draw.ellipse(surf, (34, 38, 54), (cx - 24, cy - 2, 14, 9))
+        pygame.draw.ellipse(surf, (80, 88, 115), (cx - 24, cy - 2, 14, 9), 1)
+        pygame.draw.circle(surf, (190, 205, 225), (cx - 17, cy + 2), 2)
+
+        pygame.draw.ellipse(surf, (34, 38, 54), (cx + 10, cy - 2, 14, 9))
+        pygame.draw.ellipse(surf, (80, 88, 115), (cx + 10, cy - 2, 14, 9), 1)
+        pygame.draw.circle(surf, (190, 205, 225), (cx + 17, cy + 2), 2)
+
+        # ── 3. Assassin hood & cowl ───────────────────────────────────────────
+        hood_pts = [(cx, cy - 25), (cx - 16, cy - 5), (cx - 8, cy + 7), (cx + 8, cy + 7), (cx + 16, cy - 5)]
+        pygame.draw.polygon(surf, (28, 22, 44), hood_pts)
+        pygame.draw.polygon(surf, (75, 48, 120), hood_pts, 1)
+
+        # Deep shadow cavity
+        pygame.draw.ellipse(surf, (8, 6, 14), (cx - 9, cy - 11, 18, 13))
+
+        # Ninja lower mask wrap
+        mask_pts = [(cx - 8, cy - 3), (cx + 8, cy - 3), (cx + 5, cy + 6), (cx - 5, cy + 6)]
+        pygame.draw.polygon(surf, (22, 24, 34), mask_pts)
+        pygame.draw.line(surf, (55, 60, 80), (cx - 7, cy + 1), (cx + 7, cy + 1), 1)
+
+        # ── 4. Glowing stealth slit eyes ──────────────────────────────────────
+        eye_core = (255, 255, 255)
+        eye_halo = (180, 215, 255)
+        pygame.draw.line(surf, eye_halo, (cx - 7, cy - 8), (cx - 2, cy - 6), 3)
+        pygame.draw.line(surf, eye_core, (cx - 7, cy - 8), (cx - 2, cy - 6), 1)
+        pygame.draw.line(surf, eye_halo, (cx + 2, cy - 6), (cx + 7, cy - 8), 3)
+        pygame.draw.line(surf, eye_core, (cx + 2, cy - 6), (cx + 7, cy - 8), 1)
+
+        # ── 5. Blades & Attack Slash Trail (взмах) ────────────────────────────
         if self._swing_t >= 0:
             prog = min(self._swing_t / self.SWING_DUR, 1.0)
-            # Ease: fast at start, decelerate at end (sin curve)
             eased = math.sin(prog * math.pi)
-            # Arc: sweep from -SWING_ARC to +SWING_ARC
             swing_offset = (-self.SWING_ARC + prog * self.SWING_ARC * 2)
             blade_angle = math.radians(self._swing_angle + swing_offset)
 
-            # Blade tip and handle
+            # Defensive offhand dagger held in guard
+            guard_deg = math.radians(self._swing_angle + 140)
+            gtip_x = cx + math.cos(guard_deg) * 20
+            gtip_y = cy + math.sin(guard_deg) * 20
+            gbase_x = cx + math.cos(guard_deg) * 7
+            gbase_y = cy + math.sin(guard_deg) * 7
+            pygame.draw.line(surf, (90, 102, 122), (int(gbase_x), int(gbase_y)), (int(gtip_x), int(gtip_y)), 3)
+            pygame.draw.line(surf, (190, 210, 235), (int(gbase_x), int(gbase_y)), (int(gtip_x), int(gtip_y)), 1)
+            pygame.draw.circle(surf, (220, 190, 90), (int(gbase_x), int(gbase_y)), 2)
+
+            # ── White-Gray Semi-Transparent Slash Trail (взмах) ───────────────
+            trail_arc = min(85.0, 20.0 + prog * 65.0)
+            steps = 14
+            poly_pts_out = []
+            poly_pts_in = []
+
+            for si in range(steps + 1):
+                f = si / steps  # 0 = tail, 1 = current blade
+                sub_offset = swing_offset - (1.0 - f) * trail_arc
+                sub_ang = math.radians(self._swing_angle + sub_offset)
+                r_out = self.BLADE_LEN + 2.0
+                r_in = 8.0 + (self.BLADE_LEN - 18.0) * (0.2 + 0.8 * f)
+                poly_pts_out.append((cx + math.cos(sub_ang) * r_out, cy + math.sin(sub_ang) * r_out))
+                poly_pts_in.append((cx + math.cos(sub_ang) * r_in, cy + math.sin(sub_ang) * r_in))
+
+            sz_t = 120
+            trail_surf = pygame.Surface((sz_t, sz_t), pygame.SRCALPHA)
+            tcx, tcy = sz_t // 2, sz_t // 2
+            rel_out = [(px - cx + tcx, py - cy + tcy) for px, py in poly_pts_out]
+            rel_in = [(px - cx + tcx, py - cy + tcy) for px, py in poly_pts_in]
+
+            # Layer A: Smoky gray transparent fan
+            full_poly = rel_out + rel_in[::-1]
+            if len(full_poly) >= 3:
+                pygame.draw.polygon(trail_surf, (120, 125, 135, max(0, int(60 * eased))), full_poly)
+
+            # Layer B: Silvery white-gray mid ribbon
+            cut_idx = int(steps * 0.35)
+            mid_poly = rel_out[cut_idx:] + rel_in[cut_idx:][::-1]
+            if len(mid_poly) >= 3:
+                pygame.draw.polygon(trail_surf, (210, 218, 228, max(0, int(140 * eased))), mid_poly)
+
+            # Layer C: Intense white core near blade
+            hot_idx = int(steps * 0.7)
+            hot_poly = rel_out[hot_idx:] + rel_in[hot_idx:][::-1]
+            if len(hot_poly) >= 3:
+                pygame.draw.polygon(trail_surf, (255, 255, 255, max(0, int(210 * eased))), hot_poly)
+
+            # Layer D: Razor-sharp pure white cutting edge
+            if len(rel_out) >= 2:
+                pygame.draw.lines(trail_surf, (255, 255, 255, max(0, int(240 * eased))), False, rel_out, 2)
+
+            # Layer E: Air slipstream streak line
+            streak_pts = []
+            for px, py in poly_pts_out[cut_idx:]:
+                dx, dy = px - cx, py - cy
+                dist_p = math.hypot(dx, dy)
+                if dist_p > 0:
+                    streak_pts.append((dx / dist_p * (dist_p + 3) + tcx, dy / dist_p * (dist_p + 3) + tcy))
+            if len(streak_pts) >= 2:
+                pygame.draw.lines(trail_surf, (240, 245, 255, max(0, int(130 * eased))), False, streak_pts, 1)
+
+            surf.blit(trail_surf, (cx - tcx, cy - tcy))
+
+            # ── Main striking dagger ──────────────────────────────────────────
             tip_x  = cx + math.cos(blade_angle) * self.BLADE_LEN
             tip_y  = cy + math.sin(blade_angle) * self.BLADE_LEN
-            base_x = cx + math.cos(blade_angle) * 8
-            base_y = cy + math.sin(blade_angle) * 8
+            base_x = cx + math.cos(blade_angle) * 7
+            base_y = cy + math.sin(blade_angle) * 7
+            hilt_x = cx - math.cos(blade_angle) * 5
+            hilt_y = cy - math.sin(blade_angle) * 5
 
-            # Motion blur: draw 4 ghost blades — icy blue trail
-            for gi in range(4):
-                ghost_frac = prog - gi * 0.07
-                if ghost_frac < 0: continue
-                ghost_angle = math.radians(self._swing_angle + (-self.SWING_ARC + ghost_frac * self.SWING_ARC * 2))
-                gx1 = cx + math.cos(ghost_angle) * self.BLADE_LEN
-                gy1 = cy + math.sin(ghost_angle) * self.BLADE_LEN
-                gx2 = cx + math.cos(ghost_angle) * 8
-                gy2 = cy + math.sin(ghost_angle) * 8
-                ghost_alpha = int(40 * (1 - gi * 0.22) * eased)
-                gs = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
-                pygame.draw.line(gs, (100, 180, 255, ghost_alpha),
-                                 (int(gx2), int(gy2)), (int(gx1), int(gy1)), max(1, self.BLADE_W - gi))
-                surf.blit(gs, (0, 0))
+            # Crossguard
+            guard_ang = blade_angle + math.pi / 2
+            gx1 = base_x + math.cos(guard_ang) * 8; gy1 = base_y + math.sin(guard_ang) * 8
+            gx2 = base_x - math.cos(guard_ang) * 8; gy2 = base_y - math.sin(guard_ang) * 8
+            pygame.draw.line(surf, (45, 40, 62), (int(gx1), int(gy1)), (int(gx2), int(gy2)), 3)
+            pygame.draw.circle(surf, (220, 190, 90), (int(base_x), int(base_y)), 2)
 
-            # Main blade — cold steel
-            pygame.draw.line(surf, (140, 180, 230), (int(base_x), int(base_y)), (int(tip_x), int(tip_y)), self.BLADE_W)
-            # Bright edge highlight — icy blue
-            edge_off_x = math.cos(blade_angle + math.pi/2) * 1.5
-            edge_off_y = math.sin(blade_angle + math.pi/2) * 1.5
-            pygame.draw.line(surf, (190, 220, 255),
+            # Handle & ring pommel
+            pygame.draw.line(surf, (26, 26, 36), (int(base_x), int(base_y)), (int(hilt_x), int(hilt_y)), 3)
+            pygame.draw.circle(surf, (150, 165, 185), (int(hilt_x), int(hilt_y)), 3, 1)
+
+            # Blade spine, facet, and white cutting edge
+            pygame.draw.line(surf, (90, 102, 122), (int(base_x), int(base_y)), (int(tip_x), int(tip_y)), 4)
+            pygame.draw.line(surf, (170, 190, 215), (int(base_x), int(base_y)), (int(tip_x), int(tip_y)), 2)
+            edge_off_x = math.cos(guard_ang) * 1.5
+            edge_off_y = math.sin(guard_ang) * 1.5
+            pygame.draw.line(surf, (255, 255, 255),
                              (int(base_x + edge_off_x), int(base_y + edge_off_y)),
                              (int(tip_x  + edge_off_x), int(tip_y  + edge_off_y)), 2)
-            # Tip glint — white-blue
-            pygame.draw.circle(surf, (210, 235, 255), (int(tip_x), int(tip_y)), 3)
-
-            # Guard — dark iron
-            guard_angle = blade_angle + math.pi / 2
-            guard_len = 8
-            gd_x1 = base_x + math.cos(guard_angle) * guard_len
-            gd_y1 = base_y + math.sin(guard_angle) * guard_len
-            gd_x2 = base_x - math.cos(guard_angle) * guard_len
-            gd_y2 = base_y - math.sin(guard_angle) * guard_len
-            pygame.draw.line(surf, (50, 70, 100), (int(gd_x1), int(gd_y1)), (int(gd_x2), int(gd_y2)), 3)
+            # Tip glint
+            pygame.draw.circle(surf, (255, 255, 255), (int(tip_x), int(tip_y)), 3)
+            pygame.draw.circle(surf, (210, 230, 255), (int(tip_x), int(tip_y)), 5, 1)
         else:
-            # Idle: twin daggers crossed — X pattern
-            for idle_deg in (-50, -130):
-                idle_angle = math.radians(idle_deg)
-                tip_x  = cx + math.cos(idle_angle) * self.BLADE_LEN
-                tip_y  = cy + math.sin(idle_angle) * self.BLADE_LEN
-                base_x = cx + math.cos(idle_angle) * 8
-                base_y = cy + math.sin(idle_angle) * 8
-                pygame.draw.line(surf, (120, 160, 210), (int(base_x), int(base_y)), (int(tip_x), int(tip_y)), self.BLADE_W)
-                guard_angle = idle_angle + math.pi / 2
-                gd_x1 = base_x + math.cos(guard_angle) * 7
-                gd_y1 = base_y + math.sin(guard_angle) * 7
-                gd_x2 = base_x - math.cos(guard_angle) * 7
-                gd_y2 = base_y - math.sin(guard_angle) * 7
-                pygame.draw.line(surf, (40, 60, 90), (int(gd_x1), int(gd_y1)), (int(gd_x2), int(gd_y2)), 3)
+            # ── Idle: Twin curved daggers crossed in reverse combat grip ──────
+            glint_p = (t * 1.6) % 2.5
+            for dagger_idx, deg in enumerate((-48, -132)):
+                ia = math.radians(deg)
+                cos_a, sin_a = math.cos(ia), math.sin(ia)
+                perp_x, perp_y = -sin_a, cos_a
+
+                tip_x  = cx + cos_a * 28;  tip_y  = cy + sin_a * 28
+                base_x = cx + cos_a * 7;   base_y = cy + sin_a * 7
+                hilt_x = cx - cos_a * 5;   hilt_y = cy - sin_a * 5
+
+                # Crossguard
+                gx1 = base_x + perp_x * 8; gy1 = base_y + perp_y * 8
+                gx2 = base_x - perp_x * 8; gy2 = base_y - perp_y * 8
+                pygame.draw.line(surf, (45, 40, 62), (int(gx1), int(gy1)), (int(gx2), int(gy2)), 3)
+                pygame.draw.circle(surf, (220, 190, 90), (int(base_x), int(base_y)), 2)
+
+                # Handle & ring pommel
+                pygame.draw.line(surf, (26, 26, 36), (int(base_x), int(base_y)), (int(hilt_x), int(hilt_y)), 3)
+                pygame.draw.circle(surf, (150, 165, 185), (int(hilt_x), int(hilt_y)), 3, 1)
+
+                # Blade spine, facet & razor edge
+                pygame.draw.line(surf, (90, 102, 122), (int(base_x), int(base_y)), (int(tip_x), int(tip_y)), 4)
+                pygame.draw.line(surf, (170, 190, 215), (int(base_x), int(base_y)), (int(tip_x), int(tip_y)), 2)
+                edge_off_x = perp_x * (1.2 if dagger_idx == 0 else -1.2)
+                edge_off_y = perp_y * (1.2 if dagger_idx == 0 else -1.2)
+                pygame.draw.line(surf, (255, 255, 255),
+                                 (int(base_x + edge_off_x), int(base_y + edge_off_y)),
+                                 (int(tip_x + edge_off_x), int(tip_y + edge_off_y)), 1)
+                pygame.draw.circle(surf, (255, 255, 255), (int(tip_x), int(tip_y)), 2)
+
+                if glint_p < 1.0:
+                    gx = base_x + (tip_x - base_x) * glint_p
+                    gy = base_y + (tip_y - base_y) * glint_p
+                    pygame.draw.circle(surf, (255, 255, 255), (int(gx), int(gy)), 2)
 
         # ── Level pips ────────────────────────────────────────────────────────
         for i in range(self.level):
@@ -11346,25 +11455,25 @@ CB_BLADE_DEFS = {
 # (damage, firerate, range_tiles, upgrade_cost,
 #  max_blades, terra_unlocked, star_unlocked, zenith_mode, hidden_detection)
 CASTBOUND_LEVELS = [
-    (4,   0.8,  6.2,  None,  1, False, False, False, False),   # lv0
-    (6,   0.6,  6.4,   600,  1, False, False, False, False),   # lv1  +Fire GS
-    (8,   0.6,  6.6,  1200,  1, False, False, False, False),   # lv2
-    (16,  0.6,  7.3,  2800,  2, True,  False, False, False),   # lv3  terra+2 blades
-    (25,  0.5,  7.3,  5500,  2, True,  False, False, True),    # lv4  hidden det
-    (40,  0.4,  8.0,  8500,  2, True,  True,  False, True),    # lv5  starfury
-    (100, 0.3, 10.0, 15000, 99, True,  True,  True,  True),    # lv6  zenith+all blades
+    (4,   0.8,  6.2,  None,  1, False, False, False, False),   # lv0 (5.0 DPS)
+    (6,   0.6,  6.4,   600,  1, False, False, False, False),   # lv1 (10.0 DPS) +Fire GS
+    (9,   0.6,  6.6,  1200,  1, False, False, False, False),   # lv2 (15.0 DPS)
+    (16,  0.6,  7.0,  2800,  2, True,  False, False, False),   # lv3 (26.6 DPS) terra+2 blades
+    (24,  0.5,  7.2,  5500,  2, True,  False, False, True),    # lv4 (48.0 DPS) hidden det
+    (36,  0.45, 7.8,  8500,  2, True,  True,  False, True),    # lv5 (80.0 DPS) starfury
+    (55,  0.35, 8.5, 15000, 99, True,  True,  True,  True),    # lv6 (157.0 DPS direct) zenith+all blades
 ]
 
 # ── параметры дебаффов по уровню ──────────────────────────────────────────────
 # ice: (slow_pct, duration_sec)
 _CB_ICE_PARAMS = [
-    (0.20, 3), (0.30, 3), (0.35, 5),
-    (0.40, 5), (0.40, 5), (0.40, 5), (0.40, 5),
+    (0.20, 3), (0.25, 3), (0.30, 4),
+    (0.35, 4), (0.35, 4), (0.40, 5), (0.40, 5),
 ]
 # fire: (burn_dmg_per_tick, total_duration_sec, tick_interval_sec)
 _CB_FIRE_PARAMS = [
     (1, 3, 1), (2, 3, 1), (3, 3, 1),
-    (5, 5, 1), (5, 5, 1), (5, 5, 1), (5, 5, 1),
+    (4, 4, 1), (4, 4, 1), (5, 5, 1), (5, 5, 1),
 ]
 # terra: (knockback_px, hits_needed)
 _CB_TERRA_PARAMS = [
@@ -11372,7 +11481,48 @@ _CB_TERRA_PARAMS = [
     (8,   5), (10,  4), (10,  4), (6,   8),  # lv6 zenith: слабый kb, каждые 8 хитов
 ]
 
-_CB_STAR_SPLASH_R = 80   # px радиус звёздного взрыва
+_CB_STAR_SPLASH_R = 65   # px радиус звёздного взрыва
+
+# ── Castbound SFX Player ──────────────────────────────────────────────────────
+_CB_SFX_CACHE: dict = {}
+_CB_SFX_LAST_PLAY: dict = {}
+
+def play_castbound_sfx(sfx_name: str, vol_mult: float = 1.0, min_interval: float = 0.04):
+    """Воспроизводит SFX для Castbound с учётом настроек звука и лимита частоты."""
+    try:
+        if not pygame.mixer.get_init():
+            return
+        import sys as _sys
+        _gm = _sys.modules.get('__main__') or _sys.modules.get('game')
+        curr_settings = getattr(_gm, 'SETTINGS', None) or SETTINGS
+        if curr_settings.get("sfx_muted", False):
+            return
+        base_vol = float(curr_settings.get("sfx_volume", 0.7))
+        if base_vol <= 0.001:
+            return
+
+        now = pygame.time.get_ticks() * 0.001
+        last_t = _CB_SFX_LAST_PLAY.get(sfx_name, 0.0)
+        if now - last_t < min_interval:
+            return
+        _CB_SFX_LAST_PLAY[sfx_name] = now
+
+        if sfx_name not in _CB_SFX_CACHE:
+            p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             "assets", "sound", sfx_name)
+            if not os.path.exists(p):
+                p = os.path.join("assets", "sound", sfx_name)
+            if os.path.exists(p):
+                _CB_SFX_CACHE[sfx_name] = pygame.mixer.Sound(p)
+            else:
+                _CB_SFX_CACHE[sfx_name] = None
+
+        snd = _CB_SFX_CACHE.get(sfx_name)
+        if snd is not None:
+            snd.set_volume(max(0.0, min(1.0, base_vol * vol_mult)))
+            snd.play()
+    except Exception:
+        pass
 
 # ── иконки клинков ────────────────────────────────────────────────────────────
 _CB_ICON_CACHE: dict = {}
@@ -11397,6 +11547,260 @@ _CB_WEBM_LOADED: bool = False
 _CB_WEBM_FPS:    float = 1000.0 / 80.0   # 12.5 fps (80 мс на кадр)
 _CB_FRAME_DELAY: float = 80.0 / 1000.0   # секунды на кадр
 _CB_FRAME_COUNT: int   = 26
+
+_CB_INFERNAL_FRAMES: list = []
+_CB_INFERNAL_LOADED: bool = False
+
+def _cb_load_infernal_frames():
+    """Builds and caches the 26 Infernal/Solar recolored frames for Castbound skin."""
+    global _CB_INFERNAL_FRAMES, _CB_INFERNAL_LOADED
+    if _CB_INFERNAL_LOADED:
+        return
+    _CB_INFERNAL_LOADED = True
+    if not _CB_WEBM_LOADED:
+        _cb_load_webm_frames()
+    if not _CB_WEBM_FRAMES:
+        _CB_INFERNAL_FRAMES = []
+        return
+    res = []
+    for frame in _CB_WEBM_FRAMES:
+        fw, fh = frame.get_size()
+        if fw == 0 or fh == 0:
+            res.append(frame)
+            continue
+        scale_h = 130
+        scale_w = max(1, int(fw * scale_h / fh))
+        scaled = pygame.transform.smoothscale(frame, (scale_w, scale_h))
+        pa = pygame.PixelArray(scaled)
+        w, h = scaled.get_size()
+        for x in range(w):
+            for y in range(h):
+                c = scaled.unmap_rgb(pa[x, y])
+                if c.a > 15:
+                    lum = (c.r * 2 + c.g * 5 + c.b * 1) // 8
+                    if lum > 200:
+                        nr, ng, nb = 255, 240, 180
+                    elif lum > 140:
+                        nr = 255
+                        ng = min(255, int(140 + (lum - 140) * 1.5))
+                        nb = min(255, int(30 + (lum - 140) * 0.5))
+                    elif lum > 80:
+                        nr = min(255, int(210 + (lum - 80) * 0.7))
+                        ng = min(255, int(50 + (lum - 80) * 1.3))
+                        nb = 15
+                    elif lum > 30:
+                        nr = min(255, int(120 + (lum - 30) * 1.8))
+                        ng = min(255, int(15 + (lum - 30) * 0.6))
+                        nb = 10
+                    else:
+                        nr, ng, nb = 20, 8, 8
+                    pa[x, y] = (nr, ng, nb, c.a)
+        del pa
+        res.append(scaled)
+    _CB_INFERNAL_FRAMES = res
+
+
+def _draw_infernal_blade(surf, bx, by, angle, s=1.0):
+    """Draws one orbiting molten solar blade with heat trail."""
+    blen = max(6, int(18 * s))
+    bwid = max(2, int(4 * s))
+    dx = math.cos(angle)
+    dy = math.sin(angle)
+    px = -dy
+    py = dx
+    tip_x = bx + dx * blen
+    tip_y = by + dy * blen
+    base_l_x = bx + px * bwid
+    base_l_y = by + py * bwid
+    base_r_x = bx - px * bwid
+    base_r_y = by - py * bwid
+    hilt_x = bx - dx * (blen * 0.3)
+    hilt_y = by - dy * (blen * 0.3)
+    # Glow
+    glow_r = max(4, int(blen * 0.7))
+    glow_s = pygame.Surface((glow_r * 2 + 2, glow_r * 2 + 2), pygame.SRCALPHA)
+    pygame.draw.circle(glow_s, (255, 100, 20, 75), (glow_r + 1, glow_r + 1), glow_r)
+    surf.blit(glow_s, (int(bx - glow_r - 1), int(by - glow_r - 1)))
+    # Blade polygon
+    pygame.draw.polygon(surf, (255, 140, 20), [
+        (int(tip_x), int(tip_y)),
+        (int(base_l_x), int(base_l_y)),
+        (int(hilt_x), int(hilt_y)),
+        (int(base_r_x), int(base_r_y))
+    ])
+    # Core
+    pygame.draw.line(surf, (255, 250, 200),
+                     (int(bx - dx * 2), int(by - dy * 2)),
+                     (int(tip_x - dx * 2), int(tip_y - dy * 2)), max(1, int(1.5 * s)))
+
+
+def _draw_infernal_castbound_fx(surf, cx, cy, t, s=1.0, is_behind=True):
+    """Draws animated magma aura, orbiting blades, and volcanic embers."""
+    visual_y = cy - int(10 * s)
+    pulse = abs(math.sin(t * 3.2))
+
+    if is_behind:
+        # 1. Pulsing Magma Aura
+        aura_r = max(10, int(35 * s))
+        aura_s = pygame.Surface((aura_r * 2 + 4, aura_r * 2 + 4), pygame.SRCALPHA)
+        pygame.draw.circle(aura_s, (210, 40, 10, int(38 + pulse * 45)), (aura_r + 2, aura_r + 2), aura_r)
+        inner_r = max(6, int(22 * s))
+        pygame.draw.circle(aura_s, (255, 140, 20, int(55 + pulse * 60)), (aura_r + 2, aura_r + 2), inner_r)
+        surf.blit(aura_s, (cx - aura_r - 2, visual_y - aura_r - 2))
+
+        # 2. Back half of orbiting blades (depth < 0)
+        orbit_rx = 36 * s
+        orbit_ry = 15 * s
+        for i in range(4):
+            ang = t * 2.8 + i * (math.pi / 2)
+            sin_a = math.sin(ang)
+            if sin_a < 0:
+                bx = cx + math.cos(ang) * orbit_rx
+                by = visual_y + sin_a * orbit_ry
+                tangent = ang + math.pi / 2
+                _draw_infernal_blade(surf, bx, by, tangent, s * 0.85)
+    else:
+        # 1. Front half of orbiting blades (depth >= 0)
+        orbit_rx = 36 * s
+        orbit_ry = 15 * s
+        for i in range(4):
+            ang = t * 2.8 + i * (math.pi / 2)
+            sin_a = math.sin(ang)
+            if sin_a >= 0:
+                bx = cx + math.cos(ang) * orbit_rx
+                by = visual_y + sin_a * orbit_ry
+                tangent = ang + math.pi / 2
+                _draw_infernal_blade(surf, bx, by, tangent, s * 1.05)
+
+        # 2. Rising volcanic embers
+        for i in range(8):
+            prog = (t * 0.85 + i * 0.125) % 1.0
+            ang = i * 2.399 + math.sin(t * 1.8 + i) * 0.5
+            dist = (10 + (i % 3) * 6) * s * (1.0 - prog * 0.35)
+            ex = cx + math.cos(ang) * dist
+            ey = visual_y - prog * (36 * s)
+            alpha = int(240 * math.sin(prog * math.pi))
+            if alpha > 5:
+                ember_sz = max(1, int((2.6 - prog * 1.6) * s))
+                col_g = int(120 + 130 * (1.0 - prog))
+                col = (255, col_g, 30, alpha)
+                es = pygame.Surface((ember_sz * 2 + 2, ember_sz * 2 + 2), pygame.SRCALPHA)
+                pygame.draw.circle(es, col, (ember_sz + 1, ember_sz + 1), ember_sz)
+                surf.blit(es, (int(ex - ember_sz - 1), int(ey - ember_sz - 1)))
+
+
+# ── Skelebound Skin Frame Loader & VFX ────────────────────────────────────────
+_CB_SKELEBOUND_FRAMES: list = []
+_CB_SKELEBOUND_LOADED: bool = False
+
+def _cb_load_skelebound_frames():
+    """Loads the animated frames for Skelebound skin."""
+    global _CB_SKELEBOUND_FRAMES, _CB_SKELEBOUND_LOADED
+    if _CB_SKELEBOUND_LOADED:
+        return
+    _CB_SKELEBOUND_LOADED = True
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    candidates = [
+        os.path.join(base_dir, "assets", "castbound_skelebound"),
+        os.path.join(base_dir, "assets", "image", "castbound_skelebound"),
+        os.path.join("assets", "castbound_skelebound"),
+        os.path.join("assets", "image", "castbound_skelebound"),
+    ]
+    frames_dir = None
+    for cand in candidates:
+        if os.path.isdir(cand) and os.path.exists(os.path.join(cand, "1.png")):
+            frames_dir = cand
+            break
+    if not frames_dir:
+        _CB_SKELEBOUND_FRAMES = []
+        return
+    loaded = []
+    for i in range(1, 100):
+        path = os.path.join(frames_dir, f"{i}.png")
+        if not os.path.exists(path):
+            break
+        try:
+            surf = pygame.image.load(path).convert_alpha()
+            loaded.append(surf)
+        except Exception:
+            break
+    _CB_SKELEBOUND_FRAMES = loaded
+
+
+def _draw_skelebound_castbound_fx(surf, cx, cy, t, s=1.0, is_behind=True, head_y=None):
+    """Draws unique spectral undead effects for Skelebound:
+    - Behind: Ghostly ethereal ground circle with rotating runes and dark-cyan phantom aura
+    - In front: Glowing spectral eye sockets, ghost flame embers rising from skull & shoulders
+    """
+    if head_y is None:
+        head_y = cy - int(24 * s)
+
+    if is_behind:
+        # 1. Ground Necrotic Seal (rotating spectral rune ellipse at the feet)
+        ground_y = cy + int(42 * s)
+        pulse = 0.5 + 0.5 * math.sin(t * 2.8)
+        seal_rw = int(32 * s)
+        seal_rh = int(14 * s)
+        if seal_rw >= 4 and seal_rh >= 2:
+            seal_s = pygame.Surface((seal_rw * 2 + 10, seal_rh * 2 + 10), pygame.SRCALPHA)
+            scx = seal_rw + 5
+            scy = seal_rh + 5
+            # Outer faint glow
+            pygame.draw.ellipse(seal_s, (20, 120, 210, int(30 + pulse * 25)),
+                                (scx - seal_rw, scy - seal_rh, seal_rw * 2, seal_rh * 2))
+            # Inner bright ring
+            in_rw = int(seal_rw * 0.75)
+            in_rh = int(seal_rh * 0.75)
+            pygame.draw.ellipse(seal_s, (60, 200, 255, int(70 + pulse * 45)),
+                                (scx - in_rw, scy - in_rh, in_rw * 2, in_rh * 2), max(1, int(2 * s)))
+            # Rotating runic tick marks
+            num_ticks = 6
+            for ti in range(num_ticks):
+                ang = math.radians(t * 35.0 + ti * (360.0 / num_ticks))
+                tx = scx + math.cos(ang) * (seal_rw - 2)
+                ty = scy + math.sin(ang) * (seal_rh - 2)
+                pygame.draw.circle(seal_s, (160, 240, 255, int(120 + pulse * 60)), (int(tx), int(ty)), max(1, int(2 * s)))
+            surf.blit(seal_s, (cx - scx, ground_y - scy))
+
+        # 2. Phantom aura behind torso
+        aura_r = int(28 * s)
+        if aura_r >= 4:
+            aura_s = pygame.Surface((aura_r * 2 + 6, aura_r * 2 + 6), pygame.SRCALPHA)
+            aura_a = int(22 + pulse * 26)
+            pygame.draw.circle(aura_s, (30, 140, 230, aura_a), (aura_r + 3, aura_r + 3), aura_r)
+            pygame.draw.circle(aura_s, (100, 220, 255, int(aura_a * 0.6)), (aura_r + 3, aura_r + 3), int(aura_r * 0.6))
+            surf.blit(aura_s, (cx - aura_r - 3, cy - int(15 * s) - aura_r - 3))
+
+    else:
+        # 3. Piercing Ghost Eye Flames (Skull eye sockets)
+        eye_y = head_y + int(14 * s)
+        eye_pulse = 0.5 + 0.5 * math.sin(t * 5.0)
+        eye_col = (180, 245, 255)
+        eye_glow_col = (40, 180, 255, int(110 + eye_pulse * 70))
+        eye_rad = max(1, int(2 * s))
+        # Draw glowing eye dots
+        for ex_off in (-int(4 * s), int(4 * s)):
+            ex = cx + ex_off
+            eg_s = pygame.Surface((eye_rad * 4 + 4, eye_rad * 4 + 4), pygame.SRCALPHA)
+            pygame.draw.circle(eg_s, eye_glow_col, (eye_rad * 2 + 2, eye_rad * 2 + 2), eye_rad * 2)
+            surf.blit(eg_s, (ex - eye_rad * 2 - 2, eye_y - eye_rad * 2 - 2))
+            pygame.draw.circle(surf, eye_col, (ex, eye_y), eye_rad)
+
+        # 4. Floating soul embers (rising from head & shoulders)
+        num_embers = 6 if s >= 0.8 else 3
+        for i in range(num_embers):
+            seed = i * 137.5
+            p_life = (t * 1.8 + i * (1.0 / num_embers)) % 1.0
+            x_spread = math.sin(seed + t * 2.5) * (14 * s)
+            px_e = cx + x_spread
+            py_e = head_y - p_life * (18 * s) + (int(10 * s) if i % 2 == 0 else 0)
+            p_alpha = int(220 * math.sin(p_life * math.pi))
+            pr = max(1, int((2.2 - p_life * 1.2) * s))
+            if p_alpha > 0 and pr > 0:
+                ps = pygame.Surface((pr * 2 + 4, pr * 2 + 4), pygame.SRCALPHA)
+                col = (180, 245, 255, p_alpha) if i % 2 == 0 else (50, 190, 255, p_alpha)
+                pygame.draw.circle(ps, col, (pr + 2, pr + 2), pr)
+                surf.blit(ps, (int(px_e - pr - 2), int(py_e - pr - 2)))
 
 def _cb_load_webm_frames():
     """Загружает 26 PNG-кадров из assets/image/castbound/ (1.png … 26.png).
@@ -11481,6 +11885,7 @@ class _CB_StarfuryProj:
             # попали в цель
             self.x = self.tx; self.y = self.ty
             self._exploded = True
+            play_castbound_sfx("cb_star_impact.wav", vol_mult=0.7)
             # AoE урон
             for e in enemies:
                 if not e.alive: continue
@@ -11613,6 +12018,7 @@ class _CB_StarProj:
             self.x = self.tx; self.y = self.ty
             self._exploded = True
             if self.has_splash:
+                play_castbound_sfx("cb_star_impact.wav", vol_mult=0.6)
                 for e in enemies:
                     if not e.alive: continue
                     if math.hypot(e.x - self.tx, e.y - self.ty) <= _CB_STAR_SPLASH_R:
@@ -11828,10 +12234,96 @@ def _dim_surface(surf, alpha):
 # ═══════════════════════════════════════════════════════════════════════════════
 # Castbound  —  основной класс юнита
 # ═══════════════════════════════════════════════════════════════════════════════
+class _TowerNameStr(str):
+    def __eq__(self, other):
+        if other in ("Castbound", "Skelebound"):
+            return True
+        return super().__eq__(other)
+    def __hash__(self):
+        return hash(str(self))
+
+class _CastboundDynamicName:
+    def __get__(self, obj, objtype=None):
+        try:
+            import sys
+            _gm = sys.modules.get('__main__')
+            fn = getattr(_gm, 'get_equipped_skin', None) if _gm else None
+            if fn is None:
+                _gm = sys.modules.get('game')
+                fn = getattr(_gm, 'get_equipped_skin', None) if _gm else None
+            if fn:
+                if fn("Castbound") == "castbound_skelebound":
+                    return _TowerNameStr("Skelebound")
+            else:
+                import json, os
+                skins_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "save.json")
+                if os.path.exists(skins_path):
+                    with open(skins_path, "r", encoding="utf-8") as f:
+                        if json.load(f).get("skins", {}).get("equipped", {}).get("Castbound") == "castbound_skelebound":
+                            return _TowerNameStr("Skelebound")
+        except Exception:
+            pass
+        return "Castbound"
+
+
+class _SkeleboundSoulSlashEffect:
+    """Spectral soul slash burst when Skelebound strikes a target."""
+    def __init__(self, x, y, angle_deg):
+        self.x = float(x)
+        self.y = float(y)
+        self.angle = math.radians(angle_deg)
+        self.alive = True
+        self._t = 0.0
+        self.duration = 0.35
+        self.particles = []
+        for i in range(7):
+            sp_ang = math.radians(angle_deg + (i - 3.0) * 32 + 10)
+            spd = 40.0 + i * 16.0
+            self.particles.append([self.x, self.y, math.cos(sp_ang) * spd, math.sin(sp_ang) * spd])
+
+    def update(self, dt):
+        self._t += dt
+        if self._t >= self.duration:
+            self.alive = False
+            return self.alive
+        for p in self.particles:
+            p[0] += p[2] * dt
+            p[1] += p[3] * dt
+        return self.alive
+
+    def draw(self, surf):
+        if not self.alive: return
+        f = self._t / self.duration
+        alpha = int(240 * (1.0 - f))
+        x, y = int(self.x), int(self.y)
+
+        # Expanding spectral shockwave ring
+        ring_r = int(6 + f * 28)
+        if ring_r >= 3:
+            rs = pygame.Surface((ring_r * 2 + 6, ring_r * 2 + 6), pygame.SRCALPHA)
+            pygame.draw.circle(rs, (50, 190, 255, alpha), (ring_r + 3, ring_r + 3), ring_r, max(1, int(3 * (1.0 - f))))
+            pygame.draw.circle(rs, (180, 245, 255, alpha // 2), (ring_r + 3, ring_r + 3), max(1, ring_r - 2), 1)
+            surf.blit(rs, (x - ring_r - 3, y - ring_r - 3))
+
+        # Crescent slash line perpendicular to attack angle
+        slash_len = int(24 * (1.0 - f * 0.4))
+        p_ang = self.angle + math.pi / 2
+        p1 = (int(x + math.cos(p_ang) * slash_len), int(y + math.sin(p_ang) * slash_len))
+        p2 = (int(x - math.cos(p_ang) * slash_len), int(y - math.sin(p_ang) * slash_len))
+        pygame.draw.line(surf, (180, 245, 255), p1, p2, max(1, int(3 * (1.0 - f))))
+
+        # Soul spark particles
+        for p in self.particles:
+            pr = max(1, int(3 * (1.0 - f)))
+            ps = pygame.Surface((pr * 2 + 2, pr * 2 + 2), pygame.SRCALPHA)
+            pygame.draw.circle(ps, (120, 230, 255, alpha), (pr + 1, pr + 1), pr)
+            surf.blit(ps, (int(p[0]) - pr - 1, int(p[1]) - pr - 1))
+
+
 class Castbound(Unit):
     PLACE_COST = 400
     COLOR      = C_CASTBOUND
-    NAME       = "Castbound"
+    NAME       = _CastboundDynamicName()
     hidden_detection = False
 
     SWING_DUR  = 0.20   # длительность анимации замаха (сек)
@@ -11887,11 +12379,21 @@ class Castbound(Unit):
         if self.level < len(CASTBOUND_LEVELS) - 1:
             self.level += 1
             self._apply_level()
+            _up_sfx = {
+                1: "cb_slash_fire.wav",
+                2: "cb_slash_fire.wav",
+                3: "cb_slash_terra.wav",
+                4: "cb_slash_terra.wav",
+                5: "cb_slash_star.wav",
+                6: "cb_slash_zenith.wav",
+            }
+            play_castbound_sfx(_up_sfx.get(self.level, "cb_slash_ice.wav"), vol_mult=0.85)
 
     def grant_zenith(self):
         """Вызывается при победе над Moon Lord."""
         self.level = 6
         self._apply_level()
+        play_castbound_sfx("cb_slash_zenith.wav", vol_mult=1.0)
 
     # ── выбор клинков (публичный API для UI) ──────────────────────────────────
     def available_blades(self):
@@ -11973,18 +12475,36 @@ class Castbound(Unit):
         blade = blades[self._blade_idx % len(blades)]
         self._blade_idx = (self._blade_idx + 1) % len(blades)
 
-        # Star Wrath имеет собственный firerate 0.1
-        self.cd_left = 0.25 if blade == "starwrath" else self.firerate
+        self.cd_left = self.firerate
 
         # анимация замаха
         self._swing_angle = math.degrees(
             math.atan2(target.y - self.py, target.x - self.px))
         self._swing_t = 0.0
 
-        # урон (Star Wrath наносит 50 базового урона)
-        _atk_dmg_base = 50 if blade == "starwrath" else self.damage
-        target.take_damage(_atk_dmg_base)
-        self.total_damage += _atk_dmg_base
+        # SFX взмаха меча
+        _cb_sfx_map = {
+            "ice":       "cb_slash_ice.wav",
+            "fire":      "cb_slash_fire.wav",
+            "terra":     "cb_slash_terra.wav",
+            "star":      "cb_slash_star.wav",
+            "starwrath": "cb_slash_star.wav",
+            "zenith":    "cb_slash_zenith.wav",
+        }
+        play_castbound_sfx(_cb_sfx_map.get(blade, "cb_slash_ice.wav"), vol_mult=0.75)
+
+        # урон от прямого удара
+        target.take_damage(self.damage)
+        self.total_damage += self.damage
+
+        # Skelebound unique soul strike effect
+        try:
+            import sys as _sys
+            _fn = getattr(_sys.modules.get('__main__'), 'get_equipped_skin', None) or getattr(_sys.modules.get('game'), 'get_equipped_skin', None)
+            if _fn and _fn("Castbound") == "castbound_skelebound":
+                effects.append(_SkeleboundSoulSlashEffect(target.x, target.y, self._swing_angle))
+        except Exception:
+            pass
 
         lv = self.level
 
@@ -11994,18 +12514,15 @@ class Castbound(Unit):
         else:
             _blade_col = CB_BLADE_DEFS.get(blade, ("", C_CB_ICE, ""))[1]
 
-        # ── Star Wrath: перегружает урон и firerate для этой атаки ────────
-        _atk_dmg = 50 if blade == "starwrath" else self.damage
-
         # ── применяем эффект клинка ────────────────────────────────────────
         if blade == "zenith":
-            _cb_apply_slow(target, 0.40, 5)
-            _cb_apply_burn(target, 5, 5, 1)
+            _cb_apply_slow(target, 0.35, 4)
+            _cb_apply_burn(target, 4, 4, 1)
             self._terra_hit(target, lv)
             bdmg, bdur, btick = _CB_FIRE_PARAMS[lv]
             self._star_projs.append(
                 _CB_StarProj(self.px, self.py, target.x, target.y,
-                             self.damage, bdmg, bdur, btick, _blade_col, has_splash=True, blade_id="zenith"))
+                             30, bdmg, bdur, btick, _blade_col, has_splash=True, blade_id="zenith"))
 
         elif blade == "ice":
             slow_pct, slow_dur = _CB_ICE_PARAMS[lv]
@@ -12031,17 +12548,17 @@ class Castbound(Unit):
             bdmg, bdur, btick = _CB_FIRE_PARAMS[lv]
             self._star_projs.append(
                 _CB_StarfuryProj(target.x, target.y,
-                                 self.damage, bdmg, bdur, btick, _blade_col))
+                                 22, bdmg, bdur, btick, _blade_col))
 
         elif blade == "starwrath":
             bdmg, bdur, btick = _CB_FIRE_PARAMS[lv]
-            # Star Wrath: 3 звезды падают с неба с разбросом, огромный урон
-            for _ in range(3):
+            # Star Wrath: 2 падающие звезды по 25 урона
+            for _ in range(2):
                 self._star_projs.append(
                     _CB_StarfuryProj(
-                        target.x + random.uniform(-60, 60),
+                        target.x + random.uniform(-40, 40),
                         target.y,
-                        _atk_dmg, bdmg, bdur, btick, _blade_col))
+                        25, bdmg, bdur, btick, _blade_col))
 
     def _terra_hit(self, enemy, lv):
         kb_px, kb_every = _CB_TERRA_PARAMS[lv]
@@ -12051,35 +12568,79 @@ class Castbound(Unit):
         if self._hit_counts[eid] >= kb_every:
             self._hit_counts[eid] = 0
             _cb_apply_knockback(enemy, kb_px)
+            play_castbound_sfx("cb_slash_terra.wav", vol_mult=0.6, min_interval=0.08)
 
     # ── отрисовка ────────────────────────────────────────────────────────────
     def draw(self, surf):
         cx, cy = int(self.px), int(self.py)
         t = pygame.time.get_ticks() * 0.001
 
-        # ── Загружаем webm-кадры при первом вызове ────────────────────────────
-        if not _CB_WEBM_LOADED:
-            _cb_load_webm_frames()
-
-        if _CB_WEBM_FRAMES:
-            # ── Воспроизводим анимацию из PNG-кадров ─────────────────────────
-            fps = max(1.0, _CB_WEBM_FPS)
-            frame_idx = int(t * fps) % len(_CB_WEBM_FRAMES)
-            frame = _CB_WEBM_FRAMES[frame_idx]
-            # Масштабируем кадр с сохранением пропорций (110 px по большей стороне)
-            _UNIT_DRAW_SIZE = 110
-            fw, fh = frame.get_size()
-            if fw == 0 or fh == 0:
-                scaled = frame
-                scale_w, scale_h = fw, fh
-            elif fw >= fh:
-                scale_w = _UNIT_DRAW_SIZE
-                scale_h = max(1, int(fh * _UNIT_DRAW_SIZE / fw))
+        import sys as _sys
+        _skel_skin = False
+        _inf_skin = False
+        try:
+            fn = getattr(_sys.modules.get('__main__'), 'get_equipped_skin', None) or getattr(_sys.modules.get('game'), 'get_equipped_skin', None)
+            if fn:
+                cur_skin = fn("Castbound")
             else:
-                scale_h = _UNIT_DRAW_SIZE
-                scale_w = max(1, int(fw * _UNIT_DRAW_SIZE / fh))
-            scaled = pygame.transform.smoothscale(frame, (scale_w, scale_h))
-            _visual_offset_y = -20  # сдвиг вверх чтобы центр визуала совпал с хитбоксом
+                import json, os
+                skins_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "save.json")
+                cur_skin = json.load(open(skins_path, "r", encoding="utf-8")).get("skins", {}).get("equipped", {}).get("Castbound")
+            _skel_skin = (cur_skin == "castbound_skelebound")
+            _inf_skin = (cur_skin == "castbound_infernal")
+        except Exception:
+            pass
+
+        # ── Загружаем webm/скин кадры при первом вызове ───────────────────────
+        if _skel_skin:
+            if not _CB_SKELEBOUND_LOADED:
+                _cb_load_skelebound_frames()
+            frames_to_use = _CB_SKELEBOUND_FRAMES
+        elif _inf_skin:
+            if not _CB_INFERNAL_LOADED:
+                _cb_load_infernal_frames()
+            frames_to_use = _CB_INFERNAL_FRAMES
+        else:
+            if not _CB_WEBM_LOADED:
+                _cb_load_webm_frames()
+            frames_to_use = _CB_WEBM_FRAMES
+
+        if _inf_skin:
+            _draw_infernal_castbound_fx(surf, cx, cy, t, s=1.0, is_behind=True)
+        elif _skel_skin:
+            _draw_skelebound_castbound_fx(surf, cx, cy, t, s=1.0, is_behind=True)
+
+        if frames_to_use:
+            # ── Воспроизводим анимацию из PNG-кадров ─────────────────────────
+            fps = max(1.0, 1000.0 / 90.0 if _skel_skin else _CB_WEBM_FPS)
+            frame_idx = int(t * fps) % len(frames_to_use)
+            frame = frames_to_use[frame_idx]
+            # Для skelebound — увеличенный масштаб и правильная посадка на клетку
+            if _skel_skin:
+                _UNIT_DRAW_SIZE_W = 50   # заметно крупнее, внушительный силуэт
+                fw, fh = frame.get_size()
+                if fw == 0 or fh == 0:
+                    scaled = frame
+                    scale_w, scale_h = fw, fh
+                else:
+                    scale_w = _UNIT_DRAW_SIZE_W
+                    scale_h = max(1, int(fh * _UNIT_DRAW_SIZE_W / fw))
+                scaled = pygame.transform.smoothscale(frame, (scale_w, scale_h))
+                _visual_offset_y = -16   # ноги естественно стоят на земле (cy + 45)
+            else:
+                _UNIT_DRAW_SIZE = 110
+                fw, fh = frame.get_size()
+                if fw == 0 or fh == 0:
+                    scaled = frame
+                    scale_w, scale_h = fw, fh
+                elif fw >= fh:
+                    scale_w = _UNIT_DRAW_SIZE
+                    scale_h = max(1, int(fh * _UNIT_DRAW_SIZE / fw))
+                else:
+                    scale_h = _UNIT_DRAW_SIZE
+                    scale_w = max(1, int(fw * _UNIT_DRAW_SIZE / fh))
+                scaled = pygame.transform.smoothscale(frame, (scale_w, scale_h))
+                _visual_offset_y = -20  # сдвиг вверх чтобы центр визуала совпал с хитбоксом
             surf.blit(scaled, (cx - scale_w // 2, cy - scale_h // 2 + _visual_offset_y))
         else:
             # ── Fallback: пиксельный спрайт Stardust Guardian ─────────────────
@@ -12096,25 +12657,41 @@ class Castbound(Unit):
                     s.fill((*col, alpha))
                     surf.blit(s, (cx + dx * P - P // 2, cy + dy * P - P // 2))
 
-            SB   = (30,  80, 200)
-            SL   = (60, 140, 255)
-            SW   = (140, 200, 255)
-            SG   = (80, 180, 255)
-            SBK  = (10,  20,  60)
-            SA   = (180, 220, 255)
-            SGLD = (255, 220,  50)
-            ST   = (0, 230, 255)
-            flicker_col = (
-                int(SL[0] + pulse * 30),
-                int(SL[1] + pulse * 20),
-                min(255, int(SL[2] + pulse * 30)),
-            )
+            if _inf_skin:
+                SB   = (120,  15,  15)
+                SL   = (220,  60,  15)
+                SW   = (255, 200,  80)
+                SG   = (255, 130,  20)
+                SBK  = ( 20,   8,   8)
+                SA   = (255, 240, 180)
+                SGLD = (255, 220,  50)
+                ST   = (255, 100,  20)
+                flicker_col = (
+                    int(min(255, SL[0] + pulse * 35)),
+                    int(min(255, SL[1] + pulse * 25)),
+                    min(255, int(SL[2] + pulse * 10)),
+                )
+            else:
+                SB   = (30,  80, 200)
+                SL   = (60, 140, 255)
+                SW   = (140, 200, 255)
+                SG   = (80, 180, 255)
+                SBK  = (10,  20,  60)
+                SA   = (180, 220, 255)
+                SGLD = (255, 220,  50)
+                ST   = (0, 230, 255)
+                flicker_col = (
+                    int(SL[0] + pulse * 30),
+                    int(SL[1] + pulse * 20),
+                    min(255, int(SL[2] + pulse * 30)),
+                )
 
-            aura_r = 32
-            aura_s = pygame.Surface((aura_r * 2 + 4, aura_r * 2 + 4), pygame.SRCALPHA)
-            aura_a = int(30 + pulse * 50)
-            pygame.draw.circle(aura_s, (40, 120, 255, aura_a), (aura_r + 2, aura_r + 2), aura_r)
-            surf.blit(aura_s, (cx - aura_r - 2, cy - aura_r - 2))
+            if not _inf_skin:
+                aura_r = 32
+                aura_s = pygame.Surface((aura_r * 2 + 4, aura_r * 2 + 4), pygame.SRCALPHA)
+                aura_a = int(30 + pulse * 50)
+                pygame.draw.circle(aura_s, (40, 120, 255, aura_a), (aura_r + 2, aura_r + 2), aura_r)
+                surf.blit(aura_s, (cx - aura_r - 2, cy - aura_r - 2))
 
             head = [
                 [(-2,-8,SBK),(-1,-8,SB),(0,-8,SB),(1,-8,SB),(2,-8,SBK)],
@@ -12145,15 +12722,39 @@ class Castbound(Unit):
                     for pdata in row_pixels:
                         px_put(pdata[0], pdata[1], pdata[2])
 
-        # (частицы убраны)
+        if _inf_skin:
+            _draw_infernal_castbound_fx(surf, cx, cy, t, s=1.0, is_behind=False)
+
+        if _skel_skin:
+            _draw_skelebound_castbound_fx(surf, cx, cy, t, s=1.0, is_behind=False, head_y=cy - 64)
 
         # ── Мечи / клинки (PNG или пиксельный fallback) ───────────────────────
-        # Смещение: меч рисуется из точки правой руки персонажа
-        _blade_ox = cx + 4
-        _blade_oy = cy - 8
+        # Смещение: меч рисуется точно из кисти руки персонажа
+        if _skel_skin:
+            default_ox = cx + 19   # правая рука скелета
+            default_oy = cy - 10   # уровень кисти
+        else:
+            default_ox = cx + 4
+            default_oy = cy - 8
+
         blades_draw = self.selected_blades if self.selected_blades else ["ice"]
         n = len(blades_draw)
+        blade_len = 46 if _skel_skin else self.BLADE_LEN
         for bi, bid in enumerate(blades_draw):
+            if _skel_skin and n == 2:
+                # 1-й клинок в правой руке, 2-й клинок в левой руке!
+                _blade_ox = cx + 19 if bi == 0 else cx - 20
+                _blade_oy = cy - 10
+                hand_idle_deg = -55 if bi == 0 else -125
+            elif _skel_skin:
+                _blade_ox = default_ox
+                _blade_oy = default_oy
+                hand_idle_deg = -55 + bi * 20
+            else:
+                _blade_ox = default_ox
+                _blade_oy = default_oy
+                hand_idle_deg = -55 + bi * 20
+
             if self._zenith_mode:
                 blade_col = _cb_hsv((self._zenith_hue + bi * 50) % 360)
             else:
@@ -12166,28 +12767,34 @@ class Castbound(Unit):
                 swing_deg = -self.SWING_ARC + prog * self.SWING_ARC * 2
                 angle     = math.radians(self._swing_angle + swing_deg + arc_offset)
                 # motion blur ghosts
-                for gi in range(3):
-                    gfrac = prog - gi * 0.1
+                ghost_count = 4 if _skel_skin else 3
+                for gi in range(ghost_count):
+                    gfrac = prog - gi * (0.08 if _skel_skin else 0.1)
                     if gfrac < 0: continue
                     ga2 = math.radians(self._swing_angle +
                                        (-self.SWING_ARC + gfrac * self.SWING_ARC * 2) + arc_offset)
-                    gx0 = int(_blade_ox + math.cos(ga2) * 10)
-                    gy0 = int(_blade_oy + math.sin(ga2) * 10)
-                    gx_tip = int(_blade_ox + math.cos(ga2) * self.BLADE_LEN)
-                    gy_tip = int(_blade_oy + math.sin(ga2) * self.BLADE_LEN)
-                    ghost_a = max(0, int(55 * (1 - gi * 0.32)))
-                    ghost_col = tuple(min(255, int(c * ghost_a / 55)) for c in blade_col)
+                    gx0 = int(_blade_ox + math.cos(ga2) * 8)
+                    gy0 = int(_blade_oy + math.sin(ga2) * 8)
+                    gx_tip = int(_blade_ox + math.cos(ga2) * blade_len)
+                    gy_tip = int(_blade_oy + math.sin(ga2) * blade_len)
+                    if _skel_skin:
+                        ghost_a = max(0, int(110 * (1 - gi * 0.22)))
+                        ghost_col = (int(min(255, 60 + ghost_a * 1.5)), int(min(255, 180 + ghost_a * 0.8)), 255)
+                        b_width = max(1, (self.BLADE_W + 1) - gi)
+                    else:
+                        ghost_a = max(0, int(55 * (1 - gi * 0.32)))
+                        ghost_col = tuple(min(255, int(c * ghost_a / 55)) for c in blade_col)
+                        b_width = max(1, self.BLADE_W - gi)
                     pygame.draw.line(surf, ghost_col,
-                                     (gx0, gy0), (gx_tip, gy_tip),
-                                     max(1, self.BLADE_W - gi))
+                                     (gx0, gy0), (gx_tip, gy_tip), b_width)
                 draw_angle_deg = math.degrees(angle)
             else:
-                idle_a        = math.radians(-55 + bi * 20)
+                idle_a        = math.radians(hand_idle_deg)
                 angle         = idle_a
                 draw_angle_deg = math.degrees(idle_a)
 
-            tip_x  = _blade_ox + math.cos(angle) * self.BLADE_LEN
-            tip_y  = _blade_oy + math.sin(angle) * self.BLADE_LEN
+            tip_x  = _blade_ox + math.cos(angle) * blade_len
+            tip_y  = _blade_oy + math.sin(angle) * blade_len
 
             blade_filename = CB_BLADE_DEFS.get(bid, ("", None, ""))[2]
             blade_png = _cb_load_icon(blade_filename, 48) if blade_filename else None
@@ -12205,6 +12812,15 @@ class Castbound(Unit):
                                  (int(base_x), int(base_y)),
                                  (int(tip_x), int(tip_y)), self.BLADE_W)
                 pygame.draw.circle(surf, (255, 255, 255), (int(tip_x), int(tip_y)), 2)
+
+            # Для Skelebound: пульсирующая призрачная энергия вдоль лезвия
+            if _skel_skin:
+                for spk in (0.35, 0.70, 0.95):
+                    spk_x = int(_blade_ox + (tip_x - _blade_ox) * spk)
+                    spk_y = int(_blade_oy + (tip_y - _blade_oy) * spk)
+                    spk_pulse = abs(math.sin(t * 8.0 + spk * 10))
+                    spk_r = max(1, int(1.5 + spk_pulse * 1.5))
+                    pygame.draw.circle(surf, (160, 240, 255), (spk_x, spk_y), spk_r)
 
         # ── Пипсы уровня (кастомные, с glow) ────────────────────────────────
         _pip_cols = [

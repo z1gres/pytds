@@ -114,62 +114,76 @@ font_xl = pygame.font.SysFont("consolas", 26, bold=True)
 font_ru = pygame.font.SysFont("segoeui", 18)
 font_ru_lg = pygame.font.SysFont("segoeui", 22, bold=True)
 
-SAVE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "savegame.json")
-ACHIEVEMENTS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "achievements.json")
+SAVE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "save.json")
+# ACHIEVEMENTS_FILE kept for back-compat imports, but all data lives in SAVE_FILE now
+ACHIEVEMENTS_FILE = SAVE_FILE
 
 # Achievement definitions
 ACHIEVEMENT_DEFS = [
-    {"id": "first_path",        "name": "First Path",         "desc": "Beat Easy mode",                            "color": (80,200,80),   "border": (120,255,120)},
-    {"id": "fallen_angel",      "name": "Fallen Angel",        "desc": "Beat Fallen mode",                          "color": (140,40,200),  "border": (200,80,255)},
-    {"id": "frosty_clear",      "name": "Frosty Path",        "desc": "Beat Frosty mode",                          "color": (80,200,255),  "border": (140,240,255)},
+    {"id": "first_path",        "name": "First Path",         "desc": "Beat Easy mode",                            "color": (80,200,80),   "border": (120,255,120), "coins": 250,  "shards": 5},
+    {"id": "fallen_angel",      "name": "Fallen Angel",        "desc": "Beat Fallen mode",                          "color": (140,40,200),  "border": (200,80,255),  "coins": 500,  "shards": 15},
+    {"id": "frosty_clear",      "name": "Frosty Path",        "desc": "Beat Frosty mode",                          "color": (80,200,255),  "border": (140,240,255), "coins": 750,  "shards": 20},
 
-    {"id": "king_victim",       "name": "King's Victim",       "desc": "Lose to Fallen King on wave 40",     "color": (180,20,20),   "border": (255,60,60)},
+    {"id": "king_victim",       "name": "King's Victim",       "desc": "Lose to Fallen King on wave 40",     "color": (180,20,20),   "border": (255,60,60),   "coins": 200,  "shards": 2},
 
-    {"id": "free_pass",         "name": "Free Pass",     "desc": "Beat Easy without killing final boss",         "color": (60,160,220),  "border": (100,210,255)},
-    {"id": "rich",              "name": "Rich",               "desc": "Have 5,000+ coins at once",         "color": (200,160,20),  "border": (255,220,60)},
+    {"id": "free_pass",         "name": "Free Pass",     "desc": "Beat Easy without killing final boss",         "color": (60,160,220),  "border": (100,210,255), "coins": 300,  "shards": 8},
+    {"id": "rich",              "name": "Rich",               "desc": "Have 5,000+ coins at once",         "color": (200,160,20),  "border": (255,220,60),  "coins": 400,  "shards": 10},
     # New achievements
-    {"id": "frosty_perfect",    "name": "Ice Fortress",    "desc": "Beat Frosty with no HP loss",       "color": (140,240,255), "border": (200,255,255)},
+    {"id": "frosty_perfect",    "name": "Ice Fortress",    "desc": "Beat Frosty with no HP loss",       "color": (140,240,255), "border": (200,255,255), "coins": 1000, "shards": 25},
 
-    {"id": "last_stand",        "name": "Last Stand",     "desc": "Beat any mode with 1 HP left",        "color": (220,60,60),   "border": (255,120,80)},
-    {"id": "collector_10",      "name": "Collector",        "desc": "Unlock 10+ units",             "color": (80,200,120),  "border": (120,255,160)},
-    {"id": "collector_20",      "name": "Collection Master",    "desc": "Unlock 20+ units",             "color": (60,180,100),  "border": (100,240,140)},
-    {"id": "millionaire",       "name": "Millionaire",           "desc": "Have 100,000+ coins",                  "color": (255,200,40),  "border": (255,240,100)},
-    {"id": "shard_500",         "name": "Sparkling",           "desc": "Gather 500 shards",                        "color": (100,200,255), "border": (180,240,255)},
-    {"id": "shard_1000",        "name": "Crystal",         "desc": "Gather 1000 shards",                       "color": (60,160,255),  "border": (140,220,255)},
-    {"id": "april_fools_2026", "name": "April Fools 2026",    "desc": "Beat April Fools 2026",                "color": (255, 80, 120), "border": (255, 160, 200)},
+    {"id": "last_stand",        "name": "Last Stand",     "desc": "Beat any mode with 1 HP left",        "color": (220,60,60),   "border": (255,120,80),  "coins": 350,  "shards": 10},
+    {"id": "collector_10",      "name": "Collector",        "desc": "Unlock 10+ units",             "color": (80,200,120),  "border": (120,255,160), "coins": 500,  "shards": 15},
+    {"id": "collector_20",      "name": "Collection Master",    "desc": "Unlock 20+ units",             "color": (60,180,100),  "border": (100,240,140), "coins": 1000, "shards": 30},
+    {"id": "millionaire",       "name": "Millionaire",           "desc": "Have 100,000+ coins",                  "color": (255,200,40),  "border": (255,240,100), "coins": 1500, "shards": 40},
+    {"id": "shard_500",         "name": "Sparkling",           "desc": "Gather 500 shards",                        "color": (100,200,255), "border": (180,240,255), "coins": 600,  "shards": 20},
+    {"id": "shard_1000",        "name": "Crystal",         "desc": "Gather 1000 shards",                       "color": (60,160,255),  "border": (140,220,255), "coins": 1200, "shards": 35},
+    {"id": "april_fools_2026", "name": "April Fools 2026",    "desc": "Beat April Fools 2026",                "color": (255, 80, 120), "border": (255, 160, 200), "coins": 400, "shards": 10},
     # ── New achievements ──────────────────────────────────────────────────────
-    {"id": "has_skin",         "name": "Stylist",              "desc": "Own at least 1 skin",                        "color": (200, 100, 220),"border": (230, 160, 255)},
-    {"id": "naked_run",        "name": "Lightweight",              "desc": "Start game with no units equipped",            "color": (120, 120, 120),"border": (180, 180, 180)},
-    {"id": "fallen_duo",       "name": "Duo",                 "desc": "Beat Fallen with max 2 units",          "color": (180, 60, 255), "border": (210, 120, 255)},
-    {"id": "grand_slam",       "name": "Grand Slam",           "desc": "Beat every difficulty in a row", "color": (255, 200, 0), "border": (255, 240, 80)},
+    {"id": "has_skin",         "name": "Stylist",              "desc": "Own at least 1 skin",                        "color": (200, 100, 220),"border": (230, 160, 255), "coins": 200, "shards": 5},
+    {"id": "naked_run",        "name": "Lightweight",              "desc": "Start game with no units equipped",            "color": (120, 120, 120),"border": (180, 180, 180), "coins": 450, "shards": 12},
+    {"id": "fallen_duo",       "name": "Duo",                 "desc": "Beat Fallen with max 2 units",          "color": (180, 60, 255), "border": (210, 120, 255), "coins": 800,  "shards": 25},
+    {"id": "grand_slam",       "name": "Grand Slam",           "desc": "Beat every difficulty in a row", "color": (255, 200, 0), "border": (255, 240, 80),   "coins": 1500, "shards": 50},
     # ── Batch 2 achievements ──────────────────────────────────────────────────
-    {"id": "capitalist",       "name": "Capitalist",           "desc": "Place 8 Farms all upgraded to max level",     "color": (80, 180, 60),  "border": (140, 255, 100)},
-    {"id": "overkill",         "name": "Overkill",             "desc": "Apply every debuff to a boss at once", "color": (180, 60, 220), "border": (220, 120, 255)},
-    {"id": "moonwalk",         "name": "Moonwalk",             "desc": "Have 15 enemies walking in confusion", "color": (80, 160, 255), "border": (140, 210, 255)},
-    {"id": "why",              "name": "Why",                  "desc": "Do nothing for 1 hour",                       "color": (60, 60, 80),   "border": (100, 100, 140)},
-    {"id": "gold_rush",        "name": "Gold Rush",            "desc": "Earn $10,000 in one game using only Cowboys",  "color": (220, 170, 20), "border": (255, 230, 80)},
-    {"id": "hacker",           "name": "Hacker",               "desc": "Open the admin panel in Sandbox mode",        "color": (40, 200, 120), "border": (80, 255, 180)},
-    {"id": "no_refunds",       "name": "No Refunds",           "desc": "Beat Fallen without selling any tower",       "color": (200, 80, 60),  "border": (255, 130, 100)},
-    {"id": "absolute_zero",    "name": "Absolute Zero",        "desc": "Keep a boss frozen for 15 seconds straight",  "color": (140, 220, 255),"border": (200, 250, 255)},
-    {"id": "speedrunner",      "name": "Speedrunner",          "desc": "Beat Fallen with Auto-skip on all game",      "color": (255, 140, 40), "border": (255, 200, 100)},
+    {"id": "capitalist",       "name": "Capitalist",           "desc": "Place 8 Farms all upgraded to max level",     "color": (80, 180, 60),  "border": (140, 255, 100), "coins": 500, "shards": 10},
+    {"id": "overkill",         "name": "Overkill",             "desc": "Apply every debuff to a boss at once", "color": (180, 60, 220), "border": (220, 120, 255), "coins": 600, "shards": 15},
+    {"id": "moonwalk",         "name": "Moonwalk",             "desc": "Have 15 enemies walking in confusion", "color": (80, 160, 255), "border": (140, 210, 255), "coins": 400, "shards": 10},
+    {"id": "why",              "name": "Why",                  "desc": "Do nothing for 1 hour",                       "color": (60, 60, 80),   "border": (100, 100, 140), "coins": 300, "shards": 5},
+    {"id": "gold_rush",        "name": "Gold Rush",            "desc": "Earn $10,000 in one game using only Cowboys",  "color": (220, 170, 20), "border": (255, 230, 80),  "coins": 500, "shards": 15},
+    {"id": "hacker",           "name": "Hacker",               "desc": "Open the admin panel in Sandbox mode",        "color": (40, 200, 120), "border": (80, 255, 180), "coins": 250, "shards": 5},
+    {"id": "no_refunds",       "name": "No Refunds",           "desc": "Beat Fallen without selling any tower",       "color": (200, 80, 60),  "border": (255, 130, 100), "coins": 700, "shards": 20},
+    {"id": "absolute_zero",    "name": "Absolute Zero",        "desc": "Keep a boss frozen for 15 seconds straight",  "color": (140, 220, 255),"border": (200, 250, 255), "coins": 550, "shards": 15},
+    {"id": "speedrunner",      "name": "Speedrunner",          "desc": "Beat Fallen with Auto-skip on all game",      "color": (255, 140, 40), "border": (255, 200, 100), "coins": 800, "shards": 25},
 ]
 
 def load_achievements():
-    if os.path.exists(ACHIEVEMENTS_FILE):
+    """Load achievements from unified save.json.
+    Returns {"unlocked": [...]} for back-compat."""
+    if os.path.exists(SAVE_FILE):
         try:
-            with open(ACHIEVEMENTS_FILE, "r") as f:
-                return json.load(f)
+            with open(SAVE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return {"unlocked": data.get("achievements", [])}
         except: pass
     return {"unlocked": []}
 
 def grant_achievement(ach_id):
-    data = load_achievements()
-    if ach_id in data.get("unlocked", []):
+    """Grant achievement and persist to unified save.json."""
+    if os.path.exists(SAVE_FILE):
+        try:
+            with open(SAVE_FILE, "r", encoding="utf-8") as f:
+                save = json.load(f)
+        except:
+            save = {}
+    else:
+        save = {}
+    unlocked = save.get("achievements", [])
+    if ach_id in unlocked:
         return False
-    data.setdefault("unlocked", []).append(ach_id)
+    unlocked.append(ach_id)
+    save["achievements"] = unlocked
     try:
-        with open(ACHIEVEMENTS_FILE, "w") as f:
-            json.dump(data, f)
+        with open(SAVE_FILE, "w", encoding="utf-8") as f:
+            json.dump(save, f, ensure_ascii=False)
     except: pass
     return True
 
@@ -237,15 +251,15 @@ UNIT_LIMITS = {
 def load_save():
     if os.path.exists(SAVE_FILE):
         try:
-            with open(SAVE_FILE,"r") as f:
+            with open(SAVE_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except: pass
     return {"frostcelerator_unlocked": False, "loadout": ["Assassin", None, None, None, None], "coins": 0, "owned_units": ["Assassin"], "shards": 0}
 
 def write_save(data):
     try:
-        with open(SAVE_FILE,"w") as f:
-            json.dump(data, f)
+        with open(SAVE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
     except: pass
 
 
@@ -330,19 +344,123 @@ def draw_rect_alpha(surf, color, rect, alpha=120, brad=0):
     surf.blit(s, (rect[0], rect[1]))
 
 # ── Visual Effects ─────────────────────────────────────────────────────────────
+class AssassinSlashEffect:
+    """Dynamic white-gray semi-transparent curved slash trail (взмах) for Assassin."""
+    def __init__(self, ox, oy, angle):
+        self.ox = float(ox); self.oy = float(oy); self.angle = float(angle)
+        self.life = 0.22
+        self.t = 0.0
+        self.radius = 48.0
+        # Faint silver-white slash sparks
+        self.sparks = []
+        for _ in range(6):
+            sa = math.radians(angle + random.uniform(-35, 35))
+            spd = random.uniform(50, 130)
+            self.sparks.append([float(ox), float(oy), math.cos(sa)*spd, math.sin(sa)*spd, random.uniform(0.12, 0.22)])
+
+    def update(self, dt):
+        self.t += dt
+        for sp in self.sparks:
+            sp[0] += sp[2] * dt
+            sp[1] += sp[3] * dt
+        return self.t < self.life
+
+    def draw(self, surf):
+        prog = min(1.0, self.t / self.life)
+        alpha = int(245 * (1.0 - prog) ** 1.3)
+        if alpha <= 0: return
+
+        sz = int(self.radius * 2 + 50)
+        s = pygame.Surface((sz, sz), pygame.SRCALPHA)
+        scx, scy = sz // 2, sz // 2
+
+        arc_deg = 85.0
+        base_ang = self.angle - arc_deg * 0.5 + (prog * 20.0)
+        steps = 18
+
+        outer_pts = []
+        inner_pts = []
+        cur_r = self.radius * (0.85 + 0.25 * prog)
+
+        for i in range(steps + 1):
+            frac = i / steps
+            ang = math.radians(base_ang + frac * arc_deg)
+            taper = math.sin(frac * math.pi)
+            w = 14.0 * taper * (1.0 - prog * 0.4)
+            r_out = cur_r + w * 0.5
+            r_in = max(4.0, cur_r - w * 0.5)
+
+            outer_pts.append((scx + math.cos(ang) * r_out, scy + math.sin(ang) * r_out))
+            inner_pts.append((scx + math.cos(ang) * r_in, scy + math.sin(ang) * r_in))
+
+        # Layer 1: Smoky gray outer fan (widest)
+        poly_full = outer_pts + inner_pts[::-1]
+        if len(poly_full) >= 3:
+            pygame.draw.polygon(s, (130, 135, 145, max(0, int(alpha * 0.35))), poly_full)
+
+        # Layer 2: Silvery white-gray mid core
+        mid_inner = []
+        for i in range(steps + 1):
+            frac = i / steps
+            ang = math.radians(base_ang + frac * arc_deg)
+            taper = math.sin(frac * math.pi)
+            w_mid = 7.0 * taper * (1.0 - prog * 0.3)
+            r_mid_in = max(4.0, cur_r - w_mid * 0.2)
+            mid_inner.append((scx + math.cos(ang) * r_mid_in, scy + math.sin(ang) * r_mid_in))
+        poly_mid = outer_pts + mid_inner[::-1]
+        if len(poly_mid) >= 3:
+            pygame.draw.polygon(s, (215, 222, 230, max(0, int(alpha * 0.65))), poly_mid)
+
+        # Layer 3: Razor-sharp cutting edge — brilliant pure white curve
+        if len(outer_pts) >= 2:
+            pygame.draw.lines(s, (255, 255, 255, alpha), False, outer_pts, 2)
+
+        # Layer 4: Faint air slipstream curve just outside blade edge
+        streak_pts = []
+        for i in range(steps + 1):
+            frac = i / steps
+            ang = math.radians(base_ang + frac * arc_deg)
+            taper = math.sin(frac * math.pi)
+            if taper > 0.3:
+                r_st = cur_r + (14.0 * taper * 0.5) + 3.0
+                streak_pts.append((scx + math.cos(ang) * r_st, scy + math.sin(ang) * r_st))
+        if len(streak_pts) >= 2:
+            pygame.draw.lines(s, (240, 245, 255, max(0, int(alpha * 0.45))), False, streak_pts, 1)
+
+        # Blade tip glint
+        if outer_pts:
+            tx, ty = outer_pts[-1]
+            pygame.draw.circle(s, (255, 255, 255, alpha), (int(tx), int(ty)), 3)
+            pygame.draw.circle(s, (200, 215, 235, max(0, int(alpha * 0.6))), (int(tx), int(ty)), 5, 1)
+
+        # Sparks
+        for sp in self.sparks:
+            sp_life = sp[4] - self.t
+            if sp_life <= 0: continue
+            sp_a = max(0, int(220 * (sp_life / sp[4]) * (1.0 - prog)))
+            sp_lx = int(sp[0] - self.ox + scx)
+            sp_ly = int(sp[1] - self.oy + scy)
+            if 0 <= sp_lx < sz and 0 <= sp_ly < sz:
+                pygame.draw.circle(s, (255, 255, 255, sp_a), (sp_lx, sp_ly), 2)
+
+        surf.blit(s, (int(self.ox - scx), int(self.oy - scy)))
+
 class SwordEffect:
     def __init__(self, ox, oy, angle):
         self.ox=ox; self.oy=oy; self.angle=angle
-        self.life=0.22; self.t=0.0; self.length=38
+        self.life=0.22; self.t=0.0; self.length=42
     def update(self, dt): self.t+=dt; return self.t<self.life
     def draw(self, surf):
-        progress=self.t/self.life; alpha=int(255*(1-progress)); sweep=60*progress
+        progress=self.t/self.life; alpha=int(255*(1-progress)); sweep=70*progress
         s=pygame.Surface((SCREEN_W,SCREEN_H),pygame.SRCALPHA)
+        # White-gray transparent slash lines
         for i in range(8):
             a=math.radians(self.angle-sweep*(i/7))
             ex=self.ox+math.cos(a)*self.length; ey=self.oy+math.sin(a)*self.length
-            pygame.draw.line(s,(200,200,255,max(0,alpha-i*36)),
-                             (int(self.ox),int(self.oy)),(int(ex),int(ey)),3)
+            # Fade from pure white down to gray
+            col=(255,255,255) if i<=2 else ((210,215,225) if i<=5 else (140,145,155))
+            fade=max(0,alpha-i*30)
+            pygame.draw.line(s,(*col,fade),(int(self.ox),int(self.oy)),(int(ex),int(ey)),3 if i<=2 else 2)
         surf.blit(s,(0,0))
 
 class WhirlwindEffect:
@@ -351,7 +469,7 @@ class WhirlwindEffect:
         self.life=1.0; self.t=0.0; self.spin=0.0
     def update(self, dt): self.t+=dt; self.spin+=dt*720; return self.t<self.life
     def draw(self, surf):
-        progress=self.t/self.life; alpha=int(200*(1-progress))
+        progress=self.t/self.life; alpha=int(220*(1-progress))
         s=pygame.Surface((SCREEN_W,SCREEN_H),pygame.SRCALPHA)
         for i in range(6):
             base_a=math.radians(self.spin+i*60)
@@ -359,9 +477,10 @@ class WhirlwindEffect:
                 a=base_a+math.radians(j*8); r1=10+j*4; r2=r1+36*(1-progress*0.5)
                 sx2=self.ox+math.cos(a)*r1; sy2=self.oy+math.sin(a)*r1
                 ex=self.ox+math.cos(a)*r2; ey=self.oy+math.sin(a)*r2
-                pygame.draw.line(s,(200,200,255,max(0,alpha-j*43)),
+                col=(255,255,255) if j==0 else ((210,218,228) if j<=2 else (140,145,155))
+                pygame.draw.line(s,(*col,max(0,alpha-j*40)),
                                  (int(sx2),int(sy2)),(int(ex),int(ey)),3-min(2,j//2))
-        pygame.draw.circle(s,(160,160,255,max(0,alpha//2)),
+        pygame.draw.circle(s,(220,225,235,max(0,alpha//2)),
                            (int(self.ox),int(self.oy)),int(self.radius*TILE),2)
         surf.blit(s,(0,0))
 
