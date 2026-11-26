@@ -26,6 +26,8 @@ _STRINGS = {
     "settings.auto_skip":          {"en": "Auto Skip",                  "ru": "Авто-пропуск"},
     "settings.sell_confirm":       {"en": "Confirm Before Sell",        "ru": "Подтверждение продажи"},
     "settings.fast_forward":       {"en": "Auto X2 Speed",              "ru": "Авто x2 скорость"},
+    "settings.damage_meter":       {"en": "Damage Meter",               "ru": "Счетчик урона"},
+    "settings.skip_intro":         {"en": "Skip Intro",                 "ru": "Пропуск интро"},
     "settings.linux_mode":         {"en": "Linux Mode",                 "ru": "Режим Linux"},
     "settings.wave_navigator":     {"en": "Wave Navigator Button",      "ru": "Кнопка навигатора волн"},
     "wavenav.title":               {"en": "Wave Navigator",             "ru": "Навигатор волн"},

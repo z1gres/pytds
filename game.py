@@ -1074,6 +1074,12 @@ class UI:
         self._wave_nav_panel = pygame.Rect(0, 0, 0, 0)
         self._wave_nav_content = pygame.Rect(0, 0, 0, 0)
         self._wave_nav_rows  = []
+        # Damage meter overlay
+        self.damage_meter_collapsed = False
+        self._dm_toggle_btn = pygame.Rect(0, 0, 0, 0)
+        self._dm_reset_btn  = pygame.Rect(0, 0, 0, 0)
+        self._dm_rect       = pygame.Rect(0, 0, 0, 0)
+        self._dm_prev_damage = {}
     def _build_slots(self):
         slots=[]; gap=8
         total_w=5*SLOT_W+4*gap
@@ -1105,6 +1111,16 @@ class UI:
             self.wave_nav_visible = True
             self.wave_nav_scroll = 0
             return 0
+        # ── Damage Meter clicks ───────────────────────────────────────────────
+        if SETTINGS.get("damage_meter", True):
+            if getattr(self, '_dm_toggle_btn', None) and self._dm_toggle_btn.collidepoint(pos):
+                self.damage_meter_collapsed = not self.damage_meter_collapsed
+                return 0
+            if getattr(self, '_dm_reset_btn', None) and self._dm_reset_btn.collidepoint(pos):
+                for u in units:
+                    self._dm_prev_damage[id(u)] = getattr(u, 'total_damage', 0.0)
+                self.show_msg("Damage meter reset!", 1.2)
+                return 0
         # ── Remote Control UI takes priority ─────────────────────────────────
         if getattr(self, '_rc_open', False):
             return self.handle_rc_click(pos, money)
@@ -4046,6 +4062,137 @@ class UI:
         else:
             self._wave_nav_btn = pygame.Rect(0, 0, 0, 0)
             self.wave_nav_visible = False
+
+        # ── Damage meter overlay (left side) ──────────────────────────────────
+        if SETTINGS.get("damage_meter", True):
+            self._draw_damage_meter(surf, units)
+        else:
+            self._dm_toggle_btn = pygame.Rect(0, 0, 0, 0)
+            self._dm_reset_btn  = pygame.Rect(0, 0, 0, 0)
+            self._dm_rect       = pygame.Rect(0, 0, 0, 0)
+
+    def _draw_damage_meter(self, surf, units):
+        """Compact damage meter on the left side showing towers sorted by damage dealt."""
+        active_units = [u for u in units if not getattr(u, '_mp_peer', False)]
+        if not active_units and self.damage_meter_collapsed:
+            self._dm_toggle_btn = pygame.Rect(0, 0, 0, 0)
+            self._dm_reset_btn  = pygame.Rect(0, 0, 0, 0)
+            self._dm_rect       = pygame.Rect(0, 0, 0, 0)
+            return
+
+        mx, my = pygame.mouse.get_pos()
+        f_title = pygame.font.SysFont("segoeui", 13, bold=True)
+        f_row   = pygame.font.SysFont("segoeui", 12)
+        f_bold  = pygame.font.SysFont("segoeui", 12, bold=True)
+
+        dm_x = 10
+        # Position below skip/wavenav buttons or abilities
+        dm_y = 124 if not SETTINGS.get("wave_navigator", False) else 156
+        dm_w = 210
+
+        if self.damage_meter_collapsed:
+            # Minimal pill toggle button
+            self._dm_toggle_btn = pygame.Rect(dm_x, dm_y, 90, 24)
+            self._dm_reset_btn  = pygame.Rect(0, 0, 0, 0)
+            self._dm_rect       = self._dm_toggle_btn
+            hov = self._dm_toggle_btn.collidepoint(mx, my)
+            draw_rect_alpha(surf, (15, 20, 32), (dm_x, dm_y, 90, 24), 220, 6)
+            pygame.draw.rect(surf, (100, 160, 240) if hov else (50, 75, 115), self._dm_toggle_btn, 1, border_radius=6)
+            txt(surf, "📊 DPS ▶", self._dm_toggle_btn.center, (200, 220, 255) if hov else (150, 175, 210), f_row, center=True)
+            return
+
+        # Calculate unit damage
+        unit_stats = []
+        total_dmg_all = 0.0
+        for u in active_units:
+            base_tot = getattr(u, 'total_damage', 0.0)
+            offset = self._dm_prev_damage.get(id(u), 0.0)
+            cur_dmg = max(0.0, base_tot - offset)
+            total_dmg_all += cur_dmg
+            unit_stats.append((u, cur_dmg))
+
+        # Sort descending by damage
+        unit_stats.sort(key=lambda item: item[1], reverse=True)
+
+        # Show up to top 6 units in panel
+        visible_entries = unit_stats[:6]
+        max_dmg = unit_stats[0][1] if (unit_stats and unit_stats[0][1] > 0) else 1.0
+
+        header_h = 28
+        row_h = 24
+        footer_h = 22
+        dm_h = header_h + max(1, len(visible_entries)) * row_h + footer_h + 6
+        self._dm_rect = pygame.Rect(dm_x, dm_y, dm_w, dm_h)
+
+        # Panel background
+        draw_rect_alpha(surf, (10, 14, 24), (dm_x, dm_y, dm_w, dm_h), 225, 8)
+        pygame.draw.rect(surf, (45, 65, 95), self._dm_rect, 1, border_radius=8)
+
+        # Header: Title + Reset + Collapse
+        txt(surf, "DAMAGE METER", (dm_x + 10, dm_y + 7), (230, 235, 255), f_title)
+
+        # Reset button (circular / small)
+        self._dm_reset_btn = pygame.Rect(dm_x + dm_w - 48, dm_y + 5, 20, 18)
+        r_hov = self._dm_reset_btn.collidepoint(mx, my)
+        pygame.draw.rect(surf, (60, 30, 35) if r_hov else (35, 22, 28), self._dm_reset_btn, border_radius=4)
+        pygame.draw.rect(surf, (220, 90, 90) if r_hov else (140, 60, 60), self._dm_reset_btn, 1, border_radius=4)
+        txt(surf, "↺", self._dm_reset_btn.center, (255, 160, 160) if r_hov else (200, 130, 130), f_row, center=True)
+
+        # Collapse button
+        self._dm_toggle_btn = pygame.Rect(dm_x + dm_w - 24, dm_y + 5, 18, 18)
+        c_hov = self._dm_toggle_btn.collidepoint(mx, my)
+        pygame.draw.rect(surf, (35, 55, 85) if c_hov else (22, 35, 55), self._dm_toggle_btn, border_radius=4)
+        pygame.draw.rect(surf, (100, 160, 240) if c_hov else (60, 90, 130), self._dm_toggle_btn, 1, border_radius=4)
+        txt(surf, "◀", self._dm_toggle_btn.center, (220, 235, 255) if c_hov else (150, 175, 210), f_row, center=True)
+
+        # Separator line
+        pygame.draw.line(surf, (35, 50, 75), (dm_x + 8, dm_y + header_h), (dm_x + dm_w - 8, dm_y + header_h), 1)
+
+        # Draw rows
+        y_cursor = dm_y + header_h + 3
+        if not visible_entries:
+            txt(surf, "No towers placed", (dm_x + dm_w // 2, y_cursor + 6), (120, 130, 155), f_row, center=True)
+            y_cursor += row_h
+        else:
+            for rank, (u, dmg) in enumerate(visible_entries):
+                row_r = pygame.Rect(dm_x + 6, y_cursor, dm_w - 12, row_h - 2)
+                is_u_hov = row_r.collidepoint(mx, my) or (getattr(self, 'open_unit', None) == u)
+
+                # Relative damage bar fill
+                fill_ratio = (dmg / max_dmg) if max_dmg > 0 else 0.0
+                bar_w = int((row_r.w) * fill_ratio)
+                ucol = getattr(u, 'COLOR', (120, 150, 200))
+                # Soft bar color
+                bar_col = (max(20, min(220, int(ucol[0] * 0.45))),
+                           max(20, min(220, int(ucol[1] * 0.45))),
+                           max(20, min(220, int(ucol[2] * 0.45))))
+                draw_rect_alpha(surf, bar_col, (row_r.x, row_r.y, bar_w, row_r.h), 140 if is_u_hov else 95, 4)
+                if is_u_hov:
+                    pygame.draw.rect(surf, (200, 220, 255), row_r, 1, border_radius=4)
+
+                # Unit dot
+                pygame.draw.circle(surf, ucol, (row_r.x + 9, row_r.centery), 4)
+
+                # Name
+                disp_name = _get_castbound_display_name() if isinstance(u, Castbound) else getattr(u, 'NAME', type(u).__name__)
+                s_name = f_row.render(str(disp_name[:11]), True, (240, 245, 255) if is_u_hov else (205, 215, 230))
+                r_name = s_name.get_rect()
+                r_name.left, r_name.centery = row_r.x + 18, row_r.centery
+                surf.blit(s_name, r_name)
+
+                # Damage number and percentage
+                pct_str = f"{(dmg / total_dmg_all * 100):.0f}%" if total_dmg_all > 0 else "0%"
+                val_str = f"{fmt_num(int(dmg))} ({pct_str})"
+                txt(surf, val_str, (row_r.right - 4, row_r.centery), (255, 220, 100) if rank == 0 and dmg > 0 else (175, 195, 225), f_bold, right=True)
+
+                y_cursor += row_h
+
+        # Footer: Total damage
+        pygame.draw.line(surf, (35, 50, 75), (dm_x + 8, y_cursor + 1), (dm_x + dm_w - 8, y_cursor + 1), 1)
+        tot_lbl = f_row.render("Total:", True, (140, 155, 180))
+        tot_val = f_bold.render(fmt_num(int(total_dmg_all)), True, (255, 215, 80))
+        surf.blit(tot_lbl, (dm_x + 10, y_cursor + 4))
+        surf.blit(tot_val, (dm_x + dm_w - tot_val.get_width() - 10, y_cursor + 4))
 
     def _draw_wave_nav_button(self, surf):
         """Small toggle button (top-left, under the wave counter) for the navigator."""
@@ -7385,6 +7532,8 @@ SETTINGS = {
     "show_range_always": False,
     "sell_confirm":   True,
     "fast_forward_default": False,
+    "damage_meter":   True,
+    "skip_intro":     False,
     "low_quality":    False,
     "show_grid":      False,
     "windowed":       False,
@@ -8444,6 +8593,8 @@ class SettingsScreen:
             ("auto_skip",            _t("settings.auto_skip")),
             ("sell_confirm",         _t("settings.sell_confirm")),
             ("fast_forward_default", _t("settings.fast_forward")),
+            ("damage_meter",         _t("settings.damage_meter")),
+            ("skip_intro",           _t("settings.skip_intro")),
             ("linux_mode",           _t("settings.linux_mode")),
         ]
         self._toggle_rects_cache = {}
@@ -8515,6 +8666,8 @@ class SettingsScreen:
             ("auto_skip",            _t("settings.auto_skip")),
             ("sell_confirm",         _t("settings.sell_confirm")),
             ("fast_forward_default", _t("settings.fast_forward")),
+            ("damage_meter",         _t("settings.damage_meter")),
+            ("skip_intro",           _t("settings.skip_intro")),
             ("linux_mode",           _t("settings.linux_mode")),
         ]
 
@@ -9203,6 +9356,7 @@ ALL_SKIN_DEFS = [
         "rarity":    "singularity",
         "desc":      "Molten solar guardian with orbiting fire blades.",
         "price":     2500,
+        "currency":  "coins",
     },
     {
         "id":        "castbound_skelebound",
@@ -9210,8 +9364,8 @@ ALL_SKIN_DEFS = [
         "name":      "Skelebound",
         "rarity":    "singularity",
         "desc":      "Undead sorcerer crowned in animated spectral soulfire.",
-        "price":     2500,
-        "free":      True,
+        "price":     500,
+        "currency":  "shards",
     },
 ]
 
@@ -9548,15 +9702,27 @@ class ShopScreen:
                     self.msg = f"Skin {skin['name']} unlocked and equipped!"
                 elif skin.get("price"):
                     price = skin["price"]
-                    coins = self.save_data.get("coins", 0)
-                    if coins >= price:
-                        self.save_data["coins"] = coins - price
-                        write_save(self.save_data)
-                        grant_skin(skin["id"])
-                        equip_skin(skin["unit_name"], skin["id"])
-                        self.msg = f"Purchased {skin['name']}!"
+                    currency = skin.get("currency", "coins")
+                    if currency == "shards":
+                        shards = self.save_data.get("shards", 0)
+                        if shards >= price:
+                            self.save_data["shards"] = shards - price
+                            write_save(self.save_data)
+                            grant_skin(skin["id"])
+                            equip_skin(skin["unit_name"], skin["id"])
+                            self.msg = f"Purchased {skin['name']}!"
+                        else:
+                            self.msg = f"Not enough shards! Need {price}."
                     else:
-                        self.msg = f"Not enough coins! Need {price}."
+                        coins = self.save_data.get("coins", 0)
+                        if coins >= price:
+                            self.save_data["coins"] = coins - price
+                            write_save(self.save_data)
+                            grant_skin(skin["id"])
+                            equip_skin(skin["unit_name"], skin["id"])
+                            self.msg = f"Purchased {skin['name']}!"
+                        else:
+                            self.msg = f"Not enough coins! Need {price}."
                 else:
                     self.msg = "Skin unavailable"
                 self.msg_timer = 2.5
@@ -9784,10 +9950,16 @@ class ShopScreen:
                 self._pass_buy_btns.append((p["id"], btn_r))
 
     def _skin_btn_rect(self, idx):
-        cx = SCREEN_W // 2
         card_w, card_h = 320, 420
-        x = cx - card_w // 2
-        y = 130 + idx * (card_h + 20)
+        n = len(ALL_SKIN_DEFS)
+        cols = min(n, max(1, (SCREEN_W - 80) // (card_w + 30)))
+        total_w = cols * card_w + (cols - 1) * 24
+        start_x = SCREEN_W // 2 - total_w // 2
+        start_y = 132
+        col = idx % cols
+        row = idx // cols
+        x = start_x + col * (card_w + 24)
+        y = start_y + row * (card_h + 20)
         return pygame.Rect(x + card_w // 2 - 110, y + card_h - 56, 220, 44)
 
     # ── Draw ────────────────────────────────────────────────────────────────
@@ -9995,7 +10167,11 @@ class ShopScreen:
             elif skin.get("free"):
                 btn_col = (80, 50, 0);    btn_brd = (255, 180, 40);  btn_lbl = "CLAIM FOR FREE"
             elif skin.get("price"):
-                btn_col = (60, 45, 0);    btn_brd = (220, 170, 30);  btn_lbl = f"BUY  {skin['price']} coins"
+                curr = skin.get("currency", "coins")
+                if curr == "shards":
+                    btn_col = (10, 45, 65);   btn_brd = (40, 160, 220);  btn_lbl = f"BUY  {skin['price']} shards"
+                else:
+                    btn_col = (60, 45, 0);    btn_brd = (220, 170, 30);  btn_lbl = f"BUY  {skin['price']} coins"
             else:
                 btn_col = (50, 30, 60);   btn_brd = (140, 80, 180);  btn_lbl = "LOCKED"
             if btn.collidepoint(mx, my):
@@ -12632,6 +12808,7 @@ class LoadoutScreen:
         self.loadout   = list(save_data.get("loadout", ["Assassin", None, None, None, None]))
         while len(self.loadout) < 5:
             self.loadout.append(None)
+        self.save_data["loadout"] = list(self.loadout)
         if "owned_units" not in self.save_data:
             self.save_data["owned_units"] = ["Assassin"]
         self.selected  = None   # (rarity, idx) or None
@@ -12757,12 +12934,15 @@ class LoadoutScreen:
                     self._handle_click(ev.pos)
             self._draw()
             pygame.display.flip()
+        self.save_data["loadout"] = list(self.loadout)
         write_save(self.save_data)
 
     def _handle_click(self, pos):
         left_w = int(SCREEN_W * self._SPLIT)
 
         if self.btn_back.collidepoint(pos):
+            self.save_data["loadout"] = list(self.loadout)
+            write_save(self.save_data)
             self.running = False; return
 
         # RANDOM button — fill the loadout with random owned units
@@ -12771,6 +12951,8 @@ class LoadoutScreen:
             random.shuffle(pool)
             picks = pool[:5]
             self.loadout = picks + [None] * (5 - len(picks))
+            self.save_data["loadout"] = list(self.loadout)
+            write_save(self.save_data)
             self._slot_select = False
             self.selected = None
             self.detail_unit = None
@@ -12850,6 +13032,8 @@ class LoadoutScreen:
             for k in range(5):
                 if self.loadout[k] == uname:
                     self.loadout[k] = None
+            self.save_data["loadout"] = list(self.loadout)
+            write_save(self.save_data)
             disp_msg_name = _get_castbound_display_name() if uname in ("Castbound", "Skelebound") else uname
             self._show_msg(f"{disp_msg_name} unequipped")
             return
@@ -12866,6 +13050,8 @@ class LoadoutScreen:
                         if self.loadout[k] == uname and k != si:
                             self.loadout[k] = None; break
                     self.loadout[si] = uname
+                    self.save_data["loadout"] = list(self.loadout)
+                    write_save(self.save_data)
                     self._slot_select = False
                     disp_msg_name = _get_castbound_display_name() if uname in ("Castbound", "Skelebound") else uname
                     self._show_msg(f"{disp_msg_name} equipped!")
@@ -12881,9 +13067,13 @@ class LoadoutScreen:
                             if self.loadout[k] == uname and k != si:
                                 self.loadout[k] = None; break
                         self.loadout[si] = uname
+                        self.save_data["loadout"] = list(self.loadout)
+                        write_save(self.save_data)
                         self.selected = None
                 elif self.loadout[si] is not None:
                     self.loadout[si] = None
+                    self.save_data["loadout"] = list(self.loadout)
+                    write_save(self.save_data)
                 return
 
     # ── draw ─────────────────────────────────────────────────────────────────
@@ -16639,6 +16829,8 @@ def run_intro_animation(screen):
     - Light glint sweeps across the completed title
     - Skippable with Space/Enter/Esc/Click
     """
+    if SETTINGS.get("skip_intro", False):
+        return
     try:
         clock = pygame.time.Clock()
         W, H = screen.get_size()
