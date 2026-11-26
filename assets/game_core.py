@@ -258,6 +258,17 @@ def load_save():
 
 def write_save(data):
     try:
+        # Skins live in the same file but not in the in-memory save dict.
+        # Keep the existing 'skins' section so game writes don't wipe purchases.
+        if "skins" not in data and os.path.exists(SAVE_FILE):
+            try:
+                with open(SAVE_FILE, "r", encoding="utf-8") as f:
+                    _old = json.load(f)
+                if isinstance(_old, dict) and "skins" in _old:
+                    data = dict(data)
+                    data["skins"] = _old["skins"]
+            except Exception:
+                pass
         with open(SAVE_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False)
     except: pass

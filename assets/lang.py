@@ -14,11 +14,17 @@ _STRINGS = {
     # ══════════════════════════════════════════════════════════════════
     "settings.title":              {"en": "SETTINGS",                   "ru": "НАСТРОЙКИ"},
     "settings.tab.audio":          {"en": "AUDIO",                      "ru": "АУДИО"},
+    "settings.tab.gameplay":       {"en": "GAMEPLAY",                   "ru": "ГЕЙМПЛЕЙ"},
     "settings.tab.graphics":       {"en": "GRAPHICS",                   "ru": "ГРАФИКА"},
     "settings.tab.display":        {"en": "DISPLAY",                    "ru": "ДИСПЛЕЙ"},
     "settings.tab.language":       {"en": "LANGUAGE",                   "ru": "ЯЗЫК"},
 
     "settings.audio.section":      {"en": "AUDIO OPTIONS",              "ru": "ПАРАМЕТРЫ ЗВУКА"},
+    "settings.gameplay.section":   {"en": "GAMEPLAY OPTIONS",            "ru": "ИГРОВЫЕ НАСТРОЙКИ"},
+    "settings.advanced.section":   {"en": "ADVANCED",                    "ru": "ДОПОЛНИТЕЛЬНО"},
+    "settings.performance.section":{"en": "PERFORMANCE",                 "ru": "ПРОИЗВОДИТЕЛЬНОСТЬ"},
+    "settings.back":               {"en": "BACK",                        "ru": "НАЗАД"},
+    "settings.credits":            {"en": "CREDITS",                     "ru": "АВТОРЫ"},
     "settings.music_volume":       {"en": "Music Volume",               "ru": "Громкость музыки"},
     "settings.sfx_volume":         {"en": "SFX Volume",                 "ru": "Громкость эффектов"},
     "settings.mute_music":         {"en": "Mute Music",                 "ru": "Выкл. музыку"},
