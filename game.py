@@ -9459,9 +9459,6 @@ class ShopScreen:
                             self._ex_active = [False, False]
                         else:
                             self.running = False
-                    elif ev.key in (pygame.K_1, pygame.K_2, pygame.K_3):
-                        self.active_tab = {pygame.K_1: 0, pygame.K_2: 1, pygame.K_3: 2}[ev.key]
-                        self._ex_active = [False, False]
                     else:
                         self._handle_key(ev)
                 if ev.type == pygame.MOUSEWHEEL and self.active_tab == 0:
@@ -9913,7 +9910,7 @@ class ShopScreen:
 
         # Hint row (bottom-left, не мешает контенту вкладок)
         hint_f = pygame.font.SysFont("segoeui", 11)
-        hint_s = hint_f.render("1 / 2 / 3 — switch tabs      ESC — back", True, (72, 82, 108))
+        hint_s = hint_f.render("ESC — back", True, (72, 82, 108))
         surf.blit(hint_s, (24, SCREEN_H - 18))
 
         # Tab content
