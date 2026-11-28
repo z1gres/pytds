@@ -1071,6 +1071,8 @@ class UI:
         self._dm_reset_btn  = pygame.Rect(0, 0, 0, 0)
         self._dm_rect       = pygame.Rect(0, 0, 0, 0)
         self._dm_prev_damage = {}
+        self._dm_offset     = [0, 0]   # смещение панели от базовой позиции (10, 124)
+        self._dm_drag       = None     # (dx, dy) — точка захвата, пока панель тащат мышью
     def _build_slots(self):
         slots=[]; gap=8
         total_w=5*SLOT_W+4*gap
@@ -1093,6 +1095,10 @@ class UI:
                 for u in units:
                     self._dm_prev_damage[id(u)] = getattr(u, 'total_damage', 0.0)
                 self.show_msg("Damage meter reset!", 1.2)
+                return 0
+            # Панель можно тащить мышью за любое место (кроме кнопок выше)
+            if getattr(self, '_dm_rect', None) and self._dm_rect.collidepoint(pos):
+                self._dm_drag = (pos[0] - self._dm_rect.x, pos[1] - self._dm_rect.y)
                 return 0
         # ── Remote Control UI takes priority ─────────────────────────────────
         if getattr(self, '_rc_open', False):
@@ -1413,7 +1419,15 @@ class UI:
                 return 0
         return 0
     def handle_release(self,pos,units,money):
+        self._dm_drag = None
         return 0
+    def handle_drag(self,pos):
+        """Перетаскивание панели дамаг-метра (MOUSEMOTION с зажатой ЛКМ)."""
+        if not getattr(self, '_dm_drag', None):
+            return False
+        dx, dy = self._dm_drag
+        self._dm_offset = [pos[0] - dx - 10, pos[1] - dy - 124]
+        return True
     def _menu_rects(self,unit):
         # Larger card, positioned vertically centered on the right side
         mw,mh=340,520
@@ -4027,13 +4041,15 @@ class UI:
         f_row   = pygame.font.SysFont("segoeui", 12)
         f_bold  = pygame.font.SysFont("segoeui", 12, bold=True)
 
-        dm_x = 10
-        # Position below the skip button / abilities
-        dm_y = 124
+        # Position below the skip button / abilities (панель можно перетаскивать)
         dm_w = 210
+        dm_x = int(max(0, min(SCREEN_W - dm_w, 10 + self._dm_offset[0])))
+        dm_y = int(max(0, min(SCREEN_H - 60, 124 + self._dm_offset[1])))
 
         if self.damage_meter_collapsed:
             # Minimal pill toggle button
+            dm_y = int(max(0, min(SCREEN_H - 28, dm_y)))
+            self._dm_offset = [dm_x - 10, dm_y - 124]
             self._dm_toggle_btn = pygame.Rect(dm_x, dm_y, 90, 24)
             self._dm_reset_btn  = pygame.Rect(0, 0, 0, 0)
             self._dm_rect       = self._dm_toggle_btn
@@ -4064,6 +4080,8 @@ class UI:
         row_h = 24
         footer_h = 22
         dm_h = header_h + max(1, len(visible_entries)) * row_h + footer_h + 6
+        dm_y = int(max(0, min(SCREEN_H - dm_h - 4, dm_y)))
+        self._dm_offset = [dm_x - 10, dm_y - 124]
         self._dm_rect = pygame.Rect(dm_x, dm_y, dm_w, dm_h)
 
         # Panel background
@@ -15707,7 +15725,9 @@ class Game:
                                     break
                         self.money += delta
                     if ev.type == pygame.MOUSEMOTION and pygame.mouse.get_pressed()[0]:
-                        if getattr(self.ui, '_rc_open', False):
+                        if getattr(self.ui, '_dm_drag', None):
+                            self.ui.handle_drag(ev.pos)
+                        elif getattr(self.ui, '_rc_open', False):
                             sl = getattr(self.ui, '_rc_slider_rect', None)
                             if sl and sl.collidepoint(ev.pos):
                                 slider_x = sl.x + 10
