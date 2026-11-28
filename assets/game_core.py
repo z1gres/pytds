@@ -246,6 +246,7 @@ UNIT_LIMITS = {
     "Warlock":        4,
     "Jester":         8,
     "Rubber Duck":    5,
+    "xw5yt":          2,
 }
 
 def load_save():

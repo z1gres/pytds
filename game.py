@@ -66,7 +66,8 @@ UNIT_LIMITS["Archer"]      = 8   # increased from default (was 6)
 UNIT_LIMITS["Militant"]    = 6   # new starter unit
 UNIT_LIMITS["Swarmer"]     = 8
 UNIT_LIMITS["Harvester"]   = 5   # placement limit per player
-UNIT_LIMITS["ToxicGunner"] = 5
+UNIT_LIMITS["ToxicGunner"] = 5          # legacy-ключ
+UNIT_LIMITS["Toxic Gunner"] = 5         # ключ, по которому ищется UType.NAME
 UNIT_LIMITS["Gladiator"]   = 6
 UNIT_LIMITS["Spotter"]  = 6
 UNIT_LIMITS["Korzhik"]     = 6
@@ -80,6 +81,30 @@ UNIT_LIMITS["Spotlight Tech"] = 3
 UNIT_LIMITS["xw5yt"] = 2
 UNIT_LIMITS["Noiseform"] = 2
 UNIT_LIMITS["Railgunner"] = 4
+
+# В словаре часть ключей — имена классов ("ControlPanel", "ToxicGunner", ...),
+# а все проверки ищут лимит по UType.NAME ("Control Panel", "Toxic Gunner", ...).
+# Из-за этого, например, у Control Panel лимита вообще не было — дублируем ключи по NAME.
+def _normalize_unit_limits():
+    import units as _u
+    for _cls in list(vars(_u).values()):
+        if not isinstance(_cls, type) or not issubclass(_cls, _u.Unit):
+            continue
+        _nm = getattr(_cls, "NAME", None)
+        if not _nm or _nm in UNIT_LIMITS:
+            continue
+        if _cls.__name__ in UNIT_LIMITS:
+            UNIT_LIMITS[_nm] = UNIT_LIMITS[_cls.__name__]
+
+_normalize_unit_limits()
+
+# Эталонные лимиты (уже после всех оверрайдов и нормализации).
+UNIT_LIMITS_DEFAULTS = dict(UNIT_LIMITS)
+
+def reset_unit_limits():
+    """Вернуть лимиты к значениям из кода (сброс чита «No Limits» из дев-панели)."""
+    UNIT_LIMITS.clear()
+    UNIT_LIMITS.update(UNIT_LIMITS_DEFAULTS)
 
 GLOBAL_UNIT_LIMIT = 40   # max total towers per match
 HARDCORE_GLOBAL_UNIT_LIMIT = 50
@@ -364,6 +389,7 @@ from units import (
     xw5yt, XW5YT_LEVELS,
     C_XW, C_XW_DARK, C_XW_ACC,
     Noiseform, NOISEFORM_LEVELS, C_NOISEFORM, C_NOISEFORM_DARK, _noiseform_tick_buffs,
+    _draw_noiseform_art,
     Freezer, FREEZER_LEVELS,
     FreezerBullet,
     FrostBlaster, FrostBlasterBullet, FROSTBLASTER_LEVELS,
@@ -393,7 +419,6 @@ from units import (
     HackerLaserTest, LIGHTNING_DAMAGE,
     Warlock, WarlockUnit, C_WARLOCK, C_WARLOCK_DARK, WARLOCK_LEVELS,
     Jester, JESTER_LEVELS, C_JESTER, C_JESTER_DARK,
-    SoulWeaver, C_SOULWEAVER, C_SOULWEAVER_DARK, _SW_LEVELS, _SW_SURGE_PARAMS, _sw_tick_buffs,
     SPAWN_MAP, CONSOLE_HELP,
     C_LIFESTEALER, C_LIFESTEALER_DARK,
     C_FROST, C_FROST_DARK, C_FROST_ICE,
@@ -641,9 +666,10 @@ class AdminPanel:
                             for k in list(UNIT_LIMITS.keys()):
                                 UNIT_LIMITS[k] = 9999
                         else:
-                            saved = getattr(self, '_saved_limits', {})
-                            UNIT_LIMITS.clear()
-                            UNIT_LIMITS.update(saved)
+                            # Раньше здесь бралась копия из AdminPanel — если панель
+                            # пересоздавалась (или игра перезапускалась), копии не было
+                            # и UNIT_LIMITS оставался пустым/с 9999 → лимиты исчезали у всех башен.
+                            reset_unit_limits()
                     elif action=="remove_all_towers":
                         game_ref.units.clear()
                     elif action=="toggle_ability_cd":
@@ -829,6 +855,7 @@ class AdminPanel:
                 elif name=="Assassin": draw_assassin_icon(surf,cx2+cw//2,cy2+28,t,size=22)
                 elif name=="Castbound": _draw_tower_icon(surf,"Castbound",cx2+cw//2,cy2+26,t,size=28)
                 elif name=="RubberDuck": _draw_tower_icon(surf,"Rubber Duck",cx2+cw//2,cy2+28,t,size=24)
+                elif name=="Noiseform": _draw_noiseform_art(surf,cx2+cw//2,cy2+28,t,s=0.5,aim=None,level=2,fire_flash=0.0)
 
                 else:
                     pygame.draw.circle(surf,(16,12,28),(cx2+cw//2,cy2+28),20)
@@ -1030,7 +1057,7 @@ class AdminPanel:
 
 # ── UI ─────────────────────────────────────────────────────────────────────────
 class UI:
-    SLOT_TYPES=[Assassin,Accelerator,SoulWeaver,None,None]
+    SLOT_TYPES=[Assassin,Accelerator,None,None,None]
     # Speed steps: 0.25, 0.50, 1.0, 1.25, 1.50, 2.0
     _SPEED_STEPS = [0.25, 0.50, 1.0, 1.25, 1.50, 2.0]
     def __init__(self, save_data=None):
@@ -1049,6 +1076,7 @@ class UI:
         self._rc_units    = []     # candidate towers in range
         self._rc_sel_unit = None   # currently selected target
         self._rc_sel_buff = "Damage"
+        self._rc_effect_ok = True  # выбранный бафф реально что-то меняет у цели
         self._rc_duration = 30     # seconds
         self.t = 0.0  # elapsed time for animations
         self.admin_panel=AdminPanel()
@@ -1231,7 +1259,7 @@ class UI:
                             self._rc_panel       = u        # owner
                             self._rc_units       = other    # targets
                             self._rc_sel_unit    = other[0]
-                            self._rc_sel_buff    = "Damage"
+                            self._rc_sel_buff    = self._rc_pick_default_buff(other[0])
                             self._rc_duration    = 30
                             self._rc_open        = True
                     else:
@@ -1368,7 +1396,7 @@ class UI:
                             self._rc_panel    = self.open_unit
                             self._rc_units    = other
                             self._rc_sel_unit = other[0]
-                            self._rc_sel_buff = "Damage"
+                            self._rc_sel_buff = self._rc_pick_default_buff(other[0])
                             self._rc_duration = 30
                             self._rc_open     = True
                     else:
@@ -1853,24 +1881,6 @@ class UI:
             pygame.draw.circle(bg_s2,(255,100,30,80),(7,7),6)
             surf.blit(bg_s2,(cx+int(math.cos(ba)*14)-7,cy+int(math.sin(ba)*9)-7))
             pygame.draw.circle(surf,bomb_col,(cx+int(math.cos(ba)*14),cy+int(math.sin(ba)*9)),4)
-        elif isinstance(u, SoulWeaver):
-            t2 = pygame.time.get_ticks() * 0.001
-            pulse = abs(math.sin(t2 * 1.8))
-            aura_s = pygame.Surface((56, 56), pygame.SRCALPHA)
-            pygame.draw.circle(aura_s, (160, 80, 255, int(30 + pulse * 50)), (28, 28), 27)
-            surf.blit(aura_s, (cx - 28, cy - 28))
-            pygame.draw.circle(surf, C_SOULWEAVER_DARK, (cx, cy), 28)
-            pygame.draw.circle(surf, C_SOULWEAVER,      (cx, cy), 22)
-            ring_s = pygame.Surface((48, 48), pygame.SRCALPHA)
-            pygame.draw.circle(ring_s, (*C_SOULWEAVER, int(120 + pulse * 80)), (24, 24), 22, 2)
-            surf.blit(ring_s, (cx - 24, cy - 24))
-            pygame.draw.ellipse(surf, (220, 180, 255), (cx - 9, cy - 5, 18, 10), 2)
-            pygame.draw.circle(surf, (255, 220, 255), (cx + int(math.sin(t2 * 0.7) * 3), cy), 4)
-            for i, angle in enumerate([t2 * 1.2, t2 * 1.2 + 2.09, t2 * 1.2 + 4.19]):
-                ox = cx + int(math.cos(angle) * 32)
-                oy = cy + int(math.sin(angle) * 32)
-                pygame.draw.circle(surf, (200, 140, 255), (ox, oy), 5)
-                pygame.draw.circle(surf, (255, 220, 255), (ox, oy), 5, 1)
         elif isinstance(u, Swarmer):
             pygame.draw.circle(surf, C_SWARMER_DARK, (cx, cy), 28)
             pygame.draw.circle(surf, C_SWARMER,      (cx, cy), 22)
@@ -1988,10 +1998,8 @@ class UI:
             pygame.draw.line(es,(255,90,90),(ec,ec-er+1),(ec,ec+er-1),2)
             surf.blit(es,(cx-ec,cy-ec))
         elif isinstance(u, Noiseform):
-            # placeholder art — plain green circle
-            pygame.draw.circle(surf, (20, 80, 55), (cx, cy), 27)
-            pygame.draw.circle(surf, C_NOISEFORM, (cx, cy), 22)
-            pygame.draw.circle(surf, (170, 255, 200), (cx, cy), 22, 2)
+            _draw_noiseform_art(surf, cx, cy, t, s=0.8, aim=None,
+                                level=getattr(u, 'level', 0), fire_flash=0.0)
         else:
             pygame.draw.circle(surf,(70,40,100),(cx,cy),28)
             pygame.draw.circle(surf,u.COLOR,(cx,cy),22)
@@ -2022,7 +2030,6 @@ class UI:
         elif cls==Snowballer: levels=SNOWBALLER_LEVELS; cost_idx=3
         elif cls==Commando: levels=COMMANDO_LEVELS; cost_idx=3
         elif cls==Jester: levels=JESTER_LEVELS; cost_idx=3
-        elif cls==SoulWeaver: levels=_SW_LEVELS; cost_idx=1
         elif cls==RubberDuck: levels=DUCK_LEVELS; cost_idx=3
         elif cls==Swarmer: levels=SWARMER_LEVELS; cost_idx=3
         elif cls==Harvester: levels=HARVESTER_LEVELS; cost_idx=3
@@ -2223,13 +2230,6 @@ class UI:
             if dual and not unit._dual: result["Dual"]="Throws 2 bombs"
             if hd and not unit.hidden_detection: result["HidDet"]="Hidden Detection"
             return result
-        elif cls==SoulWeaver:
-            if nxt>=len(_SW_LEVELS): return None
-            r2,_,cd2,max_s=_SW_LEVELS[nxt]
-            p2=_SW_SURGE_PARAMS[nxt]
-            return {"Range":r2,"MaxStacks":max_s,"AbilCD":f"{cd2:.0f}s",
-                    "Surge DMG":f"x{p2[0]:.1f}","Surge FR":f"x{p2[1]:.2f}",
-                    "Chain":f"{int(p2[4]*100)}%"}
         elif cls==RubberDuck:
             if nxt>=len(DUCK_LEVELS): return None
             d,fr,r,_,_b,_sr,_sd,hd=DUCK_LEVELS[nxt]
@@ -3228,19 +3228,6 @@ class UI:
                     stats.append(("Buff left", f"{ab._active_buff_dur:.1f}s", None))
                 stats.append(("AbilCD", "READY" if ab.cd_left <= 0 else f"{ab.cd_left:.1f}s", None))
                 stats.append(("AbilCD_max", f"{_CP_ABILITY_CD:.0f}s CD", None))
-            elif cls==SoulWeaver:
-                nxt_sw = _SW_LEVELS[u.level+1] if u.level+1 < len(_SW_LEVELS) else None
-                p_sw = _SW_SURGE_PARAMS[u.level+1] if u.level+1 < len(_SW_SURGE_PARAMS) else None
-                _rng_bonus = getattr(self, '_sk_range_bonus', 0)
-                _sw_nxt_r = round(nxt_sw[0] * (1.0 + _rng_bonus), 4) if nxt_sw else None
-                stats=[
-                    ("Range",      u.range_tiles,           _sw_nxt_r),
-                    ("MaxStacks",  u.max_stacks,            nxt_sw[3]   if nxt_sw else None),
-                    ("AbilCD",     f"{u._cd:.0f}s",          f"{nxt_sw[2]:.0f}s" if nxt_sw else None),
-                ]
-                if p_sw:
-                    stats.append(("Surge DMG", f"x{_SW_SURGE_PARAMS[u.level][0]:.1f}", f"x{p_sw[0]:.1f}"))
-                    stats.append(("Surge FR",  f"x{_SW_SURGE_PARAMS[u.level][1]:.2f}", f"x{p_sw[1]:.2f}"))
             elif cls==Castbound:
                 nxt_cb = CASTBOUND_LEVELS[u.level+1] if u.level+1 < len(CASTBOUND_LEVELS) else None
                 hd_now  = u.hidden_detection
@@ -4157,11 +4144,26 @@ class UI:
     # ─────────────────────────────────────────────────────────────────────────
     # Remote Control (ControlPanel ability) overlay UI
     # ─────────────────────────────────────────────────────────────────────────
+    @staticmethod
+    def _rc_pick_default_buff(unit):
+        """Первый бафф, который реально даёт что-то выбранной башне."""
+        for b in ("Damage", "Firerate", "Range"):
+            if RemoteControlAbility.buff_applies(unit, b):
+                return b
+        return "Damage"
+
     def _draw_rc_panel(self, surf, money):
         """Draw the Remote Control selection popup and store button rects."""
-        W, H = 520, 380
+        W = 520
+        # Раньше в панель влезало максимум 8 башен (self._rc_units[:8]), а все
+        # остальные в радиусе просто не рисовались и были недоступны для баффа.
+        # Теперь кнопки раскладываются рядами по 8, а панель растёт по высоте.
+        _rc_rows  = max(1, (len(self._rc_units) + 7) // 8)
+        _rc_row_h = 38
+        H = 380 + (_rc_rows - 1) * _rc_row_h
         px2 = SCREEN_W // 2 - W // 2
         py2 = SCREEN_H // 2 - H // 2
+        _rc_shift = (_rc_rows - 1) * _rc_row_h   # сдвиг секций ниже списка башен
 
         # Darken background
         dim = _get_dim_surf(); dim.fill((0, 0, 0, 140))
@@ -4181,16 +4183,16 @@ class UI:
         surf.blit(title_s, title_s.get_rect(centerx=px2 + W // 2, top=py2 + 10))
 
         # ── Section 1: Choose target tower ───────────────────────────────────
-        sec_s = lf14.render("Target Tower:", True, (160, 200, 255))
+        sec_s = lf14.render(f"Target Tower:   ({len(self._rc_units)} in range)", True, (160, 200, 255))
         surf.blit(sec_s, (px2 + 14, py2 + 38))
 
-        btn_w = (W - 28) // max(len(self._rc_units), 1)
-        btn_w = min(btn_w, 110)
+        _per_row = min(8, max(1, len(self._rc_units)))
+        btn_w = min((W - 28 - (_per_row - 1) * 4) // _per_row, 110)
         self._rc_tower_btns = []
-        for i, u in enumerate(self._rc_units[:8]):
-            bx = px2 + 14 + i * (btn_w + 4)
-            by = py2 + 58
-            bh = 38
+        for i, u in enumerate(self._rc_units):
+            bx = px2 + 14 + (i % 8) * (btn_w + 4)
+            by = py2 + 58 + (i // 8) * _rc_row_h
+            bh = _rc_row_h - 4
             sel = (u is self._rc_sel_unit)
             bg  = (20, 80, 120) if sel else (15, 40, 60)
             brd = C_CTRLPANEL if sel else (40, 100, 130)
@@ -4198,13 +4200,16 @@ class UI:
             pygame.draw.rect(surf, brd, (bx, by, btn_w, bh), 2, border_radius=6)
             uname = getattr(u, "NAME", type(u).__name__)
             if uname in ("Castbound", "Skelebound"): uname = _get_castbound_display_name()
-            ns = lf12.render(uname[:10], True, C_WHITE if sel else (160, 190, 210))
+            # подрезаем длинные имена, чтобы они не залезали на соседние кнопки
+            while len(uname) > 3 and lf12.size(uname)[0] > btn_w - 6:
+                uname = uname[:-1]
+            ns = lf12.render(uname, True, C_WHITE if sel else (160, 190, 210))
             surf.blit(ns, ns.get_rect(centerx=bx + btn_w // 2, centery=by + bh // 2))
             self._rc_tower_btns.append((pygame.Rect(bx, by, btn_w, bh), u))
 
         # ── Section 2: Choose buff type ───────────────────────────────────────
         sec_s2 = lf14.render("Buff Type:", True, (160, 200, 255))
-        surf.blit(sec_s2, (px2 + 14, py2 + 110))
+        surf.blit(sec_s2, (px2 + 14, py2 + 110 + _rc_shift))
 
         buff_names = ["Range", "Damage", "Firerate"]
         buff_descs = ["+35% Range", "+40% Damage", "+35% Firerate"]
@@ -4213,17 +4218,23 @@ class UI:
         bw_b = (W - 28) // 3 - 4
         for i, (bname, bdesc) in enumerate(zip(buff_names, buff_descs)):
             bx = px2 + 14 + i * (bw_b + 6)
-            by = py2 + 130
+            by = py2 + 130 + _rc_shift
             bh = 48
-            sel = (bname == self._rc_sel_buff)
+            _ok  = RemoteControlAbility.buff_applies(self._rc_sel_unit, bname)
+            sel  = (bname == self._rc_sel_buff) and _ok
             bcol = _CP_BUFF_DEFS[bname]["color"]
-            bg   = (*[min(255, c // 3 + 20) for c in bcol],)
-            brd  = bcol if sel else tuple(max(0, c - 80) for c in bcol)
+            if _ok:
+                bg  = (*[min(255, c // 3 + 20) for c in bcol],)
+                brd = bcol if sel else tuple(max(0, c - 80) for c in bcol)
+            else:
+                # бафф бесполезен для этой башни — серая, некликабельная кнопка
+                bg, brd = (30, 34, 40), (64, 68, 76)
             pygame.draw.rect(surf, bg,  (bx, by, bw_b, bh), border_radius=6)
             pygame.draw.rect(surf, brd, (bx, by, bw_b, bh), 2 if not sel else 3, border_radius=6)
-            ns  = lf13.render(bname, True, C_WHITE)
-            ds  = lf12.render(bdesc, True, (200, 220, 200))
-            c_s = lf12.render(f"${buff_costs_base[i]}+", True, C_GOLD)
+            ns  = lf13.render(bname, True, C_WHITE if _ok else (120, 124, 134))
+            ds  = lf12.render(bdesc, True, (200, 220, 200) if _ok else (105, 110, 120))
+            c_s = (lf12.render(f"${buff_costs_base[i]}+", True, C_GOLD) if _ok
+                   else lf12.render("no effect", True, (165, 110, 110)))
             surf.blit(ns,  ns.get_rect(centerx=bx + bw_b // 2, top=by + 4))
             surf.blit(ds,  ds.get_rect(centerx=bx + bw_b // 2, top=by + 20))
             surf.blit(c_s, c_s.get_rect(centerx=bx + bw_b // 2, top=by + 34))
@@ -4231,10 +4242,10 @@ class UI:
 
         # ── Section 3: Duration slider ────────────────────────────────────────
         sec_s3 = lf14.render(f"Duration: {self._rc_duration}s", True, (160, 200, 255))
-        surf.blit(sec_s3, (px2 + 14, py2 + 196))
+        surf.blit(sec_s3, (px2 + 14, py2 + 196 + _rc_shift))
 
         slider_x  = px2 + 14
-        slider_y  = py2 + 220
+        slider_y  = py2 + 220 + _rc_shift
         slider_w  = W - 28
         slider_h  = 14
         dur_frac  = (self._rc_duration - 5) / 115.0  # 5–120 range
@@ -4253,13 +4264,20 @@ class UI:
 
         # ── Cost summary ──────────────────────────────────────────────────────
         total_cost = RemoteControlAbility.buff_cost(self._rc_sel_buff, self._rc_duration)
-        can_afford = money >= total_cost
-        cost_col   = (100, 220, 80) if can_afford else (220, 80, 60)
-        per_s      = _CP_BUFF_DEFS[self._rc_sel_buff]["per_sec"]
-        cost_s = lf14.render(
-            f"Cost: ${total_cost}  (${_CP_BUFF_DEFS[self._rc_sel_buff]['base']} + ${per_s}/s × {self._rc_duration}s)",
-            True, cost_col)
-        surf.blit(cost_s, cost_s.get_rect(centerx=px2 + W // 2, top=py2 + 246))
+        _effect_ok = RemoteControlAbility.buff_applies(self._rc_sel_unit, self._rc_sel_buff)
+        can_afford = (money >= total_cost) and _effect_ok
+        self._rc_effect_ok = _effect_ok
+        if _effect_ok:
+            cost_col = (100, 220, 80) if can_afford else (220, 80, 60)
+            per_s    = _CP_BUFF_DEFS[self._rc_sel_buff]["per_sec"]
+            cost_s = lf14.render(
+                f"Cost: ${total_cost}  (${_CP_BUFF_DEFS[self._rc_sel_buff]['base']} + ${per_s}/s × {self._rc_duration}s)",
+                True, cost_col)
+        else:
+            _tname2 = getattr(self._rc_sel_unit, "NAME", "this tower")
+            cost_s = lf14.render(f"No effect: {_tname2} gains nothing from this buff",
+                                 True, (225, 120, 110))
+        surf.blit(cost_s, cost_s.get_rect(centerx=px2 + W // 2, top=py2 + 246 + _rc_shift))
 
         # ── Confirm / Cancel buttons ──────────────────────────────────────────
         btn_h = 40
@@ -4270,7 +4288,13 @@ class UI:
         c_brd = (60, 200, 80) if can_afford else (80, 80, 80)
         pygame.draw.rect(surf, c_bg,  confirm_r, border_radius=8)
         pygame.draw.rect(surf, c_brd, confirm_r, 2, border_radius=8)
-        conf_lbl = lf16.render("Confirm" if can_afford else "Not enough $", True,
+        if can_afford:
+            _conf_txt = "Confirm"
+        elif not _effect_ok:
+            _conf_txt = "No effect"
+        else:
+            _conf_txt = "Not enough $"
+        conf_lbl = lf16.render(_conf_txt, True,
                                (100, 255, 120) if can_afford else (140, 140, 140))
         surf.blit(conf_lbl, conf_lbl.get_rect(center=confirm_r.center))
         # Cancel
@@ -4294,21 +4318,37 @@ class UI:
             return 0
         # Confirm
         if (getattr(self, '_rc_confirm_rect', None) and
-                self._rc_confirm_rect.collidepoint(pos) and
-                getattr(self, '_rc_can_afford', False)):
+                self._rc_confirm_rect.collidepoint(pos)):
+            _tname = getattr(self._rc_sel_unit, 'NAME', 'this tower')
+            if not getattr(self, '_rc_effect_ok', True):
+                # бафф ничего не даёт этой башне — деньги не трогаем
+                self.show_msg(f"{self._rc_sel_buff} buff does nothing for {_tname}", 3.0)
+                return 0
+            if not getattr(self, '_rc_can_afford', False):
+                self.show_msg("Not enough money!", 3.0)
+                return 0
             cost = RemoteControlAbility.buff_cost(self._rc_sel_buff, self._rc_duration)
-            self._rc_panel.ability.apply_buff(self._rc_sel_unit, self._rc_sel_buff, self._rc_duration)
+            applied = self._rc_panel.ability.apply_buff(self._rc_sel_unit, self._rc_sel_buff, self._rc_duration)
+            if not applied:
+                self.show_msg(f"{self._rc_sel_buff} buff does nothing for {_tname}", 3.0)
+                return 0
             self._rc_open = False
             return -cost
         # Tower selection buttons
         for rect, u in getattr(self, '_rc_tower_btns', []):
             if rect.collidepoint(pos):
                 self._rc_sel_unit = u
+                if not RemoteControlAbility.buff_applies(u, self._rc_sel_buff):
+                    self._rc_sel_buff = self._rc_pick_default_buff(u)
                 return 0
         # Buff type buttons
         for rect, bname in getattr(self, '_rc_buff_btns', []):
             if rect.collidepoint(pos):
-                self._rc_sel_buff = bname
+                if RemoteControlAbility.buff_applies(self._rc_sel_unit, bname):
+                    self._rc_sel_buff = bname
+                else:
+                    _tname = getattr(self._rc_sel_unit, 'NAME', 'this tower')
+                    self.show_msg(f"{bname} buff does nothing for {_tname}", 3.0)
                 return 0
         # Slider drag
         sl = getattr(self, '_rc_slider_rect', None)
@@ -5313,21 +5353,6 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32, force_skin=None):
             pygame.draw.circle(bs2, (200, 170, 40, 160), (sc(6), sc(6)), sp(5), sp(1))
             surf.blit(bs2, (bx3 - sc(6), by3 - sc(6)))
 
-    elif unit_name == "SoulWeaver":
-        pygame.draw.circle(surf, C_SOULWEAVER_DARK, (cx, cy), sc(27))
-        pygame.draw.circle(surf, C_SOULWEAVER, (cx, cy), sc(20))
-        # Eye symbol
-        pygame.draw.ellipse(surf, (220, 180, 255), (cx - sc(9), cy - sc(5), sc(18), sc(10)), sp(2))
-        pygame.draw.circle(surf, (255, 220, 255), (cx, cy), sp(4))
-        pygame.draw.circle(surf, (80, 0, 160), (cx, cy), sp(2))
-        # Orbiting soul orbs
-        for i in range(3):
-            angle = t * 1.5 + i * (math.pi * 2 / 3)
-            ox2 = cx + int(math.cos(angle) * sc(32))
-            oy2 = cy + int(math.sin(angle) * sc(32))
-            pygame.draw.circle(surf, (200, 140, 255), (ox2, oy2), sp(5))
-            pygame.draw.circle(surf, (255, 220, 255), (ox2, oy2), sp(5), sp(1))
-
     elif unit_name == "Swarmer":
         pygame.draw.circle(surf, C_SWARMER_DARK, (cx, cy), sc(27))
         pygame.draw.circle(surf, C_SWARMER, (cx, cy), sc(21))
@@ -5823,10 +5848,9 @@ def _draw_tower_icon(surf, unit_name, cx, cy, t, size=32, force_skin=None):
         surf.blit(es, (cx - ec, cy - ec))
 
     elif unit_name == "Noiseform":
-        # placeholder art — plain green circle
-        pygame.draw.circle(surf, (20, 80, 55), (cx, cy), sc(27))
-        pygame.draw.circle(surf, C_NOISEFORM, (cx, cy), sc(21))
-        pygame.draw.circle(surf, (170, 255, 200), (cx, cy), sc(21), sp(2))
+        # арт шире старого кружка (орбита осколков/волны), поэтому считаем масштаб
+        # от полного размаха ~35 px, чтобы иконка влезала в свой size
+        _draw_noiseform_art(surf, cx, cy, t, s=size / 36.0, aim=None, level=2, fire_flash=0.0)
     else:
         # Fallback: colored circle with unit's color
         _col_map = {
@@ -7599,7 +7623,7 @@ _ALL_UNIT_CLASSES = [
     Railgunner, xw5yt, Noiseform,
     Sledger, Gladiator, ToxicGunner, Slasher, GoldenCowboy, HallowPunk,
     SpotlightTech, Snowballer, Commando,
-    Caster, Warlock, Jester, SoulWeaver, RubberDuck,
+    Caster, Warlock, Jester, RubberDuck,
     Militant, Swarmer, Harvester,
 ]
 for _ucls in _ALL_UNIT_CLASSES:
@@ -13338,7 +13362,7 @@ class LoadoutScreen:
                 "Commando": Commando, "Caster": Caster,
                 "hacker_laser_effects_test": Caster,
                 "Warlock": Warlock, "Jester": Jester,
-                "Soul Weaver": SoulWeaver, "Rubber Duck": RubberDuck,
+                "Rubber Duck": RubberDuck,
                 "Harvester": Harvester, "Spotter": Twitgunner,
                 "Korzhik": Felyne, "Conduit": Conduit,
                 "Control Panel": ControlPanel, "ControlPanel": ControlPanel,
@@ -14634,6 +14658,9 @@ class PauseMenu:
 
 class Game:
     def __init__(self, save_data=None, mode="easy", admin_mode=False):
+        # Каждый новый матч начинается со штатных лимитов: иначе чит «No Limits»
+        # из дев-панели (он ставит всем башням 9999) тянулся в следующие игры.
+        reset_unit_limits()
         self.save_data = save_data or load_save()
         apply_mastery_buffs(self.save_data)
         self.screen = _apply_display_mode()
@@ -14825,7 +14852,6 @@ class Game:
                         "Caster": Caster,
                         "Warlock": Warlock,
                         "Jester": Jester,
-                        "Soul Weaver": SoulWeaver,
                         "Rubber Duck": RubberDuck,
                         "Harvester": Harvester,
                         "Spotter": Twitgunner,
@@ -16352,30 +16378,6 @@ class Game:
                         tp.index = i
     
 
-                # SoulWeaver: inject refs, tick kills → stacks, tick buff expirations
-                for u in self.units:
-                    if isinstance(u, SoulWeaver):
-                        u._units_ref = self.units
-                        u._game_ref  = self
-                # Award soul stacks for enemies killed this tick
-                for e in self.enemies:
-                    if not e.alive and not getattr(e, '_sw_counted', False):
-                        e._sw_counted = True
-                        for u in self.units:
-                            if isinstance(u, SoulWeaver):
-                                if dist((e.x, e.y), (u.px, u.py)) <= u.range_tiles * TILE:
-                                    u.notify_kill(e)
-                                    # Check chain explosion
-                                    # find which unit killed it (closest attacker in range)
-                                    killer = None
-                                    best_d = 9999
-                                    for ku in self.units:
-                                        if isinstance(ku, SoulWeaver): continue
-                                        d2 = dist((ku.px, ku.py), (e.x, e.y))
-                                        if d2 <= ku.range_tiles * TILE and d2 < best_d:
-                                            best_d = d2; killer = ku
-                                    if killer:
-                                        u.check_chain(killer, e, self.enemies, self.effects)
                 # Noiseform Soultorn kill check
                 for e in self.enemies:
                     if not e.alive and not getattr(e, '_nf_death_checked', False):
@@ -16384,7 +16386,6 @@ class Game:
                             if isinstance(u, Noiseform) and u.level >= 3:
                                 if dist((e.x, e.y), (u.px, u.py)) <= u.range_tiles * TILE:
                                     u.notify_enemy_death(e, self.effects)
-                _sw_tick_buffs(self.units)
                 _noiseform_tick_buffs(self.units, dt, self.enemies)
     
                 # Collect GoldenCowboy cash shot income

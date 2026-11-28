@@ -3116,12 +3116,123 @@ class _NfStarBeamAbility:
 
 
 def _draw_noiseform_art(surf, cx, cy, t, s=1.0, aim=None, level=0, fire_flash=0.0):
-    """Placeholder art — Noiseform is just a plain green circle for now."""
-    def sc(v): return max(1, int(v * s))
-    r = sc(26)
-    pygame.draw.circle(surf, (20, 80, 55), (cx, cy), r)
-    pygame.draw.circle(surf, C_NOISEFORM, (cx, cy), r - sc(3))
-    pygame.draw.circle(surf, (170, 255, 200), (cx, cy), r, max(1, sc(2)))
+    """Spectral Resonant Monolith — «призрачный обелиск» Noiseform.
+
+    Слои: звуковые волны по полу → орбита осколков обсидиана → парящий монолит
+    с светящейся трещиной и глазом-ядром → вспышка выстрела и акценты уровней.
+    Всё масштабируется через s, так что арт годится и для превью.
+    """
+    def sc(v): return max(1, int(round(v * s)))
+    def pt(x, y): return (int(x), int(y))
+
+    beat = abs(math.sin(t * 2.1))          # «пульс» башни
+    bob = math.sin(t * 1.7) * sc(2.5)      # парение корпуса
+    bx, by = float(cx), float(cy) + bob
+
+    # ── 1. Пол: разбегающиеся звуковые волны + контактная тень ──
+    sh = pygame.Surface((sc(46), sc(16)), pygame.SRCALPHA)
+    pygame.draw.ellipse(sh, (0, 0, 0, 105), sh.get_rect())
+    surf.blit(sh, pt(cx - sc(23), cy + sc(12)))
+
+    for i in range(3):
+        ph = (t * 0.7 + i / 3.0) % 1.0
+        rw = sc(16 + ph * 30)
+        a = int(105 * (1.0 - ph))
+        if a <= 2:
+            continue
+        wave = pygame.Surface((rw * 2 + 2, sc(20)), pygame.SRCALPHA)
+        pygame.draw.ellipse(wave, (95, 245, 170, a), wave.get_rect(), max(1, sc(1.4)))
+        surf.blit(wave, pt(cx - rw - 1, cy + sc(16) - wave.get_height() // 2))
+
+    # ── 2. Орбита осколков расколотого обсидианового клинка ──
+    n = 3 + (2 if level >= 2 else 0) + (2 if level >= 4 else 0)
+    orbit_r = sc(31 + (4 if level >= 2 else 0))
+    for i in range(n):
+        ang = t * (0.9 if i % 2 == 0 else -0.7) + i * (math.tau / n)
+        ox = cx + math.cos(ang) * orbit_r
+        oy = by + math.sin(ang) * orbit_r * 0.5
+        ln = sc(7 if i % 3 == 0 else 5)
+        wd = sc(3)
+        ca, sa = math.cos(ang), math.sin(ang)
+        rx, ry = ca, sa * 0.5               # радиальное направление (сжато по Y)
+        px_, py_ = -sa * 0.5, ca            # перпендикуляр
+        quad = [pt(ox + rx * ln, oy + ry * ln),
+                pt(ox + px_ * wd, oy + py_ * wd),
+                pt(ox - rx * ln, oy - ry * ln),
+                pt(ox - px_ * wd, oy - py_ * wd)]
+        pygame.draw.polygon(surf, (11, 46, 34), quad)
+        pygame.draw.polygon(surf, (110, 250, 180), quad, max(1, sc(1)))
+        pygame.draw.circle(surf, (210, 255, 232), quad[0], max(1, sc(1)))
+
+    # ── 3. Ореол-аура вокруг корпуса (мягкая заливка + пульсирующие кольца) ──
+    gr = sc(36)
+    glow = pygame.Surface((gr * 2, gr * 2), pygame.SRCALPHA)
+    pygame.draw.circle(glow, (50, 210, 140, int(24 + beat * 14)), (gr, gr), sc(32))
+    pygame.draw.circle(glow, (95, 250, 175, int(50 + beat * 28)), (gr, gr), sc(28), max(1, sc(2)))
+    pygame.draw.circle(glow, (160, 255, 210, int(26 + beat * 18)), (gr, gr), sc(19), max(1, sc(1)))
+    surf.blit(glow, pt(cx - gr, by - gr))
+
+    # ── 4. Корпус: парящий монолит (вытянутый шестигранник) с трещиной ──
+    w, h = sc(13), sc(20)
+    body = [pt(cx, by - h),
+            pt(cx + w, by - h * 0.34),
+            pt(cx + w * 0.78, by + h * 0.46),
+            pt(cx, by + h),
+            pt(cx - w * 0.78, by + h * 0.46),
+            pt(cx - w, by - h * 0.34)]
+    inner = [pt(cx, by - h * 0.72),
+             pt(cx + w * 0.62, by - h * 0.14),
+             pt(cx + w * 0.46, by + h * 0.42),
+             pt(cx, by + h * 0.74),
+             pt(cx - w * 0.46, by + h * 0.42),
+             pt(cx - w * 0.62, by - h * 0.14)]
+    pygame.draw.polygon(surf, (9, 38, 28), body)
+    pygame.draw.polygon(surf, (20, 96, 66), inner)
+    # обсидиановые грани: светлая слева, почти чёрная справа — объём
+    pygame.draw.polygon(surf, (34, 132, 92), [pt(cx, by - h * 0.9),
+        pt(cx + w * 0.75, by - h * 0.3), pt(cx + w * 0.1, by + h * 0.25)])
+    pygame.draw.polygon(surf, (3, 20, 15), [pt(cx, by - h * 0.9),
+        pt(cx - w * 0.75, by - h * 0.3), pt(cx - w * 0.1, by + h * 0.25)])
+    pygame.draw.polygon(surf, (120, 255, 186), body, max(1, sc(2)))
+    pygame.draw.line(surf, (175, 255, 215), pt(cx - w * 0.28, by - h * 0.55),
+                     pt(cx + w * 0.2, by + h * 0.08), max(1, sc(1)))
+    pygame.draw.line(surf, (120, 240, 180), pt(cx + w * 0.2, by + h * 0.08),
+                     pt(cx - w * 0.12, by + h * 0.6), max(1, sc(1)))
+
+    # ── 5. Глаз-ядро и направленный «прицел» ──
+    ang = aim if aim is not None else (-math.pi / 2 + math.sin(t * 0.9) * 0.4)
+    eye_r = sc(4) + int(beat * 1.2)
+    pygame.draw.circle(surf, (110, 245, 175), pt(cx, by), eye_r + sc(3))
+    pygame.draw.circle(surf, (225, 255, 240), pt(cx, by), eye_r)
+    pygame.draw.circle(surf, (255, 255, 255), pt(cx, by), max(1, eye_r // 2))
+    tipx = cx + math.cos(ang) * sc(14)
+    tipy = by + math.sin(ang) * sc(14)
+    pygame.draw.line(surf, (230, 255, 240), pt(cx, by), pt(tipx, tipy), max(1, sc(2)))
+    pygame.draw.circle(surf, (190, 255, 220), pt(tipx, tipy), max(1, sc(2)))
+
+    # ── 6. Акценты прокачки ──
+    if level >= 4:
+        for i in range(4):
+            a = t * 1.3 + i * math.tau / 4
+            sx0 = cx + math.cos(a) * sc(24)
+            sy0 = by + math.sin(a) * sc(15)
+            d = sc(2)
+            pygame.draw.line(surf, (200, 255, 230), pt(sx0 - d, sy0), pt(sx0 + d, sy0), 1)
+            pygame.draw.line(surf, (200, 255, 230), pt(sx0, sy0 - d), pt(sx0, sy0 + d), 1)
+    if level >= 5:
+        for k in (-1, 0, 1):
+            tx0 = cx + k * sc(8)
+            pygame.draw.line(surf, (170, 255, 205), pt(tx0, by - h - sc(1)),
+                             pt(tx0 + k * sc(3), by - h - sc(9)), max(1, sc(2)))
+
+    # ── 7. Вспышка выстрела ──
+    if fire_flash > 0:
+        f = min(1.0, fire_flash / 0.12)
+        fr = sc(10 + 16 * (1.0 - f))
+        flare = pygame.Surface((fr * 2, fr * 2), pygame.SRCALPHA)
+        pygame.draw.circle(flare, (180, 255, 220, int(190 * f)), (fr, fr), fr)
+        pygame.draw.circle(flare, (255, 255, 255, int(230 * f)), (fr, fr), max(1, sc(4)))
+        surf.blit(flare, pt(cx - fr, by - fr))
 
 
 class Noiseform(Unit):
@@ -3155,6 +3266,11 @@ class Noiseform(Unit):
     def upgrade(self):
         nxt=self.level+1
         if nxt<len(NOISEFORM_LEVELS): self.level=nxt; self._apply_level()
+
+    def draw_simple(self, surf):
+        """Режим «No Tower Details»: тот же обелиск, но мельче и без аур/лучей."""
+        _draw_noiseform_art(surf, int(self.px), int(self.py), self._anim_t,
+                            s=0.85, aim=self._aim_angle, level=self.level, fire_flash=0.0)
 
     # ── helpers ────────────────────────────────────────────────────────────────
     def _can_hit(self, e):
@@ -3190,7 +3306,6 @@ class Noiseform(Unit):
         now=pygame.time.get_ticks()*0.001
         r_px=self.range_tiles*TILE
         effects.append(_NfSoulEffect(e.x,e.y,self.px,self.py))
-        effects.append(FloatingText(self.px, self.py-32, "+SOUL!", (110, 255, 185)))
 
         # Empower all allied towers in range
         for u in self._units_ref:
@@ -3206,13 +3321,11 @@ class Noiseform(Unit):
             u._nf_soul_stacks=stacks
             u._nf_dmg_active=True
             u._nf_dmg_expire=now+_NF_SOUL_BUFF_DUR
-            effects.append(FloatingText(u.px, u.py-22, f"+{int(stacks*10)}% DMG", (130, 255, 195)))
 
     # ── Star Beam (ability4) ──────────────────────────────────────────────────
     def _start_star_beam(self, enemies, effects):
         self._star_shots_left=_NF_STAR_ARROWS
         self._star_accum=0.0
-        effects.append(FloatingText(self.px, self.py-36, "STAR BEAM!", (140, 255, 220)))
 
     def _drop_star_arrow(self, enemies, effects):
         r_px=self.range_tiles*TILE
@@ -3245,8 +3358,6 @@ class Noiseform(Unit):
             u._nf_star_mult=new_mult
             u._nf_star_stacks=stacks
             u._nf_star_expire=now+_NF_STAR_BUFF_DUR
-            if stacks==1 or stacks==_NF_STAR_MAX_STACKS or stacks%3==0:
-                effects.append(FloatingText(u.px, u.py-20, f"+{stacks*2}% SPD", (110, 255, 230)))
 
         effects.append(_NfStarBeamEffect(lx,ly))
 
@@ -7830,7 +7941,7 @@ JESTER_LEVELS = [
     # lv3 – +$2750 (unlocks poison bomb, hidden det, enhanced ice)
     ( 30, 1.008,   7.8,2750,    8,   4.0,  1.0,   4,    0.40, 0.50, 3.0,  0.01, 7,    3,   30.0,  0.4,  0.0,  6.0,  False,True),
     # lv4 – +$8500 (unlocks confusion bomb, dual bombs, faster firerate)
-    ( 50, 0.608,   8.5,8500,   14,   4.0,  1.0,   4,    0.50, 0.50, 3.0,  0.01, 7,    5,   30.0,  0.4,  2.0,  6.0,  True, True),
+    ( 50, 0.608,   8.5,8500,   14,   4.0,  1.0,   4,    0.50, 0.50, 3.0,  0.01, 7,    5,   30.0,  0.4,  1.2,  8.0,  True, True),
 ]
 
 _JESTER_MAX_SPLASH_HITS = 5    # max enemies hit by splash
@@ -8523,333 +8634,6 @@ class Jester(Unit):
         return info
 
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# ── Soul Weaver — Exclusive Support Tower ─────────────────────────────────────
-# Не атакует напрямую. Пассивно копит Soul Stacks когда башни в радиусе
-# убивают врагов. Активная способность "Soul Surge" тратит стаки и:
-#   • Даёт всем башням в радиусе x2.0 урона на 8с
-#   • Ускоряет их огонь (делит firerate на 1.5) на 8с
-#   • Восстанавливает HP игроку: +1 за каждый стак
-# Пассивная аура: башни в радиусе имеют 20% шанс цепного взрыва при убийстве.
-# ══════════════════════════════════════════════════════════════════════════════
-
-C_SOULWEAVER      = (160, 80, 255)   # фиолетовый
-C_SOULWEAVER_DARK = (40,  10, 80)
-
-# (range_tiles, upgrade_cost, ability_cooldown, max_stacks)
-_SW_LEVELS = [
-    (4.5, None,  25.0, 8),    # lv0
-    (5.0, 1200,  22.0, 10),   # lv1
-    (5.5, 3500,  18.0, 12),   # lv2
-    (6.0, 8000,  15.0, 15),   # lv3
-    (7.0,18000,  12.0, 20),   # lv4
-]
-
-# Параметры бафф-волны per level
-# (dmg_mult, fr_div, buff_dur, hp_per_stack, chain_chance)
-_SW_SURGE_PARAMS = [
-    (2.0, 1.50,  8.0, 1, 0.20),   # lv0
-    (2.2, 1.60,  9.0, 2, 0.22),   # lv1
-    (2.5, 1.75, 10.0, 2, 0.25),   # lv2
-    (2.8, 1.90, 11.0, 3, 0.28),   # lv3
-    (3.2, 2.00, 12.0, 4, 0.32),   # lv4
-]
-
-# ── Ability ───────────────────────────────────────────────────────────────────
-
-class SoulSurgeAbility:
-    """Spend all Soul Stacks — blast allied towers and heal the player."""
-    name = "Soul Surge"
-
-    def __init__(self, owner):
-        self.owner   = owner
-        self.cd_left = 0.0
-        self._wave_t = 0.0   # ring-wave VFX timer (>0 while animating)
-        self._wave_r = 0.0   # current radius of the ring
-
-    @property
-    def cooldown(self):
-        return _SW_LEVELS[self.owner.level][2]
-
-    def update(self, dt):
-        if self.cd_left > 0:
-            self.cd_left -= dt
-        if self._wave_t > 0:
-            self._wave_t -= dt
-            self._wave_r += dt * 220   # ring expands outward
-
-    def ready(self):
-        return self.cd_left <= 0 and self.owner.soul_stacks > 0
-
-    def activate(self, enemies, effects):
-        if not self.ready():
-            return
-        stacks = self.owner.soul_stacks
-        self.owner.soul_stacks = 0
-        self.cd_left = self.cooldown
-        lv = self.owner.level
-        dmg_m, fr_d, dur, hp_ps, _ = _SW_SURGE_PARAMS[lv]
-
-        # Apply buffs to all towers in range
-        r_px = self.owner.range_tiles * TILE
-        for u in getattr(self.owner, '_units_ref', []):
-            if u is self.owner: continue
-            if dist((u.px, u.py), (self.owner.px, self.owner.py)) > r_px: continue
-            _sw_apply_dmg_buff(u, dmg_m, dur)
-            _sw_apply_fr_buff(u, fr_d, dur)
-
-        # Heal player
-        hp_gain = stacks * hp_ps
-        game_ref = getattr(self.owner, '_game_ref', None)
-        if game_ref is not None:
-            game_ref.player_hp = min(game_ref.player_maxhp, game_ref.player_hp + hp_gain)
-
-        # VFX
-        self._wave_t = 0.6
-        self._wave_r = 0.0
-        label = f"SOUL SURGE! +{hp_gain}HP  x{dmg_m:.1f}DMG"
-        effects.append(FloatingText(self.owner.px, self.owner.py - 48, label, C_SOULWEAVER, 2.5))
-
-    def draw_vfx(self, surf):
-        """Draw expanding soul-wave ring."""
-        if self._wave_t <= 0:
-            return
-        frac = max(0.0, self._wave_t / 0.6)
-        alpha = int(frac * 200)
-        r = int(self._wave_r)
-        if r < 2:
-            return
-        s = pygame.Surface((r * 2 + 4, r * 2 + 4), pygame.SRCALPHA)
-        cx2, cy2 = r + 2, r + 2
-        pygame.draw.circle(s, (*C_SOULWEAVER, alpha), (cx2, cy2), r, 3)
-        pygame.draw.circle(s, (220, 160, 255, alpha // 2), (cx2, cy2), r, 7)
-        surf.blit(s, (int(self.owner.px) - r - 2, int(self.owner.py) - r - 2))
-
-
-# ── Buff helpers ──────────────────────────────────────────────────────────────
-
-def _sw_apply_dmg_buff(unit, mult, duration):
-    now = pygame.time.get_ticks() * 0.001
-    old_mult = getattr(unit, '_sw_dmg_mult', 1.0)
-    unit.damage = max(1, round(unit.damage / old_mult))
-    unit._sw_dmg_mult   = mult
-    unit._sw_dmg_expire = now + duration
-    unit.damage = round(unit.damage * mult)
-
-def _sw_apply_fr_buff(unit, divisor, duration):
-    now = pygame.time.get_ticks() * 0.001
-    old_div = getattr(unit, '_sw_fr_div', 1.0)
-    unit.firerate = unit.firerate * old_div
-    unit._sw_fr_div    = divisor
-    unit._sw_fr_expire = now + duration
-    unit.firerate = unit.firerate / divisor
-
-def _sw_tick_buffs(units):
-    """Expire active SoulWeaver buffs. Call each frame from Game.update."""
-    now = pygame.time.get_ticks() * 0.001
-    for u in units:
-        if getattr(u, '_sw_dmg_expire', 0) > 0 and now >= u._sw_dmg_expire:
-            mult = getattr(u, '_sw_dmg_mult', 1.0)
-            if mult != 1.0:
-                u.damage = max(1, round(u.damage / mult))
-                u._sw_dmg_mult   = 1.0
-                u._sw_dmg_expire = 0
-        if getattr(u, '_sw_fr_expire', 0) > 0 and now >= u._sw_fr_expire:
-            div2 = getattr(u, '_sw_fr_div', 1.0)
-            if div2 != 1.0:
-                u.firerate = u.firerate * div2
-                u._sw_fr_div    = 1.0
-                u._sw_fr_expire = 0
-
-
-# ── Unit class ────────────────────────────────────────────────────────────────
-
-class SoulWeaver(Unit):
-    PLACE_COST       = 1200
-    COLOR            = C_SOULWEAVER
-    NAME             = "Soul Weaver"
-    hidden_detection = True   # видит скрытых врагов (чувствует души)
-    damage           = 0
-    firerate         = 999.0
-
-    def __init__(self, px, py):
-        super().__init__(px, py)
-        self.soul_stacks  = 0      # накопленные стаки
-        self._anim_t      = 0.0
-        self._orb_angles  = [0.0, math.pi * 2/3, math.pi * 4/3]  # 3 orbiting orbs
-        self._chain_flash = []     # list of (x, y, t) for chain explosion VFX
-        self._units_ref   = []
-        self._game_ref    = None
-        self.ability      = SoulSurgeAbility(self)
-        self._apply_level()
-
-    def _apply_level(self):
-        self.range_tiles = _SW_LEVELS[self.level][0]
-        self._max_stacks = _SW_LEVELS[self.level][3]
-        # Update chain chance aura for all in-range towers
-        lv = self.level
-        self._chain_chance = _SW_SURGE_PARAMS[lv][4]
-
-    def upgrade_cost(self):
-        nxt = self.level + 1
-        if nxt >= len(_SW_LEVELS): return None
-        return _SW_LEVELS[nxt][1]
-
-    def upgrade(self):
-        nxt = self.level + 1
-        if nxt < len(_SW_LEVELS):
-            self.level = nxt
-            self._apply_level()
-
-    # ── Passive: intercept enemy deaths near our towers ───────────────────────
-    def notify_kill(self, enemy):
-        """Called by game when an allied tower kills an enemy in our radius."""
-        if self.soul_stacks < self._max_stacks:
-            self.soul_stacks = min(self._max_stacks, self.soul_stacks + 1)
-
-    # ── Chain explosion aura ──────────────────────────────────────────────────
-    def check_chain(self, killer_unit, dead_enemy, enemies, effects):
-        """20-32% chance to chain-explode nearby enemies when one dies."""
-        if not dist((killer_unit.px, killer_unit.py),
-                    (self.px, self.py)) <= self.range_tiles * TILE:
-            return
-        if random.random() > self._chain_chance:
-            return
-        # AoE splash around dead enemy
-        splash_r = 1.8 * TILE
-        dmg = max(1, getattr(killer_unit, 'damage', 5))
-        for e in enemies:
-            if e is dead_enemy: continue
-            if not e.alive: continue
-            if dist((e.x, e.y), (dead_enemy.x, dead_enemy.y)) <= splash_r:
-                e.take_damage(dmg * 0.5)
-        # VFX
-        self._chain_flash.append([dead_enemy.x, dead_enemy.y, 0.5])
-        effects.append(FloatingText(dead_enemy.x, dead_enemy.y - 24, "CHAIN!", (255, 140, 255), 0.8))
-
-    # ── Update ────────────────────────────────────────────────────────────────
-    def update(self, dt, enemies, effects, money):
-        self._anim_t += dt
-        # Rotate orbiting orbs
-        speed = 1.2 + self.soul_stacks * 0.08
-        for i in range(3):
-            self._orb_angles[i] += dt * speed
-        # Tick ability
-        if self.ability:
-            self.ability.update(dt)
-        # Expire chain flash VFX
-        self._chain_flash = [[x, y, t - dt] for x, y, t in self._chain_flash if t - dt > 0]
-
-    # ── Draw ─────────────────────────────────────────────────────────────────
-    def draw(self, surf):
-        t   = self._anim_t
-        cx, cy = int(self.px), int(self.py)
-        stacks = self.soul_stacks
-        max_s  = self._max_stacks
-
-        # ── Outer soul aura ────────────────────────────────────────────────
-        aura_s = pygame.Surface((80, 80), pygame.SRCALPHA)
-        pulse  = abs(math.sin(t * 1.8))
-        ga     = int(30 + pulse * 50)
-        stack_frac = stacks / max(1, max_s)
-        aura_col   = (
-            int(100 + stack_frac * 100),
-            int(40  + stack_frac * 40),
-            255
-        )
-        pygame.draw.circle(aura_s, (*aura_col, ga), (40, 40), 38)
-        surf.blit(aura_s, (cx - 40, cy - 40))
-
-        # ── Body ──────────────────────────────────────────────────────────
-        pygame.draw.circle(surf, C_SOULWEAVER_DARK, (cx, cy), 27)
-        pygame.draw.circle(surf, C_SOULWEAVER,      (cx, cy), 20)
-        # Inner ring — pulsing
-        ring_al = int(120 + pulse * 80)
-        ring_s  = pygame.Surface((48, 48), pygame.SRCALPHA)
-        pygame.draw.circle(ring_s, (*C_SOULWEAVER, ring_al), (24, 24), 20, 2)
-        surf.blit(ring_s, (cx - 24, cy - 24))
-
-        # ── Eye of the soul (center symbol) ───────────────────────────────
-        # Outer eye
-        pygame.draw.ellipse(surf, (220, 180, 255), (cx - 9, cy - 5, 18, 10), 2)
-        # Pupil — animated
-        pupil_x = cx + int(math.sin(t * 0.7) * 3)
-        pygame.draw.circle(surf, (255, 220, 255), (pupil_x, cy), 4)
-        pygame.draw.circle(surf, (80, 0, 160),    (pupil_x, cy), 2)
-
-        # ── Orbiting soul orbs ────────────────────────────────────────────
-        orb_r    = 32
-        orb_size = 5 + int(stack_frac * 3)
-        for i, angle in enumerate(self._orb_angles):
-            ox = cx + int(math.cos(angle) * orb_r)
-            oy = cy + int(math.sin(angle) * orb_r)
-            # Trail
-            trail_s = pygame.Surface((24, 24), pygame.SRCALPHA)
-            pygame.draw.circle(trail_s, (*C_SOULWEAVER, 50), (12, 12), orb_size + 3)
-            surf.blit(trail_s, (ox - 12, oy - 12))
-            # Orb body
-            col_orb = (200, 140, 255) if stacks > 0 else (100, 60, 160)
-            pygame.draw.circle(surf, col_orb, (ox, oy), orb_size)
-            pygame.draw.circle(surf, (255, 220, 255), (ox, oy), orb_size, 1)
-
-        # ── Soul stack bar ────────────────────────────────────────────────
-        bar_w = 44; bar_h = 6
-        bx = cx - bar_w // 2; by2 = cy - 38
-        pygame.draw.rect(surf, (30, 10, 60),        (bx - 1, by2 - 1, bar_w + 2, bar_h + 2), border_radius=3)
-        if max_s > 0:
-            fill = int(bar_w * stacks / max_s)
-            if fill > 0:
-                bar_col = (180, 80, 255) if stacks < max_s else (255, 200, 80)
-                pygame.draw.rect(surf, bar_col, (bx, by2, fill, bar_h), border_radius=3)
-        pygame.draw.rect(surf, C_SOULWEAVER, (bx - 1, by2 - 1, bar_w + 2, bar_h + 2), 1, border_radius=3)
-        # Stacks label
-        sf2 = pygame.font.SysFont("segoeui", 11, bold=True)
-        stk_s = sf2.render(f"{stacks}/{max_s}", True, (220, 180, 255))
-        surf.blit(stk_s, stk_s.get_rect(center=(cx, by2 - 8)))
-
-        # ── Chain flash VFX ───────────────────────────────────────────────
-        for fx, fy, ft in self._chain_flash:
-            frac = max(0.0, ft / 0.5)
-            r2   = int((1.0 - frac) * 28) + 6
-            fs   = pygame.Surface((r2 * 2 + 4, r2 * 2 + 4), pygame.SRCALPHA)
-            pygame.draw.circle(fs, (255, 140, 255, int(frac * 180)),
-                               (r2 + 2, r2 + 2), r2, 3)
-            surf.blit(fs, (int(fx) - r2 - 2, int(fy) - r2 - 2))
-
-        # ── Ability VFX ──────────────────────────────────────────────────
-        if self.ability:
-            self.ability.draw_vfx(surf)
-
-        # ── Level pips ───────────────────────────────────────────────────
-        for i in range(self.level):
-            pygame.draw.circle(surf, C_SOULWEAVER, (cx - 10 + i * 7, cy + 36), 3)
-
-    def draw_range(self, surf):
-        r   = int(self.range_tiles * TILE)
-        col = (160, 80, 255)
-        s   = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
-        pygame.draw.circle(s, (*col, 18), (r, r), r)
-        pygame.draw.circle(s, (*col, 60), (r, r), r, 2)
-        surf.blit(s, (int(self.px) - r, int(self.py) - r))
-
-    def get_info(self):
-        lv  = self.level
-        p   = _SW_SURGE_PARAMS[lv]
-        cd  = _SW_LEVELS[lv][2]
-        ab  = self.ability
-        cd_left = max(0.0, ab.cd_left)
-        return {
-            "Type":      "Support / Soul",
-            "Range":     self.range_tiles,
-            "HidDet":    "YES",
-            "Stacks":    f"{self.soul_stacks} / {self._max_stacks}",
-            "AbilCD":    f"{cd:.0f}s (left: {cd_left:.1f}s)",
-            "Surge DMG": f"x{p[0]:.1f} dmg / {p[2]:.0f}s",
-            "Surge FR":  f"x{p[1]:.2f} speed / {p[2]:.0f}s",
-            "HP/Stack":  f"+{p[3]} HP per stack",
-            "Chain":     f"{int(p[4]*100)}% on kill",
-        }
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Medic  — Exclusive Support Tower
@@ -11665,6 +11449,27 @@ class RemoteControlAbility:
     def is_buffing(self):
         return self._active_buff_unit is not None
 
+    @staticmethod
+    def buff_applies(unit, buff_type):
+        """Даёт ли бафф вообще что-то этой башне.
+
+        У Farm все три стата нулевые (range_tiles/damage/firerate = 0), у
+        Control Panel тоже — умножать ноль бессмысленно, поэтому такие пары
+        считаем недоступными: за них нельзя платить.
+        """
+        if unit is None:
+            return False
+        try:
+            if buff_type == "Range":
+                return float(getattr(unit, "range_tiles", 0) or 0) > 0
+            if buff_type == "Damage":
+                return float(getattr(unit, "damage", 0) or 0) > 0
+            if buff_type == "Firerate":
+                return float(getattr(unit, "firerate", 0) or 0) > 0
+        except (TypeError, ValueError):
+            return False
+        return True
+
     def update(self, dt):
         if self.cd_left > 0:
             self.cd_left -= dt
@@ -11677,7 +11482,12 @@ class RemoteControlAbility:
         pass   # UI drives this ability directly via apply_buff()
 
     def apply_buff(self, unit, buff_type, duration, strength=1.0):
-        """Apply buff to unit.  strength in [0.25, 2.0] scales the mult linearly."""
+        """Apply buff to unit.  strength in [0.25, 2.0] scales the mult linearly.
+
+        Возвращает False и ничего не делает, если бафф для этой башни бесполезен.
+        """
+        if not RemoteControlAbility.buff_applies(unit, buff_type):
+            return False
         if self._active_buff_unit is not None:
             self._remove_buff()
         self._active_buff_unit    = unit
@@ -11699,6 +11509,7 @@ class RemoteControlAbility:
             if self._saved_firerate is not None:
                 unit.firerate = round(unit.firerate / actual_mult, 4)
         self.cd_left = self.cooldown
+        return True
 
     def _remove_buff(self):
         u = self._active_buff_unit
