@@ -2853,7 +2853,8 @@ class xw5yt(Unit):
 # continuously empowering nearby allied towers through powerful support auras:
 #   ability1 (lv0) Frost Touch    — chilling laser AoE slows enemies by 15% for 2.0s
 #   ability2 (lv1) Resonance      — towers in range gain +15% firerate aura
-#   lv2                           — Resonance grows to +20% firerate & grants Hidden Detection
+#   lv2                           — Resonance grows to +20% firerate; Hidden Detection for
+#                                    Noiseform itself and for every allied tower in its range
 #   ability3 (lv3) Soultorn       — 25% chance on enemy death in range: a soul bursts,
 #                                    granting towers in range +10% damage for 6.0s (stacks 3x)
 #   ability4 (lv4) Star Beam      — ACTIVE (30s cd): rains 10 celestial star arrows down
@@ -2935,6 +2936,10 @@ def _noiseform_tick_buffs(units, dt=None, enemies=None):
             # Раньше стаки урона/фаеррейта оставались висеть навсегда или,
             # наоборот, терялись, а сам бафф больше не применялся.
             u._nf_last_tracked_level = cur_lvl
+            # Аура HD могла держать флаг включённым: после апгрейда _apply_level уже
+            # выставил «свой» Hidden Detection, запоминаем его как базу для отката.
+            if getattr(u, '_nf_hd_granted', False):
+                u._nf_hd_base = bool(getattr(u, 'hidden_detection', False))
             u._nf_resonance_mult = 1.0
             u._nf_range_mult = 1.0
             u._nf_star_mult = 1.0
@@ -2952,12 +2957,14 @@ def _noiseform_tick_buffs(units, dt=None, enemies=None):
         best_res_mult = 1.0
         best_spirit_warden = False
         best_range_mult = 1.0
+        best_hd = False
 
         for nf in active_nfs:
             if nf is u: continue
             r_px = nf.range_tiles * TILE
             if dist((u.px, u.py), (nf.px, nf.py)) <= r_px:
                 if nf.level >= 2:
+                    best_hd = True
                     best_res_mult = max(best_res_mult, _NF_FR_AURA_2)
                 elif nf.level >= 1:
                     best_res_mult = max(best_res_mult, _NF_FR_AURA_1)
@@ -3003,6 +3010,17 @@ def _noiseform_tick_buffs(units, dt=None, enemies=None):
             u.firerate = u.firerate * old_star_mult
             u._nf_star_stacks = 0
             u._nf_star_mult = 1.0
+
+        # 6. Resonance II Hidden Detection (lv2+): выдаём всем башням в радиусе,
+        #    а при выходе из радиуса/продаже Noiseform возвращаем их «свой» флаг.
+        if best_hd:
+            if not getattr(u, '_nf_hd_granted', False):
+                u._nf_hd_base = bool(getattr(u, 'hidden_detection', False))
+                u._nf_hd_granted = True
+            u.hidden_detection = True
+        elif getattr(u, '_nf_hd_granted', False):
+            u.hidden_detection = bool(getattr(u, '_nf_hd_base', False))
+            u._nf_hd_granted = False
 
 
 class _NfBeamImpact:

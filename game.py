@@ -2106,7 +2106,7 @@ class UI:
                 res["UnlockDesc"]="All towers in range gain +15% firerate aura"
             elif nxt==2:
                 res["Unlock"]="+Resonance II"
-                res["UnlockDesc"]="Resonance aura grows to +20% & grants Hidden Detection"
+                res["UnlockDesc"]="Resonance aura grows to +20% & all towers in range (and Noiseform) gain Hidden Detection"
             elif nxt==3:
                 res["Unlock"]="+Soultorn"
                 res["UnlockDesc"]="25% on death in range: soul bursts, +10% dmg (stacks 3x) for 6s"
