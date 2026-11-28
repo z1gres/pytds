@@ -1189,6 +1189,11 @@ def run_moon_lord_fight(screen, save_data):
         # ── Win / Lose check ──────────────────────────────────────────────────
         if not boss.alive:
             save_data["castbound_quest"] = "done"
+            save_data["moon_lord_defeated"] = True
+            save_data["castbound_zenith_unlocked"] = True
+            _owned_cb = list(save_data.get("owned_units", []))
+            if "Castbound" not in _owned_cb:
+                save_data["owned_units"] = _owned_cb + ["Castbound"]
             write_save(save_data)
             _run_end_screen(screen, victory=True)
             return "menu"

@@ -35,12 +35,6 @@ _STRINGS = {
     "settings.damage_meter":       {"en": "Damage Meter",               "ru": "Счетчик урона"},
     "settings.skip_intro":         {"en": "Skip Intro",                 "ru": "Пропуск интро"},
     "settings.linux_mode":         {"en": "Linux Mode",                 "ru": "Режим Linux"},
-    "settings.wave_navigator":     {"en": "Wave Navigator Button",      "ru": "Кнопка навигатора волн"},
-    "wavenav.title":               {"en": "Wave Navigator",             "ru": "Навигатор волн"},
-    "wavenav.line1":               {"en": "Enables the WAVES button: browse waves and jump to any of them.", "ru": "Включает кнопку WAVES: просмотр волн и переход к любой из них."},
-    "wavenav.line2":               {"en": "WARNING: while this is ON, you will earn NO coin rewards.", "ru": "ВНИМАНИЕ: пока она включена, монеты-награды начисляться НЕ будут."},
-    "wavenav.line3":               {"en": "Turn it off to earn rewards again.", "ru": "Выключите её, чтобы снова получать награды."},
-    "wavenav.continue":            {"en": "Got it",                     "ru": "Понятно"},
 
     "settings.gfx.section":        {"en": "VISUAL OPTIONS",             "ru": "ВИЗУАЛЬНЫЕ НАСТРОЙКИ"},
     "settings.colored_range":      {"en": "Colored Range Rings",        "ru": "Цветные кольца радиуса"},

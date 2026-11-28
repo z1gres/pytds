@@ -484,12 +484,12 @@ class MysteryEnemy(Enemy):
         self._draw_hp_bar(surf,30,5,(200,180,255))
         if hovered: self._hover_label(surf)
 
-# ── Mega Slow: 1600 HP, Slow*0.85 speed (~24), 5% armor ──────────────────────
+# ── Mega Slow: 2300 HP, Slow*0.85 speed (~24), 5% armor ──────────────────────
 class MegaSlowEnemy(Enemy):
-    DISPLAY_NAME="Mega Slow"; BASE_HP=4500; BASE_SPEED=int(28*0.85); ARMOR=0.05; KILL_REWARD=600
+    DISPLAY_NAME="Mega Slow"; BASE_HP=2300; BASE_SPEED=int(28*0.85); ARMOR=0.05; KILL_REWARD=600
     def __init__(self, wave=1):
         super().__init__(wave)
-        self.hp=4500; self.maxhp=4500
+        self.hp=2300; self.maxhp=2300
         self.speed=self.BASE_SPEED; self.radius=30
     def draw(self, surf, hovered=False, detected=False):
         bob=math.sin(self._bob*0.4); cx,cy=int(self.x),int(self.y+bob)

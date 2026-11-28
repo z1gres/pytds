@@ -258,20 +258,23 @@ def load_save():
 
 def write_save(data):
     try:
-        # Skins live in the same file but not in the in-memory save dict.
-        # Keep the existing 'skins' section so game writes don't wipe purchases.
-        if "skins" not in data and os.path.exists(SAVE_FILE):
+        # The 'skins' section is owned by write_skins() (game.py), which persists it
+        # immediately. Always take it from disk so a stale in-memory copy held by a
+        # screen can never wipe a purchase.
+        out = dict(data)
+        out.pop("skins", None)
+        if os.path.exists(SAVE_FILE):
             try:
                 with open(SAVE_FILE, "r", encoding="utf-8") as f:
                     _old = json.load(f)
                 if isinstance(_old, dict) and "skins" in _old:
-                    data = dict(data)
-                    data["skins"] = _old["skins"]
+                    out["skins"] = _old["skins"]
             except Exception:
                 pass
         with open(SAVE_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False)
-    except: pass
+            json.dump(out, f, ensure_ascii=False)
+    except Exception as _e:
+        print(f"[save] write_save failed: {_e}")
 
 
 # Compact number display toggle (1000 → 1k). Toggled from SETTINGS in game.py

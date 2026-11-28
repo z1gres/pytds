@@ -631,6 +631,7 @@ class Frostcelerator(Unit):
         if not hasattr(e,'_frost_frozen'): e._frost_frozen=False
         e._frost_frozen=True
         e._frost_freeze_timer=getattr(e,'_frost_freeze_timer',0)+secs*_dm()
+        e._frost_freeze_total=e._frost_freeze_timer  # full duration for the bar
         e.frozen=True
         # Restore speed if was slowed
         if getattr(e,'_frost_slowed',False):
@@ -644,7 +645,7 @@ class Frostcelerator(Unit):
             e._frost_slowed=True
             e._frost_orig_speed=e.speed
             resistance=getattr(e,'SLOW_RESISTANCE',0.0)
-            effective_factor=1.0-(1.0-self.SLOW_FACTOR)*resistance
+            effective_factor=1.0-(1.0-self.SLOW_FACTOR)*(1.0-resistance)
             e.speed=e.speed*effective_factor
 
     def update(self, dt, enemies, effects, money):
@@ -879,7 +880,8 @@ class Frostcelerator(Unit):
                     pygame.draw.line(ice_s,(255,255,255,120),(x1,y1),(x2,y2),1)
                 surf.blit(ice_s,(cx-40,cy-40))
                 timer=getattr(e,'_frost_freeze_timer',0)
-                frac=max(0,min(1,timer/Frostcelerator.FREEZE_DUR))
+                total=max(Frostcelerator.FREEZE_DUR, getattr(e,'_frost_freeze_total',0.0))
+                frac=max(0.0,min(1.0,timer/total))
                 bw=e.radius*2+8; bx2=cx-bw//2; by2=cy-e.radius-14
                 pygame.draw.rect(surf,(20,60,100),(bx2,by2,bw,5),border_radius=2)
                 pygame.draw.rect(surf,C_FROST,(bx2,by2,int(bw*frac),5),border_radius=2)
@@ -896,14 +898,14 @@ class Frostcelerator(Unit):
 
     def get_info(self):
         return {"Damage":self.damage,"Range":self.range_tiles,
-                "Firerate":f"{self.firerate:.4f}","Slow":"-25% spd","Freeze":"2.5s (once)","HidDet":"YES"}
+                "Firerate":f"{self.firerate:.4f}","Slow":"-25% spd","Freeze":"2.5s @1000 dmg","HidDet":"YES"}
 
 
 
 
 # ── Lifestealer ────────────────────────────────────────────────────────────────
-C_LIFESTEALER      = (80, 220, 140)   # toxic venom green
-C_LIFESTEALER_DARK = (15, 50,  30)   # deep swamp dark
+C_LIFESTEALER      = (220, 70, 70)    # blood crimson
+C_LIFESTEALER_DARK = (45, 10, 14)    # coagulated dark
 
 # (damage, firerate, range_tiles, upgrade_cost, money_pct)
 LIFESTEALER_LEVELS = [
@@ -942,14 +944,14 @@ class LifestealerBullet:
     def draw(self, surf):
         cx,cy=int(self.x),int(self.y)
         s=pygame.Surface((22,22),pygame.SRCALPHA)
-        # Outer glow — venom green
-        pygame.draw.circle(s,(40,200,100,70),(11,11),9)
+        # Outer glow — blood red
+        pygame.draw.circle(s,(200,40,40,70),(11,11),9)
         # Mid orb
-        pygame.draw.circle(s,(80,220,140,210),(11,11),6)
+        pygame.draw.circle(s,(220,70,70,210),(11,11),6)
         # Bright core
-        pygame.draw.circle(s,(200,255,220,255),(11,11),2)
+        pygame.draw.circle(s,(255,215,210,255),(11,11),2)
         # Rim highlight
-        pygame.draw.circle(s,(120,255,180,160),(11,11),6,1)
+        pygame.draw.circle(s,(255,140,130,160),(11,11),6,1)
         surf.blit(s,(cx-11,cy-11))
 
 
@@ -978,11 +980,11 @@ class BloodExplosion:
         if r < 2: return
         s = pygame.Surface((r*2+4, r*2+4), pygame.SRCALPHA)
         # Outer ring — venom green
-        pygame.draw.circle(s, (40, 220, 100, alpha),      (r+2, r+2), r, 3)
+        pygame.draw.circle(s, (220, 40, 40, alpha),      (r+2, r+2), r, 3)
         # Inner fill — dark swamp tint
-        pygame.draw.circle(s, (20, 160, 70, alpha//3),   (r+2, r+2), r)
+        pygame.draw.circle(s, (150, 28, 30, alpha//3),   (r+2, r+2), r)
         # Bright rim — toxic highlight
-        pygame.draw.circle(s, (150, 255, 180, alpha//2), (r+2, r+2), r, 1)
+        pygame.draw.circle(s, (255, 190, 180, alpha//2), (r+2, r+2), r, 1)
         surf.blit(s, (int(self.x)-r-2, int(self.y)-r-2))
 
 
@@ -1041,7 +1043,7 @@ class Lifestealer(Unit):
         self._frenzy_active = True
         self._frenzy_timer  = _BLOOD_FRENZY_DUR
         effects.append(FloatingText(int(self.px), int(self.py) - 36,
-                                    "VENOM FRENZY!", (80, 255, 150)))
+                                    "VENOM FRENZY!", (255, 140, 130)))
 
     def _blood_burst(self, dead_enemy, enemies, effects):
         """Explode on kill: deal splash damage in radius."""
@@ -1052,8 +1054,6 @@ class Lifestealer(Unit):
             if math.hypot(e.x - dead_enemy.x, e.y - dead_enemy.y) <= burst_r:
                 e.take_damage(splash_dmg)
         self._blood_effects.append(BloodExplosion(dead_enemy.x, dead_enemy.y, burst_r))
-        effects.append(FloatingText(int(dead_enemy.x), int(dead_enemy.y) - 20,
-                                    f"Splash! -{int(splash_dmg)}", (100, 255, 160)))
 
     def update(self, dt, enemies, effects, money):
         self._laser_t += dt
@@ -1134,15 +1134,15 @@ class Lifestealer(Unit):
             aura_r = 32 + int(pulse * 10)
             aura_alpha = int(50 + pulse * 90)
             aura_s = pygame.Surface((aura_r*2+4, aura_r*2+4), pygame.SRCALPHA)
-            pygame.draw.circle(aura_s, (40, 220, 100, aura_alpha), (aura_r+2, aura_r+2), aura_r)
-            pygame.draw.circle(aura_s, (120, 255, 170, aura_alpha//2), (aura_r+2, aura_r+2), aura_r, 3)
+            pygame.draw.circle(aura_s, (220, 40, 40, aura_alpha), (aura_r+2, aura_r+2), aura_r)
+            pygame.draw.circle(aura_s, (255, 150, 140, aura_alpha//2), (aura_r+2, aura_r+2), aura_r, 3)
             surf.blit(aura_s, (cx-aura_r-2, cy-aura_r-2))
 
         # ── Explosion visuals ─────────────────────────────────────────────────
         for be in self._blood_effects: be.draw(surf)
 
         # ── Rotating outer spikes (6 thorns) ─────────────────────────────────
-        spike_col = (60, 200, 110) if not self._frenzy_active else (160, 255, 180)
+        spike_col = (200, 60, 60) if not self._frenzy_active else (255, 170, 160)
         for i in range(6):
             a = math.radians(t * 45 + i * 60)
             sx1 = cx + int(math.cos(a) * 22)
@@ -1162,13 +1162,13 @@ class Lifestealer(Unit):
         # ── Inner circle — venom core ─────────────────────────────────────────
         inner_glow = pygame.Surface((46, 46), pygame.SRCALPHA)
         glow_bright = int(80 + abs(math.sin(t * 3.0)) * 60)
-        pygame.draw.circle(inner_glow, (40, 200, 100, glow_bright), (23, 23), 18)
+        pygame.draw.circle(inner_glow, (190, 40, 40, glow_bright), (23, 23), 18)
         surf.blit(inner_glow, (cx - 23, cy - 23))
-        pygame.draw.circle(surf, (30, 120, 60), (cx, cy), 16)
-        pygame.draw.circle(surf, (80, 220, 140), (cx, cy), 16, 2)
+        pygame.draw.circle(surf, (110, 28, 28), (cx, cy), 16)
+        pygame.draw.circle(surf, (220, 70, 70), (cx, cy), 16, 2)
 
         # ── Drip/venom-drop symbol ────────────────────────────────────────────
-        sym_col = (220, 255, 100) if self._frenzy_active else (140, 255, 180)
+        sym_col = (255, 200, 120) if self._frenzy_active else (255, 150, 150)
         # teardrop: circle top + pointed bottom
         pygame.draw.circle(surf, sym_col, (cx, cy - 4), 5)
         pts_drop = [(cx - 5, cy - 2), (cx + 5, cy - 2), (cx, cy + 8)]
@@ -1182,7 +1182,7 @@ class Lifestealer(Unit):
         if not self._frenzy_active and self._last_target_id is not None:
             charges = self._frenzy_hit_tracker.get(self._last_target_id, 0)
             for i in range(_BLOOD_FRENZY_HITS):
-                dot_col = (80, 255, 140) if i < charges else (20, 55, 35)
+                dot_col = (255, 110, 100) if i < charges else (55, 18, 20)
                 pygame.draw.circle(surf, dot_col, (cx - 10 + i * 7, cy - 34), 3)
 
         for b in self._bullets: b.draw(surf)
@@ -2894,25 +2894,59 @@ _NF_STUN_RECOVERY_EXTRA = 3.0   # Spirit Warden: accelerates stun decay (75% fas
 _NF_SHOT_FADE         = 0.16    # how long each laser-beam pulse stays on screen
 
 
-def _noiseform_tick_buffs(units):
+def _noiseform_tick_buffs(units, dt=None, enemies=None):
     """Centralized, resilient support aura & buff manager for Noiseform.
     Safely adjusts firerate, damage, range, and stun recovery on allied towers.
-    Guarantees no stats corruption upon upgrades, selling, or stacking."""
+    Guarantees no stats corruption upon upgrades, selling, or stacking.
+
+    Вызывается ровно один раз за кадр из Game.update — иначе тики дебаффов
+    и баффов ускорялись бы пропорционально числу ноисформов на поле."""
+    if dt is None:
+        dt = 1.0 / 60.0
     now = pygame.time.get_ticks() * 0.001
+
+    # ── Frost Touch: спад замедления — ровно один раз за кадр ───────────────
+    if enemies:
+        for e in enemies:
+            if not e.alive: continue
+            st = getattr(e, '_nf_slow_timer', 0.0)
+            if st > 0:
+                e._nf_slow_timer = st - dt
+                if e._nf_slow_timer <= 0:
+                    e._nf_slow_timer = 0.0
+                    e._nf_slowed = False
+                    orig = getattr(e, '_nf_orig_speed', None)
+                    if orig is not None:
+                        e.speed = orig
+                        e._nf_orig_speed = None
 
     active_nfs = [u for u in units if isinstance(u, Noiseform)]
 
     for u in units:
         # Detect if unit just leveled up / upgraded:
         cur_lvl = getattr(u, 'level', 0)
-        last_lvl = getattr(u, '_nf_last_tracked_level', cur_lvl)
+        # None (а не cur_lvl) — чтобы самый первый тик тоже выровнял базу:
+        # иначе башня, апгрейженная в том же кадре, что и поставлена, теряла
+        # книжку баффов и портила себе урон/фаеррейт.
+        last_lvl = getattr(u, '_nf_last_tracked_level', None)
         if cur_lvl != last_lvl:
-            # Tower just upgraded! Reset base buff baselines so multipliers re-apply to new base stats
+            # Апгрейд пересчитывает статы башни из таблицы уровней, поэтому
+            # множители сбрасываем и сразу накладываем живые баффы заново.
+            # Раньше стаки урона/фаеррейта оставались висеть навсегда или,
+            # наоборот, терялись, а сам бафф больше не применялся.
             u._nf_last_tracked_level = cur_lvl
             u._nf_resonance_mult = 1.0
             u._nf_range_mult = 1.0
             u._nf_star_mult = 1.0
             u._nf_dmg_mult = 1.0
+            _stk_dmg = getattr(u, '_nf_soul_stacks', 0)
+            if getattr(u, '_nf_dmg_active', False) and _stk_dmg > 0:
+                u._nf_dmg_mult = 1.0 + _stk_dmg * _NF_SOUL_DMG_STEP
+                u.damage = max(1, round(u.damage * u._nf_dmg_mult))
+            _stk_fr = getattr(u, '_nf_star_stacks', 0)
+            if _stk_fr > 0:
+                u._nf_star_mult = _NF_STAR_FR_STEP ** _stk_fr
+                u.firerate = u.firerate / u._nf_star_mult
 
         # Calculate best aura bonuses from nearby Noiseforms
         best_res_mult = 1.0
@@ -2931,11 +2965,12 @@ def _noiseform_tick_buffs(units):
                     best_spirit_warden = True
                     best_range_mult = max(best_range_mult, 1.10)
 
-        # 1. Spirit Warden stun recovery
+        # 1. Spirit Warden stun recovery (−75% времени стана: обычный спад dt
+        #    + ускорение dt*3 → суммарно 4x, то есть 25% длительности)
         if best_spirit_warden:
             stt = getattr(u, '_stun_timer', 0.0)
             if stt > 0:
-                u._stun_timer = max(0.0, stt - 0.016 * _NF_STUN_RECOVERY_EXTRA)
+                u._stun_timer = max(0.0, stt - dt * _NF_STUN_RECOVERY_EXTRA)
             u._nf_warden_active = True
         else:
             u._nf_warden_active = False
@@ -3063,171 +3098,12 @@ class _NfStarBeamAbility:
 
 
 def _draw_noiseform_art(surf, cx, cy, t, s=1.0, aim=None, level=0, fire_flash=0.0):
-    """
-    Refined, high-tech Resonance Monolith artwork for Noiseform.
-    Features:
-      - Resonant acoustic waveform rings & pulsing runes
-      - Geometric floating obsidian core pylon with neon teal fracture lines
-      - Orbiting tuning prongs / satellite prisms that react to level
-      - Oscilloscope waveform audio equalizer pulses around the core
-      - Star-beam focal crystal with chromatic glow
-    """
-    def sc(v): return int(v * s)
-    def sp(v): return max(1, int(v * s))
-
-    pulse = abs(math.sin(t * 2.4))
-    pulse2 = abs(math.cos(t * 1.7))
-
-    # Base ground resonance aura
-    gr_r = sc(32 + pulse * 6)
-    if gr_r > 2:
-        gs = pygame.Surface((gr_r * 2 + 6, gr_r * 2 + 6), pygame.SRCALPHA)
-        gc = gr_r + 3
-        pygame.draw.circle(gs, (30, 220, 150, int(35 + pulse * 45)), (gc, gc), gr_r)
-        pygame.draw.circle(gs, (80, 255, 210, int(25 + pulse * 35)), (gc, gc), int(gr_r * 0.65))
-        pygame.draw.circle(gs, (180, 255, 235, int(45 + pulse * 50)), (gc, gc), int(gr_r * 0.28))
-        surf.blit(gs, (cx - gc, cy - gc))
-
-    # Concentric acoustic wave rings expanding outward
-    for w_i in range(3):
-        w_t = (t * 0.9 + w_i * 0.33) % 1.0
-        w_rad = sc(12 + w_t * 26)
-        w_alpha = int(90 * (1.0 - w_t) * (0.8 + 0.2 * pulse))
-        if w_rad > 2 and w_alpha > 0:
-            ws = pygame.Surface((w_rad * 2 + 4, w_rad * 2 + 4), pygame.SRCALPHA)
-            wc = w_rad + 2
-            pygame.draw.circle(ws, (50, 240, 165, w_alpha), (wc, wc), w_rad, sp(1))
-            surf.blit(ws, (cx - wc, cy - wc))
-
-    # Harmonic rune orbit (level 1+)
-    if level >= 1 or s > 1.2:
-        gly_r = sc(25 + pulse * 3)
-        if gly_r > 4:
-            nodes = 4 if level < 3 else 6
-            gly_s = pygame.Surface((gly_r * 2 + 8, gly_r * 2 + 8), pygame.SRCALPHA)
-            gc = gly_r + 4
-            pygame.draw.circle(gly_s, (60, 230, 160, int(40 + pulse * 30)), (gc, gc), gly_r, sp(1))
-            for gi in range(nodes):
-                ga = t * 0.75 + gi * (math.pi * 2 / nodes)
-                gx = gc + int(math.cos(ga) * gly_r)
-                gy = gc + int(math.sin(ga) * gly_r)
-                pygame.draw.circle(gly_s, (140, 255, 200, int(90 + pulse * 60)), (gx, gy), sp(2))
-                # subtle connector chords
-                if gi % 2 == 0:
-                    ga2 = ga + math.pi / 2
-                    gx2 = gc + int(math.cos(ga2) * gly_r * 0.6)
-                    gy2 = gc + int(math.sin(ga2) * gly_r * 0.6)
-                    pygame.draw.line(gly_s, (40, 200, 140, int(30 + pulse * 25)), (gx, gy), (gx2, gy2), 1)
-            surf.blit(gly_s, (cx - gc, cy - gc))
-
-    # Aim direction
-    if aim is None:
-        aim_rad = -math.pi / 2 + math.sin(t * 1.5) * 0.22
-    else:
-        aim_rad = aim
-    ca, sa = math.cos(aim_rad), math.sin(aim_rad)
-    perp_x, perp_y = -sa, ca
-
-    def R(lx, ly):
-        return (int(cx + sc(lx) * ca - sc(ly) * sa), int(cy + sc(lx) * sa + sc(ly) * ca))
-
-    # Oscilloscope frequency waves (sound bars hovering perpendicular to axis)
-    wave_bars = 7
-    for bi in range(wave_bars):
-        b_offset = (bi - (wave_bars // 2)) * sc(5)
-        # Height follows a dynamic sine wave envelope
-        b_h = sc(6 + 12 * abs(math.sin(t * 5.0 + bi * 0.9)))
-        p_base = (int(cx + perp_x * b_offset), int(cy + perp_y * b_offset))
-        p_top = (int(p_base[0] - ca * b_h), int(p_base[1] - sa * b_h))
-        p_bot = (int(p_base[0] + ca * (b_h * 0.6)), int(p_base[1] + sa * (b_h * 0.6)))
-        b_alpha = int(120 + 90 * abs(math.sin(t * 3.5 + bi)))
-        pygame.draw.line(surf, (40, 210, 150), p_bot, p_top, sp(1))
-        pygame.draw.circle(surf, (180, 255, 225), p_top, sp(1))
-
-    # Floating Sound Tuning Prongs (left & right satellite pylons)
-    float_y = math.sin(t * 2.8) * sc(3)
-    float_x = math.cos(t * 2.1) * sc(2)
-    for side in (-1, 1):
-        prong_base_x = side * 14 + float_x
-        prong_base_y = -6 + float_y
-        prong_pts = [
-            R(prong_base_x - 3 * side, prong_base_y - 12),
-            R(prong_base_x + 3 * side, prong_base_y - 4),
-            R(prong_base_x + 4 * side, prong_base_y + 16),
-            R(prong_base_x - 1 * side, prong_base_y + 10),
-            R(prong_base_x - 4 * side, prong_base_y - 2),
-        ]
-        pygame.draw.polygon(surf, (10, 22, 18), prong_pts)
-        pygame.draw.polygon(surf, (30, 75, 55), prong_pts, sp(1))
-        # Neon edge glowing on inside
-        in_edge = [prong_pts[0], prong_pts[1], prong_pts[2]]
-        pygame.draw.lines(surf, (90, 255, 190), False, in_edge, sp(2))
-
-    # Main Obsidian Resonator Monolith (sleek, faceted crystalline body)
-    monolith = [
-        (-22, -4), (-10, -7), (6, -6), (24, -3), (38, 0),
-        (24, 3), (6, 6), (-10, 7), (-22, 4)
-    ]
-    poly_m = [R(x, y) for x, y in monolith]
-    pygame.draw.polygon(surf, (8, 16, 14), poly_m)
-
-    # Inner faceted layers for deep obsidian glass look
-    facet_upper = [(-18, -3), (2, -5), (28, -2), (36, 0), (2, 0), (-18, 0)]
-    pygame.draw.polygon(surf, (18, 40, 32), [R(x, y) for x, y in facet_upper])
-
-    facet_lower = [(-18, 0), (2, 0), (28, 0), (36, 0), (28, 2), (2, 4), (-18, 3)]
-    pygame.draw.polygon(surf, (12, 28, 22), [R(x, y) for x, y in facet_lower])
-
-    # Glowing turquoise contour & sound fracture lines
-    pygame.draw.lines(surf, (60, 230, 160), True, poly_m, sp(1))
-    neon_vein = [(-16, -1), (-4, 2), (10, -2), (22, 1), (34, 0)]
-    pygame.draw.lines(surf, (120, 255, 205), False, [R(x, y) for x, y in neon_vein], sp(2))
-    pygame.draw.lines(surf, (230, 255, 245), False, [R(x, y) for x, y in neon_vein], sp(1))
-
-    # Level 5 Spirit Warden celestial rings / wings
-    if level >= 5 or s > 1.8:
-        wing_r = sc(30 + pulse * 4)
-        if wing_r > 8:
-            ws = pygame.Surface((wing_r * 2 + 8, wing_r * 2 + 8), pygame.SRCALPHA)
-            wc = wing_r + 4
-            wa = int(80 + pulse * 80)
-            pygame.draw.arc(ws, (130, 255, 200, wa), pygame.Rect(4, 4, wing_r * 2, wing_r * 2),
-                            math.radians(25), math.radians(155), sp(2))
-            pygame.draw.arc(ws, (130, 255, 200, wa), pygame.Rect(4, 4, wing_r * 2, wing_r * 2),
-                            math.radians(205), math.radians(335), sp(2))
-            surf.blit(ws, (cx - wc, cy - wc))
-
-    # Resonator Emitter Core (Central floating diamond core)
-    core_pt = R(2, 0)
-    cr = sc(5 + pulse * 2.2)
-    if cr > 1:
-        cgs = pygame.Surface((cr * 4 + 4, cr * 4 + 4), pygame.SRCALPHA)
-        pygame.draw.circle(cgs, (70, 255, 180, 180), (cr * 2 + 2, cr * 2 + 2), cr * 2)
-        pygame.draw.circle(cgs, (240, 255, 245, 255), (cr * 2 + 2, cr * 2 + 2), max(1, cr - 1))
-        surf.blit(cgs, (core_pt[0] - cr * 2 - 2, core_pt[1] - cr * 2 - 2))
-
-    # Floating harmonic energy nodes along the spire
-    for (lx, ly, sz) in ((-12, 0, 4), (16, 0, 4), (26, -1, 3)):
-        c_pt = R(lx, ly)
-        node_r = sc(sz)
-        if node_r > 0:
-            diamond = [R(lx, ly - sz), R(lx + sz, ly), R(lx, ly + sz), R(lx - sz, ly)]
-            pygame.draw.polygon(surf, (30, 190, 130), diamond)
-            pygame.draw.polygon(surf, (180, 255, 230), diamond, sp(1))
-
-    # Muzzle flash / laser emission point at the tip
-    tip_pt = R(39, 0)
-    if fire_flash > 0:
-        fl_r = sc(7 + fire_flash * 42)
-        fl_s = pygame.Surface((fl_r * 2 + 4, fl_r * 2 + 4), pygame.SRCALPHA)
-        fl_c = fl_r + 2
-        pygame.draw.circle(fl_s, (100, 255, 190, 220), (fl_c, fl_c), fl_r)
-        pygame.draw.circle(fl_s, (245, 255, 250, 255), (fl_c, fl_c), max(1, fl_r // 2))
-        surf.blit(fl_s, (tip_pt[0] - fl_c, tip_pt[1] - fl_c))
-    else:
-        # Subtle idle tip glint
-        pygame.draw.circle(surf, (150, 255, 210), tip_pt, sp(2))
-        pygame.draw.circle(surf, (255, 255, 255), tip_pt, sp(1))
+    """Placeholder art — Noiseform is just a plain green circle for now."""
+    def sc(v): return max(1, int(v * s))
+    r = sc(26)
+    pygame.draw.circle(surf, (20, 80, 55), (cx, cy), r)
+    pygame.draw.circle(surf, C_NOISEFORM, (cx, cy), r - sc(3))
+    pygame.draw.circle(surf, (170, 255, 200), (cx, cy), r, max(1, sc(2)))
 
 
 class Noiseform(Unit):
@@ -3243,7 +3119,7 @@ class Noiseform(Unit):
         self._star_shots_left=0
         self._star_accum=0.0
         self.ability=None           # Primary active ability (Star Beam lv4)
-        self.ability3=None          # Backwards-compat link for ability3 check
+        self.ability3=None          # не используем: абилка живёт в .ability (без дубля)
         self._units_ref=[]          # Injected by Game loop (for support auras)
         self._apply_level()
 
@@ -3252,7 +3128,6 @@ class Noiseform(Unit):
         self.hidden_detection = self.level>=2
         if self.level>=4 and self.ability is None:
             self.ability=_NfStarBeamAbility(self)
-            self.ability3=self.ability
 
     def upgrade_cost(self):
         nxt=self.level+1
@@ -3283,19 +3158,6 @@ class Noiseform(Unit):
             if orig is None:
                 e._nf_orig_speed=e.speed
             e.speed=max(0.15, e.speed*(1.0-eff_slow))
-
-    def _tick_slows(self, enemies, dt):
-        for e in enemies:
-            if not e.alive: continue
-            st=getattr(e,'_nf_slow_timer',0.0)
-            if st>0:
-                e._nf_slow_timer=st-dt
-                if e._nf_slow_timer<=0:
-                    e._nf_slowed=False
-                    orig=getattr(e,'_nf_orig_speed',None)
-                    if orig is not None:
-                        e.speed=orig
-                        e._nf_orig_speed=None
 
     # ── Soultorn (ability3) ───────────────────────────────────────────────────
     def notify_enemy_death(self, e, effects):
@@ -3376,9 +3238,6 @@ class Noiseform(Unit):
         if self.cd_left>0: self.cd_left-=dt
         if self.ability: self.ability.update(dt)
         if self._fire_flash>0: self._fire_flash-=dt
-
-        # Tick slow debuffs
-        self._tick_slows(enemies, dt)
 
         # Star Beam arrow storm
         if self._star_shots_left>0:
@@ -3783,6 +3642,10 @@ class FreezerBullet:
 
 class Freezer(Unit):
     PLACE_COST = 400; COLOR = C_FREEZER; NAME = "Freezer"; hidden_detection = False
+    # ── Мастерство: бафф за гранд-награду ────────────────────────────────
+    MASTERY_BUFF      = False
+    MASTERY_DMG_MULT  = 1.15   # +15% урона
+    MASTERY_SLOW_MULT = 1.15   # +15% к силе замедления
 
     def __init__(self, px, py):
         super().__init__(px, py)
@@ -3791,6 +3654,9 @@ class Freezer(Unit):
 
     def _apply_level(self):
         d, fr, r, _, sp, sd = FREEZER_LEVELS[self.level]
+        if Freezer.MASTERY_BUFF:
+            d  = round(d * Freezer.MASTERY_DMG_MULT, 2)
+            sp = min(0.60, round(sp * Freezer.MASTERY_SLOW_MULT, 4))
         self.damage = d; self.firerate = fr; self.range_tiles = r
         self._slow_pct = sp; self._slow_dur = sd
 
@@ -3875,8 +3741,8 @@ class Freezer(Unit):
 
 
 # ── FrostBlaster ───────────────────────────────────────────────────────────────
-C_FROSTBLASTER      = (180, 80, 255)  # cryo-plasma violet
-C_FROSTBLASTER_DARK = (35, 10, 70)    # deep void purple
+C_FROSTBLASTER      = (86, 170, 255)  # cryo ice blue
+C_FROSTBLASTER_DARK = (8, 26, 62)     # abyssal navy
 
 # Tuple layout:
 #   (damage, firerate, range_tiles, upgrade_cost,
@@ -3990,16 +3856,16 @@ class FrostBlasterBullet:
         if not self.alive: return
         cx, cy = int(self.x), int(self.y)
         tail_x = self.x - self.vx * 18; tail_y = self.y - self.vy * 18
-        # Cryo-plasma bolt — violet core with white-hot tip
+        # Cryo bolt — ice-blue core with white-hot tip
         s = pygame.Surface((26, 26), pygame.SRCALPHA)
-        pygame.draw.circle(s, (140, 40, 220, 55),  (13, 13), 11)  # outer glow
-        pygame.draw.circle(s, (200, 100, 255, 190),(13, 13), 7)   # mid
-        pygame.draw.circle(s, (240, 200, 255, 255),(13, 13), 3)   # bright core
+        pygame.draw.circle(s, (20, 100, 210, 55),  (13, 13), 11)  # outer glow
+        pygame.draw.circle(s, (110, 190, 255, 190),(13, 13), 7)   # mid
+        pygame.draw.circle(s, (232, 248, 255, 255),(13, 13), 3)   # bright core
         surf.blit(s, (cx - 13, cy - 13))
-        # Plasma tail — fades violet to transparent
-        pygame.draw.line(surf, (160, 60, 255),
+        # Ice tail — fades blue to transparent
+        pygame.draw.line(surf, (60, 140, 255),
                          (int(tail_x), int(tail_y)), (cx, cy), 3)
-        pygame.draw.line(surf, (220, 150, 255),
+        pygame.draw.line(surf, (175, 225, 255),
                          (int(self.x - self.vx * 8), int(self.y - self.vy * 8)),
                          (cx, cy), 2)
 
@@ -4085,7 +3951,7 @@ class FrostBlaster(Unit):
         aura_r = 30 + int(pulse * 5)
         aura_s = pygame.Surface((aura_r * 2 + 4, aura_r * 2 + 4), pygame.SRCALPHA)
         aura_alpha = int(30 + pulse * 50)
-        pygame.draw.circle(aura_s, (160, 40, 255, aura_alpha), (aura_r + 2, aura_r + 2), aura_r)
+        pygame.draw.circle(aura_s, (60, 150, 255, aura_alpha), (aura_r + 2, aura_r + 2), aura_r)
         surf.blit(aura_s, (cx - aura_r - 2, cy - aura_r - 2))
 
         # ── Hexagonal base — dark void ────────────────────────────────────────
@@ -4097,9 +3963,9 @@ class FrostBlaster(Unit):
 
         # ── Energy rings — 3 concentric arcs spinning opposite directions ─────
         for ri, (r_px, speed, col) in enumerate([
-            (22, 60,  (160, 40, 255)),
-            (17, -90, (200, 120, 255)),
-            (12, 120, (230, 180, 255)),
+            (22, 60,  (70, 160, 255)),
+            (17, -90, (130, 200, 255)),
+            (12, 120, (190, 235, 255)),
         ]):
             ring_a = math.radians(t * speed)
             # Draw 3 arc segments evenly spaced
@@ -4124,27 +3990,27 @@ class FrostBlaster(Unit):
             (cx - int(pa * barrel_w - ca * barrel_len), cy - int(pb * barrel_w - sa * barrel_len)),
             (cx + int(pa * barrel_w + ca * barrel_len), cy + int(pb * barrel_w + sa * barrel_len)),
         ]
-        pygame.draw.polygon(surf, (55, 15, 100), b_pts)
-        pygame.draw.polygon(surf, (180, 80, 255), b_pts, 1)
+        pygame.draw.polygon(surf, (12, 40, 84), b_pts)
+        pygame.draw.polygon(surf, C_FROSTBLASTER, b_pts, 1)
         # Muzzle tip glow
         muz_x = cx + int(ca * barrel_len + ca * 4)
         muz_y = cy + int(sa * barrel_len + sa * 4)
         ms = pygame.Surface((14, 14), pygame.SRCALPHA)
         mg = int(140 + pulse * 100)
-        pygame.draw.circle(ms, (200, 100, 255, mg), (7, 7), 6)
-        pygame.draw.circle(ms, (240, 200, 255, 255), (7, 7), 2)
+        pygame.draw.circle(ms, (150, 210, 255, mg), (7, 7), 6)
+        pygame.draw.circle(ms, (235, 250, 255, 255), (7, 7), 2)
         surf.blit(ms, (muz_x - 7, muz_y - 7))
 
         # ── Centre core ───────────────────────────────────────────────────────
-        pygame.draw.circle(surf, (70, 10, 130), (cx, cy), 9)
-        pygame.draw.circle(surf, (200, 120, 255), (cx, cy), 9, 2)
+        pygame.draw.circle(surf, (14, 44, 92), (cx, cy), 9)
+        pygame.draw.circle(surf, (120, 200, 255), (cx, cy), 9, 2)
         core_bright = int(180 + pulse * 70)
         cs = pygame.Surface((10, 10), pygame.SRCALPHA)
-        pygame.draw.circle(cs, (230, 190, 255, core_bright), (5, 5), 4)
+        pygame.draw.circle(cs, (205, 240, 255, core_bright), (5, 5), 4)
         surf.blit(cs, (cx - 5, cy - 5))
 
         # ── Hex border glow ───────────────────────────────────────────────────
-        pygame.draw.polygon(surf, (180, 80, 255), hex_pts, 2)
+        pygame.draw.polygon(surf, C_FROSTBLASTER, hex_pts, 2)
 
         # ── Level pips ────────────────────────────────────────────────────────
         for i in range(self.level):
@@ -4602,9 +4468,14 @@ class Gladiator(Unit):
     COLOR         = C_GLADIATOR
     NAME          = "Gladiator"
     hidden_detection = True
+    # ── Мастерство: бафф за гранд-награду ─────────────────────────────
+    MASTERY_BUFF       = False
+    MASTERY_ARC_BONUS   = 20.0   # +20 градусов к дуге замаха
+    MASTERY_HITS_BONUS  = 1      # +1 враг за замах
 
     def __init__(self, px, py):
         super().__init__(px, py)
+        self._cleave_count   = 0     # замахи, попавшие по 3+ врагам
         self._swing_t        = 0.0
         self._aim_angle      = 0.0
         self._stun_block_cd  = 0.0
@@ -4618,6 +4489,10 @@ class Gladiator(Unit):
         row = GLADIATOR_LEVELS[self.level]
         (self.damage, self.firerate, self.range_tiles, _,
          self._max_hits, self.hidden_detection) = row
+        self._arc_deg = _GLAD_ARC_DEG
+        if Gladiator.MASTERY_BUFF:
+            self._arc_deg += Gladiator.MASTERY_ARC_BONUS
+            self._max_hits += Gladiator.MASTERY_HITS_BONUS
 
     def upgrade_cost(self):
         nxt = self.level + 1
@@ -4644,7 +4519,7 @@ class Gladiator(Unit):
     def _swing(self, enemies):
         """180° arc swing: hit up to _max_hits enemies in arc, infinite pierce."""
         r = self.range_tiles * TILE
-        arc_half = math.radians(_GLAD_ARC_DEG / 2)
+        arc_half = math.radians(self._arc_deg / 2)
 
         # Collect all enemies in range
         pool = []
@@ -4690,6 +4565,8 @@ class Gladiator(Unit):
         elif mode == "Farthest":    in_arc.sort(key=lambda e: -dist((e.x,e.y),(self.px,self.py)))
 
         targets = in_arc[:self._max_hits]
+        if len(targets) >= 3:
+            self._cleave_count += 1
 
         for e in targets:
             if getattr(e, 'IMMUNE_UNITS_ONLY', False):
@@ -4724,7 +4601,7 @@ class Gladiator(Unit):
                 self.cd_left = self.firerate
                 self._last_swing_t = self._swing_t
                 self._swing(enemies)
-                arc_half = math.radians(_GLAD_ARC_DEG / 2)
+                arc_half = math.radians(self._arc_deg / 2)
                 for _si in range(5):
                     _a = math.degrees(self._aim_angle - arc_half + arc_half * 2 * _si / 4)
                     effects.append(SwordEffect(self.px, self.py, _a))
@@ -5556,9 +5433,13 @@ class GoldenCowboy(Unit):
     COLOR            = C_GCOWBOY
     NAME             = "Cowboy"
     hidden_detection = False
+    # ── Мастерство: бафф за гранд-награду ─────────────────────────────
+    MASTERY_BUFF        = False
+    MASTERY_INCOME_MULT = 1.30   # +30% дохода с cash spin
 
     def __init__(self, px, py):
         super().__init__(px, py)
+        self._spin_count   = 0      # сколько раз прокрутил барабан (cash spin)
         self._shot_count   = 0      # shots fired toward cash_shot threshold
         self._spin_timer   = 0.0   # time remaining in spin
         self._spinning     = False
@@ -5573,6 +5454,8 @@ class GoldenCowboy(Unit):
         (self.damage, self.firerate, self.range_tiles, _,
          self._cash_shot, self._income, self._spin_time,
          self.hidden_detection) = row
+        if GoldenCowboy.MASTERY_BUFF:
+            self._income = int(round(self._income * GoldenCowboy.MASTERY_INCOME_MULT))
 
     def upgrade_cost(self):
         nxt = self.level + 1
@@ -5661,6 +5544,7 @@ class GoldenCowboy(Unit):
                     self._shot_count = 0
                     self._spinning = True
                     self._spin_timer = self._spin_time
+                    self._spin_count += 1
                     self._pending_income += self._income
 
     def collect_income(self):
@@ -7148,6 +7032,10 @@ class Commando(Unit):
     COLOR            = C_COMMANDO
     NAME             = "Commando"
     hidden_detection = False
+    # ── Мастерство: бафф за гранд-награду ─────────────────────────────
+    MASTERY_BUFF         = False
+    MASTERY_DMG_MULT     = 1.15   # +15% урона
+    MASTERY_PIERCE_BONUS = 1      # +1 пробитие пули
 
     def __init__(self, px, py):
         super().__init__(px, py)
@@ -7166,6 +7054,9 @@ class Commando(Unit):
         (self.damage, self.firerate, self.range_tiles, _,
          self._burst, self._burst_cd, self._pierce,
          self.hidden_detection) = row
+        if Commando.MASTERY_BUFF:
+            self.damage = round(self.damage * Commando.MASTERY_DMG_MULT, 2)
+            self._pierce += Commando.MASTERY_PIERCE_BONUS
         self._grenade_on = (self.level >= 2)
         self._dual_fire  = (self.level >= 4)
 
@@ -12230,7 +12121,7 @@ def _cb_load_skelebound_frames():
 def _draw_skelebound_castbound_fx(surf, cx, cy, t, s=1.0, is_behind=True, head_y=None):
     """Draws unique spectral undead effects for Skelebound:
     - Behind: Ghostly ethereal ground circle with rotating runes and dark-cyan phantom aura
-    - In front: Glowing spectral eye sockets, ghost flame embers rising from skull & shoulders
+    - In front: ghost flame embers rising from skull & shoulders
     """
     if head_y is None:
         head_y = cy - int(24 * s)
@@ -12272,21 +12163,7 @@ def _draw_skelebound_castbound_fx(surf, cx, cy, t, s=1.0, is_behind=True, head_y
             surf.blit(aura_s, (cx - aura_r - 3, cy - int(15 * s) - aura_r - 3))
 
     else:
-        # 3. Piercing Ghost Eye Flames (Skull eye sockets)
-        eye_y = head_y + int(14 * s)
-        eye_pulse = 0.5 + 0.5 * math.sin(t * 5.0)
-        eye_col = (180, 245, 255)
-        eye_glow_col = (40, 180, 255, int(110 + eye_pulse * 70))
-        eye_rad = max(1, int(2 * s))
-        # Draw glowing eye dots
-        for ex_off in (-int(4 * s), int(4 * s)):
-            ex = cx + ex_off
-            eg_s = pygame.Surface((eye_rad * 4 + 4, eye_rad * 4 + 4), pygame.SRCALPHA)
-            pygame.draw.circle(eg_s, eye_glow_col, (eye_rad * 2 + 2, eye_rad * 2 + 2), eye_rad * 2)
-            surf.blit(eg_s, (ex - eye_rad * 2 - 2, eye_y - eye_rad * 2 - 2))
-            pygame.draw.circle(surf, eye_col, (ex, eye_y), eye_rad)
-
-        # 4. Floating soul embers (rising from head & shoulders)
+        # 3. Floating soul embers (rising from head & shoulders)
         num_embers = 6 if s >= 0.8 else 3
         for i in range(num_embers):
             seed = i * 137.5
@@ -12620,6 +12497,22 @@ def _cb_apply_burn(enemy, burn_dmg, burn_dur, burn_tick):
     enemy._cb_burn_tick  = float(burn_tick)
     enemy._cb_burn_timer = 0.0
 
+# ── боссы: терраклинок их не отталкивает ──────────────────────────────────────
+_CB_BOSS_CLASS_NAMES = frozenset({
+    "NormalBoss", "SlowBoss", "HiddenBoss", "FastBoss",
+    "GiantBossEnemy", "MysteryBossEnemy", "SoulBossEnemy",
+    "FallenTitanEnemy", "Kolobok", "FallenKing", "OtchimusPrime",
+    "VoidReaver", "VoidCaster",
+})
+
+def _cb_is_boss(enemy):
+    """Босс ли враг. Боссов терраклинок не отталкивает."""
+    if getattr(enemy, 'IS_BOSS', False) or getattr(enemy, '_stun_immune', False):
+        return True
+    if 'boss' in str(getattr(enemy, 'DISPLAY_NAME', '')).lower():
+        return True
+    return any(c.__name__ in _CB_BOSS_CLASS_NAMES for c in type(enemy).__mro__)
+
 def _cb_apply_knockback(enemy, px_amount):
     """Откидывание назад ВДОЛЬ пути (полилинии вейпоинтов), а не по прямой в 2D.
     Кнокбек имеет кулдаун 1.2с на врага, чтобы не стакаться бесконечно."""
@@ -12879,15 +12772,6 @@ class Castbound(Unit):
         if self.level < len(CASTBOUND_LEVELS) - 1:
             self.level += 1
             self._apply_level()
-            _up_sfx = {
-                1: "cb_slash_fire.wav",
-                2: "cb_slash_fire.wav",
-                3: "cb_slash_terra.wav",
-                4: "cb_slash_terra.wav",
-                5: "cb_slash_star.wav",
-                6: "cb_slash_zenith.wav",
-            }
-            play_castbound_sfx(_up_sfx.get(self.level, "cb_slash_ice.wav"), vol_mult=0.85)
 
     def grant_zenith(self):
         """Вызывается при победе над Moon Lord."""
@@ -13063,6 +12947,7 @@ class Castbound(Unit):
     def _terra_hit(self, enemy, lv):
         kb_px, kb_every = _CB_TERRA_PARAMS[lv]
         if kb_px <= 0: return
+        if _cb_is_boss(enemy): return   # боссов не отталкиваем
         eid = id(enemy)
         self._hit_counts[eid] = self._hit_counts.get(eid, 0) + 1
         if self._hit_counts[eid] >= kb_every:

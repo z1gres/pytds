@@ -1,6 +1,7 @@
 import pygame
 import math
 import sys
+import random
 
 # ── Skill definitions ──────────────────────────────────────────────────────────
 SKILLS = [
@@ -138,63 +139,98 @@ def skill_tree_bonus(skill_id, save_data):
     return 0
 
 
-# ── TDS-style palette ─────────────────────────────────────────────────────────
-_C_BG          = (8,  12, 22)
-_C_BG2         = (12, 17, 30)
-_C_PANEL       = (16, 21, 38)
-_C_PANEL2      = (20, 27, 48)
-_C_BORDER      = (38, 52, 90)
-_C_BORDER_HOV  = (80, 110, 180)
+# ── Palette ───────────────────────────────────────────────────────────────────
+_C_BG          = (7,  10, 19)
+_C_BG2         = (12, 18, 33)
+_C_PANEL       = (13, 18, 32)
 _C_WHITE       = (240, 244, 255)
 _C_GOLD        = (255, 200, 50)
-_C_GOLD_DIM    = (180, 140, 30)
-_C_GRAY        = (130, 142, 170)
-_C_GRAY2       = (90,  100, 130)
-_C_RED         = (220,  60,  60)
-_C_GREEN       = (70,  210,  100)
-_C_LOCKED      = (45,  50,  70)
-_C_LOCKED_TXT  = (80,  90, 115)
-_C_LOCKED_BAR  = (35,  40,  58)
-
-# Layout — tree is left-centre, panel is right strip
-_TREE_CX   = 480          # horizontal centre of the tree area
-_COL_OFFX  = 200          # column x offset from tree centre (±)
-_ROW_START = 155          # y of first row
-_ROW_GAP   = 168          # gap between rows
-_NODE_W    = 260
-_NODE_H    = 118
-_HEX_R     = 32           # hex icon radius
-
-_PANEL_X   = _TREE_CX * 2 - 20   # right panel starts here (dynamic later)
+_C_GOLD_DIM    = (170, 132, 34)
+_C_GRAY        = (140, 152, 180)
+_C_GRAY2       = (92, 104, 135)
+_C_RED         = (225, 70, 70)
+_C_GREEN       = (72, 214, 104)
+_C_LOCKED      = (58, 64, 88)
+_C_LOCKED_TXT  = (112, 122, 152)
 
 
-def _col_row_to_xy(col, row):
-    x = _TREE_CX + (col * 2 - 1) * _COL_OFFX
-    y = _ROW_START + row * _ROW_GAP
-    return x, y
+# ── geometry / drawing helpers ────────────────────────────────────────────────
+def _lerp_color(a, b, t):
+    return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
 
 
-def _draw_hexagon(surf, cx, cy, r, fill, border, bw=2):
-    pts = []
-    for i in range(6):
-        angle = math.radians(60 * i - 30)
-        pts.append((cx + r * math.cos(angle), cy + r * math.sin(angle)))
-    pygame.draw.polygon(surf, fill, pts)
-    pygame.draw.polygon(surf, border, pts, bw)
+def _hex_pts(cx, cy, r, rot=0.0):
+    return [(cx + math.cos(rot + math.radians(60 * i - 30)) * r,
+             cy + math.sin(rot + math.radians(60 * i - 30)) * r) for i in range(6)]
+
+
+def _draw_hex(surf, cx, cy, r, fill, border=None, bw=2, rot=0.0):
+    pts = _hex_pts(cx, cy, r, rot)
+    if fill is not None:
+        pygame.draw.polygon(surf, fill, pts)
+    if border is not None and bw > 0:
+        pygame.draw.polygon(surf, border, pts, bw)
+
+
+def _alpha_circle(surf, color, center, r, alpha):
+    r = int(max(1, r))
+    s = pygame.Surface((r * 2 + 2, r * 2 + 2), pygame.SRCALPHA)
+    pygame.draw.circle(s, (*color, max(0, min(255, int(alpha)))), (r + 1, r + 1), r)
+    surf.blit(s, (int(center[0]) - r - 1, int(center[1]) - r - 1))
+
+
+def _radial_glow(surf, color, center, r, alpha=None, layers=4):
+    if alpha is None:
+        alpha = 60
+    step = max(2, r // (layers + 1))
+    for i in range(layers, 0, -1):
+        rr = r - (layers - i) * step
+        a = int(alpha * (i / layers) ** 1.6)
+        if rr > 1 and a > 0:
+            _alpha_circle(surf, color, center, rr, a)
 
 
 def _alpha_rect(surf, color, rect, alpha, radius=0):
-    s = pygame.Surface((rect[2], rect[3]), pygame.SRCALPHA)
-    r = pygame.Rect(0, 0, rect[2], rect[3])
+    w, h = max(1, int(rect[2])), max(1, int(rect[3]))
+    s = pygame.Surface((w, h), pygame.SRCALPHA)
+    a = max(0, min(255, int(alpha)))
     if radius:
-        pygame.draw.rect(s, (*color, alpha), r, border_radius=radius)
+        pygame.draw.rect(s, (*color, a), pygame.Rect(0, 0, w, h), border_radius=max(1, int(radius)))
     else:
-        s.fill((*color, alpha))
-    surf.blit(s, (rect[0], rect[1]))
+        s.fill((*color, a))
+    surf.blit(s, (int(rect[0]), int(rect[1])))
 
 
-def _lerp_color(a, b, t):
-    return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
+def _cubic(p0, p1, p2, p3, n=26):
+    out = []
+    for i in range(n + 1):
+        t = i / n
+        u = 1 - t
+        x = u**3 * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t**3 * p3[0]
+        y = u**3 * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t**3 * p3[1]
+        out.append((x, y))
+    return out
+
+
+def _polyline(surf, pts, color, width):
+    if len(pts) > 1:
+        pygame.draw.lines(surf, color, False, pts, max(1, int(width)))
+
+
+def _point_on(pts, f):
+    f = max(0.0, min(1.0, f))
+    x = f * (len(pts) - 1)
+    i = int(x)
+    if i >= len(pts) - 1:
+        return pts[-1]
+    return (pts[i][0] + (pts[i + 1][0] - pts[i][0]) * (x - i),
+            pts[i][1] + (pts[i + 1][1] - pts[i][1]) * (x - i))
+
+
+def _coin(surf, cx, cy, r=7):
+    pygame.draw.circle(surf, (120, 86, 20), (int(cx), int(cy)), r + 1)
+    pygame.draw.circle(surf, _C_GOLD, (int(cx), int(cy)), r)
+    pygame.draw.circle(surf, (255, 238, 160), (int(cx - r / 3), int(cy - r / 3)), max(1, r // 3))
 
 
 class SkillTreeScreen:
@@ -209,55 +245,84 @@ class SkillTreeScreen:
         self.msg       = ""
         self.msg_t     = 0.0
         self.msg_ok    = True
-        self._anim     = {}   # sid -> float 0..1 (hover/select pulse)
+        self._anim     = {sk["id"]: 0.0 for sk in SKILLS}
 
-        # Panel geometry (right third of screen)
-        self._px = self.W - 360
+        # Everything is laid out for a 1080p canvas and scaled to the real height
+        self.s = max(0.55, min(1.7, self.H / 1080.0))
+
+        # Right info panel
+        self._pw = self._sp(360)
+        self._px = self.W - self._pw
         self._py = 0
-        self._pw = 360
         self._ph = self.H
+        tree_w = self._px
+
+        # Tree layout — root core at the bottom, branches climb upwards
+        self._root_y  = int(self.H * 0.875)
+        self._root    = (int(tree_w * 0.5), self._root_y)
+        self._col_x   = [int(tree_w * 0.28), int(tree_w * 0.72)]
+        self._row_y   = [int(self.H * (0.70 - i * 0.155)) for i in range(4)]
+        self._orb_r   = self._sp(44)
+        self._root_r  = self._sp(44)
 
         # Fonts
-        self.f_hdr   = pygame.font.SysFont("segoeui", 34, bold=True)
-        self.f_title = pygame.font.SysFont("segoeui", 22, bold=True)
-        self.f_sub   = pygame.font.SysFont("segoeui", 17, bold=True)
-        self.f_body  = pygame.font.SysFont("segoeui", 15)
-        self.f_sm    = pygame.font.SysFont("segoeui", 13)
-        self.f_num   = pygame.font.SysFont("consolas", 15, bold=True)
-        self.f_icon  = pygame.font.SysFont("segoeuisymbol", 22)
+        self.f_hdr   = pygame.font.SysFont("segoeui", self._sp(32), bold=True)
+        self.f_title = pygame.font.SysFont("segoeui", self._sp(21), bold=True)
+        self.f_sub   = pygame.font.SysFont("segoeui", self._sp(16), bold=True)
+        self.f_body  = pygame.font.SysFont("segoeui", self._sp(15))
+        self.f_sm    = pygame.font.SysFont("segoeui", self._sp(13))
+        self.f_tiny  = pygame.font.SysFont("segoeui", self._sp(11), bold=True)
+        self.f_num   = pygame.font.SysFont("consolas", self._sp(15), bold=True)
+        self._emoji_cache = {}
 
-        # Back button
-        self.btn_back = pygame.Rect(20, 18, 130, 40)
-
-        # Node rects
+        # Clickable node areas (orb + labels underneath)
         self.node_rects = {}
         for sk in SKILLS:
-            cx, cy = _col_row_to_xy(sk["col"], sk["row"])
-            r = pygame.Rect(cx - _NODE_W // 2, cy - _NODE_H // 2, _NODE_W, _NODE_H)
-            self.node_rects[sk["id"]] = r
-            self._anim[sk["id"]] = 0.0
+            cx, cy = self._node_xy(sk)
+            self.node_rects[sk["id"]] = pygame.Rect(
+                cx - self._sp(92), cy - self._orb_r - self._sp(14),
+                self._sp(184), self._orb_r * 2 + self._sp(94))
 
-        # Upgrade button rect (inside panel)
-        self.btn_upg = pygame.Rect(self._px + 20, self.H - 90, self._pw - 40, 52)
+        self.btn_back = pygame.Rect(self._sp(24), self._sp(18), self._sp(132), self._sp(42))
+        self.btn_upg  = pygame.Rect(self._px + self._sp(18), self.H - self._sp(84),
+                                    self._pw - self._sp(36), self._sp(54))
+
+        # Ambient background particles (deterministic)
+        rng = random.Random(7)
+        self._parts = [(rng.uniform(0, tree_w), rng.uniform(0, 1),
+                        rng.uniform(5, 16), rng.uniform(0, math.tau), rng.uniform(8, 26))
+                       for _ in range(64)]
+        self._specks = [(rng.randint(0, tree_w), rng.randint(int(self.H * 0.07), self.H),
+                         rng.randint(1, 2)) for _ in range(90)]
 
     # ── helpers ───────────────────────────────────────────────────────────────
+    def _sp(self, v):
+        """Scale a 1080p design value to the current screen height."""
+        return max(1, int(round(v * self.s)))
+
     def _st(self):    return self.save_data.setdefault("skill_tree", {})
     def _lvl(self, s): return self._st().get(s, 0)
     def _coins(self): return self.save_data.get("coins", 0)
 
+    def _node_xy(self, sk):
+        return (self._col_x[sk["col"]], self._row_y[sk["row"]])
+
     def _req_met(self, skill):
-        if skill["requires"] is None: return True
+        if skill["requires"] is None:
+            return True
         rid, rlvl = skill["requires"]
         return self._lvl(rid) >= rlvl
 
     def _can_upgrade(self, skill):
         lvl = self._lvl(skill["id"])
-        if lvl >= skill["max_levels"]: return False, "Max Level"
+        if lvl >= skill["max_levels"]:
+            return False, "Max Level"
         if not self._req_met(skill):
             rid, rlvl = skill["requires"]
             return False, f"Need {SKILL_BY_ID[rid]['name']} lv{rlvl}"
         cost = _level_cost(skill, lvl + 1)
-        if self._coins() < cost: return False, f"Need {cost} coins"
+        if self._coins() < cost:
+            return False, f"Need {cost} coins"
         return True, ""
 
     def _upgrade(self, skill):
@@ -276,13 +341,24 @@ class SkillTreeScreen:
         self.msg = f"Upgraded to Level {lvl + 1}!"
         self.msg_t = 2.0; self.msg_ok = True
 
+    def _emoji(self, ch, size):
+        key = (ch, size)
+        cached = self._emoji_cache.get(key)
+        if cached is not None:
+            return cached
+        font = pygame.font.SysFont("segoeuiemoji", max(8, int(size)))
+        surf = font.render(ch, True, (255, 255, 255))
+        self._emoji_cache[key] = surf
+        return surf
+
     # ── main loop ─────────────────────────────────────────────────────────────
     def run(self):
         clock = pygame.time.Clock()
         while True:
             dt = clock.tick(60) / 1000.0
             self.t += dt
-            if self.msg_t > 0: self.msg_t -= dt
+            if self.msg_t > 0:
+                self.msg_t -= dt
 
             mx, my = pygame.mouse.get_pos()
             self.hovered = None
@@ -290,7 +366,6 @@ class SkillTreeScreen:
                 if r.collidepoint(mx, my):
                     self.hovered = sid
 
-            # Animate hover/select alpha
             for sid in self._anim:
                 target = 1.0 if (sid == self.hovered or sid == self.selected) else 0.0
                 self._anim[sid] += (target - self._anim[sid]) * min(1.0, dt * 10)
@@ -306,14 +381,13 @@ class SkillTreeScreen:
                     clicked_node = False
                     for sid, r in self.node_rects.items():
                         if r.collidepoint(ev.pos):
-                            self.selected = sid; clicked_node = True; break
+                            self.selected = sid
+                            clicked_node = True
+                            break
                     if not clicked_node and not pygame.Rect(self._px, 0, self._pw, self.H).collidepoint(ev.pos):
                         self.selected = None
                     if self.btn_upg.collidepoint(ev.pos) and self.selected:
                         self._upgrade(SKILL_BY_ID[self.selected])
-                # Double click = upgrade
-                if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
-                    pass  # handled above
 
             self._draw()
             pygame.display.flip()
@@ -321,445 +395,418 @@ class SkillTreeScreen:
     # ── drawing ───────────────────────────────────────────────────────────────
     def _draw(self):
         surf = self.screen
-        surf.fill(_C_BG)
-        self._draw_bg_grid(surf)
+        self._draw_background(surf)
         self._draw_connections(surf)
+        self._draw_root(surf)
         self._draw_nodes(surf)
         self._draw_right_panel(surf)
         self._draw_topbar(surf)
 
-    def _draw_bg_grid(self, surf):
-        # Subtle dot grid — TDS style dark background
-        import random
-        rng = random.Random(17)
+    def _draw_background(self, surf):
         tree_w = self._px
-        for _ in range(80):
-            x = rng.randint(0, tree_w)
-            y = rng.randint(0, self.H)
-            phase = x * 0.009 + y * 0.005
-            br = int(abs(math.sin(self.t * 0.4 + phase)) * 25 + 15)
-            pygame.draw.circle(surf, (br, br + 4, br + 20), (x, y), 1)
+        for y in range(0, self.H, 4):
+            f = y / max(1, self.H)
+            pygame.draw.rect(surf, _lerp_color(_C_BG, _C_BG2, f), (0, y, tree_w, 4))
+        _radial_glow(surf, (40, 110, 190), self._root, int(self.H * 0.30), 26, layers=5)
+        for x, y, r in self._specks:
+            br = int(abs(math.sin(self.t * 0.5 + x * 0.01 + y * 0.007)) * 18 + 12)
+            pygame.draw.circle(surf, (br, br + 6, br + 22),
+                               (x + int(math.sin(self.t * 0.2 + y) * 3), y), r)
+        for bx, phase, size, ph, speed in self._parts:
+            yy = (phase * self.H + self.t * speed) % self.H
+            a = int((0.35 + 0.65 * abs(math.sin(self.t * 0.9 + ph))) * 55)
+            _alpha_circle(surf, (120, 180, 255),
+                          (bx + math.sin(self.t * 0.6 + ph) * 8, yy), size * 0.35, a)
 
-        # Faint vertical separator lines between columns
-        for col in range(2):
-            cx, _ = _col_row_to_xy(col, 0)
-            for row in range(4):
-                _, y1 = _col_row_to_xy(col, row)
-                _, y2 = _col_row_to_xy(col, row + 1) if row < 3 else (0, y1 + _ROW_GAP)
+    def _link_points(self, parent_xy, child_xy, parent_is_root=False, side=1):
+        """Curved branch between two nodes; it bows outwards so it never crosses labels."""
+        R = self._orb_r
+        x1, y1 = parent_xy
+        x2, y2 = child_xy
+        sign = 1 if x2 >= x1 else -1
+        if parent_is_root:
+            start = (x1, y1 - self._root_r * 0.75)
+            end   = (x2 - sign * R * 0.55, y2 + R * 0.60)
+            dy = abs(start[1] - end[1])
+            cp1 = (start[0] + sign * self._sp(60), start[1] - dy * 0.40)
+            cp2 = (end[0] - sign * self._sp(10), end[1] + dy * 0.40)
+        else:
+            # Same column: route the branch along the outer side of the node labels
+            off = side * self._sp(124)
+            start = (x1 + side * R * 0.70, y1 - R * 0.55)
+            end   = (x2 + side * R * 0.70, y2 + R * 0.55)
+            dy = abs(start[1] - end[1])
+            cp1 = (x1 + off, start[1] - dy * 0.25)
+            cp2 = (x2 + off, end[1] + dy * 0.25)
+        return _cubic(start, cp1, cp2, end, 30)
 
     def _draw_connections(self, surf):
-        """Draw TDS-style connector lines between nodes with dots."""
         for sk in SKILLS:
+            accent = sk["color"]
+            side = -1 if sk["col"] == 0 else 1
             if sk["requires"] is None:
-                continue
-            rid = sk["requires"][0]
-            r_from = self.node_rects[rid]
-            r_to   = self.node_rects[sk["id"]]
-
-            req_met = self._req_met(sk)
-            from_lvl = self._lvl(rid)
-            req_lvl  = sk["requires"][1]
-            progress = min(1.0, from_lvl / req_lvl) if req_lvl > 0 else 1.0
-
-            # Line colour
-            if req_met:
-                base_col = (60, 200, 100)
-                glow_col = (80, 255, 130)
+                pts = self._link_points(self._root, self._node_xy(sk), parent_is_root=True)
+                prog = 1.0
+                req_met = True
             else:
-                base_col = (50, 58, 85)
-                glow_col = (80, 95, 130)
+                rid, rlvl = sk["requires"]
+                pts = self._link_points(self._node_xy(SKILL_BY_ID[rid]), self._node_xy(sk),
+                                        side=side)
+                from_lvl = self._lvl(rid)
+                prog = min(1.0, from_lvl / rlvl) if rlvl else 1.0
+                req_met = from_lvl >= rlvl
 
-            x1, y1 = r_from.centerx, r_from.bottom - 8
-            x2, y2 = r_to.centerx,   r_to.top + 8
+            dim = _lerp_color((34, 42, 62), _lerp_color(accent, _C_WHITE, 0.25), prog)
+            _polyline(surf, pts, (14, 19, 31), self._sp(9))
+            _polyline(surf, pts, dim, self._sp(4))
+            if prog > 0.02:
+                _polyline(surf, pts, _lerp_color(dim, _C_WHITE, 0.45), self._sp(1.5))
 
-            # Draw thick dark outline, then bright line
-            pygame.draw.line(surf, _lerp_color((20, 25, 40), base_col, 0.3), (x1, y1), (x2, y2), 5)
-            pygame.draw.line(surf, base_col, (x1, y1), (x2, y2), 2)
-
-            # Animated dots flowing down the line if unlocked
-            total_len = math.hypot(x2 - x1, y2 - y1)
-            if total_len < 1: continue
-            num_dots = max(2, int(total_len // 28))
-            for i in range(num_dots):
-                if req_met:
-                    offset = (i / num_dots + self.t * 0.4) % 1.0
-                else:
-                    offset = i / num_dots
-                    # Show progress partial dots
-                    if offset > progress:
-                        dot_col = (35, 42, 65)
-                    else:
-                        frac = offset / max(0.001, progress)
-                        dot_col = _lerp_color((50, 58, 85), glow_col, frac)
-                    bx = int(x1 + (x2 - x1) * offset)
-                    by = int(y1 + (y2 - y1) * offset)
-                    pygame.draw.circle(surf, dot_col, (bx, by), 4)
-                    pygame.draw.circle(surf, _lerp_color(dot_col, (255,255,255), 0.3), (bx, by), 2)
+            for i in range(3):
+                f = (self.t * 0.22 + i / 3.0) % 1.0
+                if f > prog + 0.001:
                     continue
-                bx = int(x1 + (x2 - x1) * offset)
-                by = int(y1 + (y2 - y1) * offset)
-                pulse = abs(math.sin(self.t * 3 + i * 1.2)) * 0.5 + 0.5
-                dc = _lerp_color(base_col, glow_col, pulse)
-                pygame.draw.circle(surf, dc, (bx, by), 4)
-                pygame.draw.circle(surf, _C_WHITE, (bx, by), 2)
+                p = _point_on(pts, f)
+                _alpha_circle(surf, _lerp_color(accent, _C_WHITE, 0.4), p, self._sp(8), 60)
+                _alpha_circle(surf, _C_WHITE, p, self._sp(3), 215)
+
+
+    def _draw_root(self, surf):
+        cx, cy = self._root
+        r = self._root_r
+        S = self._sp
+        pulse = 0.5 + 0.5 * math.sin(self.t * 2.0)
+        _radial_glow(surf, (90, 170, 255), (cx, cy), r + S(70), int(34 + pulse * 34))
+
+        ring = pygame.Rect(cx - r - S(18), cy - r - S(18), 2 * (r + S(18)), 2 * (r + S(18)))
+        for i in range(14):
+            a0 = self.t * 0.55 + i * (math.tau / 14)
+            pygame.draw.arc(surf, (64, 118, 190), ring, a0, a0 + 0.22, S(3))
+        ring2 = pygame.Rect(cx - r - S(8), cy - r - S(8), 2 * (r + S(8)), 2 * (r + S(8)))
+        for i in range(8):
+            a0 = -self.t * 0.8 + i * (math.tau / 8)
+            pygame.draw.arc(surf, (110, 190, 255), ring2, a0, a0 + 0.5, S(2))
+
+        _draw_hex(surf, cx, cy, r, (15, 24, 42), (120, 195, 255), S(2), 0.0)
+        _draw_hex(surf, cx, cy, r * 0.66, (22, 44, 74), (160, 225, 255), max(1, S(1)), math.pi / 6)
+        pygame.draw.circle(surf, (150, 220, 255), (cx, cy), int(S(9) + pulse * S(3)))
+        pygame.draw.circle(surf, (255, 255, 255), (cx, cy), max(2, S(4)))
+
+        lbl = self.f_sm.render("TOWER CORE", True, (118, 168, 228))
+        surf.blit(lbl, lbl.get_rect(centerx=cx, top=cy + r + S(16)))
+        sub = self.f_tiny.render("POWER SOURCE", True, _C_GRAY2)
+        surf.blit(sub, sub.get_rect(centerx=cx, top=cy + r + S(16) + lbl.get_height() + S(2)))
 
     def _draw_nodes(self, surf):
-        mx, my = pygame.mouse.get_pos()
-
+        R = self._orb_r
+        S = self._sp
         for sk in SKILLS:
-            sid    = sk["id"]
-            r      = self.node_rects[sid]
-            lvl    = self._lvl(sid)
-            max_l  = sk["max_levels"]
+            sid   = sk["id"]
+            cx, cy = self._node_xy(sk)
+            lvl   = self._lvl(sid)
+            max_l = sk["max_levels"]
             locked = not self._req_met(sk)
             hov    = (self.hovered == sid)
             sel    = (self.selected == sid)
-            anim_t = self._anim[sid]
-            accent = sk["color"] if not locked else _C_LOCKED
+            anim   = self._anim[sid]
             maxed  = (lvl >= max_l)
+            accent = sk["color"] if not locked else (96, 104, 130)
+            frac   = lvl / max_l
 
-            # ── Outer glow (selected/hover) ──
-            if anim_t > 0.05 and not locked:
-                glow_alpha = int(anim_t * 55)
-                glow_r = pygame.Rect(r.x - 6, r.y - 6, r.w + 12, r.h + 12)
-                _alpha_rect(surf, accent, (glow_r.x, glow_r.y, glow_r.w, glow_r.h), glow_alpha, 18)
+            if lvl > 0 or hov or sel:
+                _radial_glow(surf, accent if not locked else _C_LOCKED,
+                             (cx, cy), R + S(34), int(16 + anim * 55 + frac * 40))
 
-            # ── Main card background ──
+            if sel:
+                pulse = 0.5 + 0.5 * math.sin(self.t * 4)
+                pygame.draw.circle(surf, _lerp_color(accent, _C_WHITE, pulse * 0.5),
+                                   (cx, cy), R + S(20), max(1, S(2)))
+
+            pygame.draw.circle(surf, (23, 28, 45), (cx, cy), R + S(9))
+            pygame.draw.circle(surf, (40, 49, 76), (cx, cy), R + S(9), max(1, S(2)))
+
+            rot = self.t * 0.12 + (self.t * 0.5 if hov else 0.0)
+            body = _lerp_color((17, 22, 37), accent, 0.0 if locked else 0.20)
+            _draw_hex(surf, cx, cy, R, body,
+                      _lerp_color((48, 58, 90), accent, 0.0 if locked else 0.85), S(2), rot)
+            _draw_hex(surf, cx, cy, R * 0.62,
+                      _lerp_color(body, accent, 0.0 if locked else 0.38), None, 0, rot)
+
+            if frac > 0:
+                rect = pygame.Rect(cx - R - S(9), cy - R - S(9), 2 * (R + S(9)), 2 * (R + S(9)))
+                col = _C_GOLD if maxed else accent
+                pygame.draw.arc(surf, (0, 0, 0), rect,
+                                math.pi / 2 - math.tau * frac - 0.02, math.pi / 2 + 0.02, S(7))
+                pygame.draw.arc(surf, col, rect, math.pi / 2 - math.tau * frac, math.pi / 2, S(5))
+
+            icon = self._emoji(sk["icon"], R * 1.05)
             if locked:
-                bg_col = (18, 22, 35)
-            elif maxed:
-                bg_col = _lerp_color(_C_PANEL2, accent, 0.08)
-            elif sel:
-                bg_col = _lerp_color(_C_PANEL2, accent, 0.15)
-            else:
-                bg_col = _C_PANEL2 if not hov else _lerp_color(_C_PANEL2, accent, 0.08)
+                icon = icon.copy()
+                icon.fill((105, 112, 140, 255), special_flags=pygame.BLEND_RGBA_MULT)
+            surf.blit(icon, icon.get_rect(center=(cx, cy)))
 
-            _alpha_rect(surf, bg_col, (r.x, r.y, r.w, r.h), 245, 14)
-
-            # ── Border ──
-            if maxed and not locked:
-                brd = _C_GOLD
-                brd_w = 2
-            elif sel:
-                pulse = abs(math.sin(self.t * 3)) * 0.5 + 0.5
-                brd = _lerp_color(accent, _C_WHITE, pulse * 0.4)
-                brd_w = 2
-            elif hov and not locked:
-                brd = accent
-                brd_w = 2
-            else:
-                brd = _lerp_color(_C_BORDER, accent, 0.3) if not locked else _C_BORDER
-                brd_w = 1
-            pygame.draw.rect(surf, brd, r, brd_w, border_radius=14)
-
-            # ── Left accent bar ──
-            bar_col = accent if not locked else _C_LOCKED
-            bar_alpha = 200 if not locked else 80
-            _alpha_rect(surf, bar_col, (r.x + 2, r.y + 10, 4, r.h - 20), bar_alpha, 2)
-
-            # ── Hex icon badge ──
-            hx = r.x + 36
-            hy = r.centery - 10
-            hex_fill = _lerp_color((20, 25, 42), accent, 0.25) if not locked else (25, 28, 42)
-            hex_brd  = accent if not locked else _C_LOCKED
-            _draw_hexagon(surf, hx, hy, _HEX_R, hex_fill, hex_brd, 2)
-
-            # Icon letter (first letter of name as stand-in)
-            icon_letter = sk["name"][0].upper()
             if locked:
-                icon_letter = "🔒" if False else sk["name"][0]  # keep simple
-                ic = self.f_title.render(icon_letter, True, _C_LOCKED_TXT)
-            else:
-                ic_col = _lerp_color(_C_WHITE, accent, 0.4)
-                ic = self.f_title.render(icon_letter, True, ic_col)
-            surf.blit(ic, ic.get_rect(center=(hx, hy)))
+                bx, by = cx + int(R * 0.74), cy + int(R * 0.74)
+                _alpha_circle(surf, (13, 17, 28), (bx, by), S(13), 240)
+                pygame.draw.circle(surf, (74, 84, 112), (bx, by), S(13), 1)
+                lk = self._emoji("🔒", S(14))
+                surf.blit(lk, lk.get_rect(center=(bx, by)))
 
-            # ── Name ──
-            tx = r.x + 80
+            if maxed:
+                badge = self.f_tiny.render("MAX", True, (28, 22, 8))
+                bw = badge.get_width() + S(12)
+                br = pygame.Rect(cx - bw // 2, cy - R - S(22), bw, badge.get_height() + S(3))
+                pygame.draw.rect(surf, _C_GOLD, br, border_radius=br.height // 2)
+                surf.blit(badge, badge.get_rect(center=br.center))
+
             name_col = _C_LOCKED_TXT if locked else (_C_GOLD if maxed else _C_WHITE)
             ns = self.f_sub.render(sk["name"], True, name_col)
-            surf.blit(ns, (tx, r.y + 12))
+            surf.blit(ns, ns.get_rect(centerx=cx, top=cy + R + S(11)))
 
-            # ── Effect label ──
-            eff_col = _C_LOCKED_TXT if locked else _lerp_color(_C_GRAY, accent, 0.5)
-            es = self.f_body.render(sk["effect_label"], True, eff_col)
-            surf.blit(es, (tx, r.y + 36))
+            lv_txt = "MAX LEVEL" if maxed else f"LV {lvl} / {max_l}"
+            lv_col = _C_GOLD if maxed else (_C_LOCKED_TXT if locked else _C_GRAY2)
+            ls = self.f_sm.render(lv_txt, True, lv_col)
+            surf.blit(ls, ls.get_rect(centerx=cx, top=cy + R + S(11) + ns.get_height() + S(1)))
 
-            # ── Progress bar (TDS style — segmented) ──
-            bar_x = r.x + 14
-            bar_y = r.y + r.h - 30
-            bar_w = r.w - 28
-            bar_h = 8
-            seg_gap = 2
-            num_segs = min(max_l, 20)  # cap displayed segments
-            seg_w = (bar_w - seg_gap * (num_segs - 1)) / num_segs
-            filled_segs = int(lvl / max_l * num_segs)
-
-            for i in range(num_segs):
-                sx = bar_x + i * (seg_w + seg_gap)
-                if i < filled_segs:
-                    if maxed:
-                        sc = _C_GOLD
-                    else:
-                        frac = i / max(1, num_segs - 1)
-                        sc = _lerp_color(accent, _lerp_color(accent, _C_WHITE, 0.3), frac)
-                elif locked:
-                    sc = _C_LOCKED_BAR
-                else:
-                    sc = (28, 33, 52)
-                pygame.draw.rect(surf, sc, (int(sx), bar_y, max(1, int(seg_w)), bar_h), border_radius=2)
-
-            # Level text
-            if maxed:
-                lv_col = _C_GOLD
-                lv_txt = "MAX"
-            elif locked:
-                lv_col = _C_LOCKED_TXT
-                lv_txt = f"Lv {lvl}/{max_l}"
-            else:
-                lv_col = _C_GRAY
-                lv_txt = f"Lv {lvl}/{max_l}"
-            lvs = self.f_sm.render(lv_txt, True, lv_col)
-            surf.blit(lvs, lvs.get_rect(midright=(r.right - 10, bar_y + bar_h // 2)))
-
-            # ── Coin cost badge (top-right corner) ──
             if not maxed and not locked:
-                next_cost = _level_cost(sk, lvl + 1)
-                can_aff = self._coins() >= next_cost
-                badge_col = (40, 80, 35) if can_aff else (70, 35, 35)
-                badge_txt_col = _C_GREEN if can_aff else _C_RED
-                cost_s = self.f_sm.render(f"⬡ {next_cost}", True, badge_txt_col)
-                bw2 = cost_s.get_width() + 10
-                bx2 = r.right - bw2 - 4
-                by2 = r.y + 8
-                _alpha_rect(surf, badge_col, (bx2, by2, bw2, 18), 200, 5)
-                surf.blit(cost_s, (bx2 + 5, by2 + 2))
+                cost = _level_cost(sk, lvl + 1)
+                can = self._coins() >= cost
+                if can and (hov or sel or lvl == 0):
+                    txt = self.f_sm.render(str(cost), True, _C_GREEN if can else _C_RED)
+                    w = txt.get_width() + S(26)
+                    pr = pygame.Rect(cx - w // 2, cy + R + S(11) + ns.get_height() + ls.get_height() + S(4),
+                                     w, txt.get_height() + S(6))
+                    _alpha_rect(surf, (16, 30, 22), pr, 215, pr.height // 2)
+                    pygame.draw.rect(surf, (46, 92, 60), pr, 1, border_radius=pr.height // 2)
+                    _coin(surf, pr.x + S(10), pr.centery, S(5))
+                    surf.blit(txt, txt.get_rect(midleft=(pr.x + S(17), pr.centery)))
 
+    # ── right panel ───────────────────────────────────────────────────────────
     def _draw_right_panel(self, surf):
         px, py, pw, ph = self._px, self._py, self._pw, self._ph
+        S = self._sp
 
-        # Panel background — dark with subtle gradient
-        _alpha_rect(surf, (10, 14, 26), (px, py, pw, ph), 255)
-        _alpha_rect(surf, (20, 28, 52), (px, py, pw, 4), 255)  # top accent line
-        pygame.draw.line(surf, (35, 48, 82), (px, py), (px, py + ph), 2)
+        _alpha_rect(surf, _C_PANEL, (px, py, pw, ph), 252)
+        pygame.draw.line(surf, (34, 46, 78), (px, py), (px, py + ph), max(1, S(2)))
+        for i in range(S(46)):
+            pygame.draw.line(surf, (24, 40, 68), (px + S(2) + i, py), (px + S(2) + i, py + ph), 1)
 
         if self.selected is None:
-            # Hint
-            hint_lines = ["← Select a skill", "to view details"]
-            for i, line in enumerate(hint_lines):
-                hs = self.f_body.render(line, True, _C_GRAY2)
-                surf.blit(hs, hs.get_rect(center=(px + pw // 2, ph // 2 + i * 26)))
+            _radial_glow(surf, (60, 110, 190), (px + pw // 2, py + ph // 2 - S(30)), S(120), 40)
+            ic = self._emoji("🌳", S(64))
+            ic = ic.copy(); ic.set_alpha(120)
+            surf.blit(ic, ic.get_rect(center=(px + pw // 2, py + ph // 2 - S(70))))
+            hs = self.f_title.render("SELECT A SKILL", True, _C_GRAY)
+            surf.blit(hs, hs.get_rect(center=(px + pw // 2, py + ph // 2 + S(10))))
+            for i, line in enumerate(["Click a node to inspect it,",
+                                      "then spend coins to level it up."]):
+                s = self.f_body.render(line, True, _C_GRAY2)
+                surf.blit(s, s.get_rect(center=(px + pw // 2, py + ph // 2 + S(44) + i * S(22))))
+            total = sum(self._lvl(s["id"]) for s in SKILLS)
+            tmax = sum(s["max_levels"] for s in SKILLS)
+            s = self.f_sm.render(f"TOTAL PROGRESS   {total} / {tmax}", True, _C_GOLD_DIM)
+            surf.blit(s, s.get_rect(center=(px + pw // 2, py + ph // 2 + S(110))))
             return
 
-        sk  = SKILL_BY_ID[self.selected]
-        lvl = self._lvl(self.selected)
+        sk     = SKILL_BY_ID[self.selected]
+        lvl    = self._lvl(self.selected)
         locked = not self._req_met(sk)
         maxed  = (lvl >= sk["max_levels"])
         accent = sk["color"] if not locked else _C_LOCKED
 
-        tx = px + 22
-        ty = 30
+        tx = px + S(22)
+        ty = S(26)
 
-        # ── Category tag ──
-        cat_col = _lerp_color((20, 28, 50), accent, 0.35)
-        cat_txt = "LOCKED" if locked else ("MAXED" if maxed else "ACTIVE" if lvl > 0 else "AVAILABLE")
-        cat_surf = self.f_sm.render(cat_txt, True, accent if not locked else _C_LOCKED_TXT)
-        tag_w = cat_surf.get_width() + 14
-        _alpha_rect(surf, cat_col, (tx, ty, tag_w, 20), 200, 4)
-        pygame.draw.rect(surf, accent if not locked else _C_LOCKED, (tx, ty, tag_w, 20), 1, border_radius=4)
-        surf.blit(cat_surf, (tx + 7, ty + 3))
-        ty += 30
+        cat_txt = "LOCKED" if locked else ("MAXED" if maxed else ("ACTIVE" if lvl > 0 else "AVAILABLE"))
+        cat_surf = self.f_tiny.render(cat_txt, True, _C_LOCKED_TXT if locked else accent)
+        tag_w = cat_surf.get_width() + S(16)
+        _alpha_rect(surf, _lerp_color((18, 24, 42), accent, 0.28),
+                    (tx, ty, tag_w, cat_surf.get_height() + S(6)), 220, S(5))
+        pygame.draw.rect(surf, _C_LOCKED if locked else accent,
+                         (tx, ty, tag_w, cat_surf.get_height() + S(6)), 1, border_radius=S(5))
+        surf.blit(cat_surf, (tx + S(8), ty + S(3)))
 
-        # ── Skill name ──
+        # Big node emblem
+        ex, ey = px + pw - S(62), S(74)
+        er = S(40)
+        frac = lvl / sk["max_levels"]
+        _radial_glow(surf, accent, (ex, ey), S(56), 55 if not locked else 20)
+        pygame.draw.circle(surf, (20, 26, 43), (ex, ey), er)
+        pygame.draw.circle(surf, (42, 52, 82), (ex, ey), er, max(1, S(2)))
+        if frac > 0:
+            rect = pygame.Rect(ex - er, ey - er, er * 2, er * 2)
+            pygame.draw.arc(surf, _C_GOLD if maxed else accent, rect,
+                            math.pi / 2 - math.tau * frac, math.pi / 2, S(4))
+        ic = self._emoji(sk["icon"], er * 0.9)
+        if locked:
+            ic = ic.copy(); ic.fill((110, 118, 145, 255), special_flags=pygame.BLEND_RGBA_MULT)
+        surf.blit(ic, ic.get_rect(center=(ex, ey)))
+
         name_col = _C_GOLD if maxed else (accent if not locked else _C_LOCKED_TXT)
-        # Word-wrap name if long
-        ns = self.f_hdr.render(sk["name"], True, name_col)
-        if ns.get_width() > pw - 30:
-            words = sk["name"].split()
-            lines = []
-            cur = ""
-            for w in words:
-                test = (cur + " " + w).strip()
-                if self.f_hdr.size(test)[0] > pw - 30:
-                    if cur: lines.append(cur)
-                    cur = w
-                else:
-                    cur = test
-            if cur: lines.append(cur)
-            for line in lines:
-                ls = self.f_hdr.render(line, True, name_col)
-                surf.blit(ls, (tx, ty)); ty += 36
-        else:
-            surf.blit(ns, (tx, ty)); ty += 40
+        words = sk["name"].split()
+        lines, cur = [], ""
+        for w in words:
+            test = (cur + " " + w).strip()
+            if self.f_hdr.size(test)[0] > pw - S(150):
+                if cur: lines.append(cur)
+                cur = w
+            else:
+                cur = test
+        if cur: lines.append(cur)
+        ty += S(32)
+        for line in lines:
+            ls = self.f_hdr.render(line, True, name_col)
+            surf.blit(ls, (tx, ty)); ty += ls.get_height() + S(4)
+        ty += S(6)
 
-        # ── Hex icon large ──
-        big_hx = px + pw - 52
-        big_hy = 80
-        hex_fill = _lerp_color((14, 18, 32), accent, 0.3) if not locked else (20, 24, 38)
-        _draw_hexagon(surf, big_hx, big_hy, 42, hex_fill, accent if not locked else _C_LOCKED, 2)
-        ic_big = self.f_hdr.render(sk["name"][0].upper(), True, accent if not locked else _C_LOCKED_TXT)
-        surf.blit(ic_big, ic_big.get_rect(center=(big_hx, big_hy)))
-
-        # ── Divider ──
-        pygame.draw.line(surf, (28, 38, 65), (tx, ty), (px + pw - 22, ty), 1)
-        ty += 14
-
-        # ── Level bar (big, segmented) ──
-        label_s = self.f_sm.render("LEVEL PROGRESS", True, _C_GRAY2)
-        surf.blit(label_s, (tx, ty)); ty += 18
-        bar_w = pw - 44
-        bar_h = 14
+        pygame.draw.line(surf, (28, 38, 65), (tx, ty), (px + pw - S(22), ty), 1)
+        ty += S(14)
+        surf.blit(self.f_tiny.render("LEVEL PROGRESS", True, _C_GRAY2), (tx, ty)); ty += S(18)
+        bar_w = pw - S(44)
+        bar_h = S(14)
         num_segs = min(sk["max_levels"], 25)
-        seg_gap = 2
+        seg_gap = max(1, S(2))
         seg_w = (bar_w - seg_gap * (num_segs - 1)) / num_segs
         filled = int(lvl / sk["max_levels"] * num_segs)
         for i in range(num_segs):
             sx = tx + i * (seg_w + seg_gap)
             if i < filled:
-                sc = _C_GOLD if maxed else _lerp_color(accent, _lerp_color(accent, _C_WHITE, 0.4), i / max(1, num_segs - 1))
+                sc = _C_GOLD if maxed else _lerp_color(
+                    accent, _lerp_color(accent, _C_WHITE, 0.45), i / max(1, num_segs - 1))
             else:
-                sc = (25, 32, 55)
-            pygame.draw.rect(surf, sc, (int(sx), ty, max(1, int(seg_w)), bar_h), border_radius=3)
-        ty += bar_h + 6
-
-        lvl_txt = f"{'MAX' if maxed else lvl} / {sk['max_levels']}"
+                sc = (24, 31, 52)
+            pygame.draw.rect(surf, sc, (int(sx), ty, max(1, int(seg_w)), bar_h), border_radius=S(3))
+        ty += bar_h + S(8)
+        lvl_txt = "MAX" if maxed else f"LV {lvl} / {sk['max_levels']}"
         lvl_s = self.f_num.render(lvl_txt, True, _C_GOLD if maxed else _C_WHITE)
-        surf.blit(lvl_s, (tx, ty)); ty += 26
+        surf.blit(lvl_s, (tx, ty)); ty += lvl_s.get_height() + S(10)
 
-        pygame.draw.line(surf, (28, 38, 65), (tx, ty), (px + pw - 22, ty), 1)
-        ty += 14
-
-        # ── Description ──
-        desc_label = self.f_sm.render("DESCRIPTION", True, _C_GRAY2)
-        surf.blit(desc_label, (tx, ty)); ty += 18
+        pygame.draw.line(surf, (28, 38, 65), (tx, ty), (px + pw - S(22), ty), 1)
+        ty += S(14)
+        surf.blit(self.f_tiny.render("DESCRIPTION", True, _C_GRAY2), (tx, ty)); ty += S(18)
         for line in sk["desc"].split("\n"):
             ds = self.f_body.render(line, True, _C_GRAY)
-            surf.blit(ds, (tx, ty)); ty += 22
-        ty += 8
+            surf.blit(ds, (tx, ty)); ty += ds.get_height() + S(5)
+        ty += S(6)
 
-        # ── Current effect ──
         if lvl > 0:
-            pygame.draw.line(surf, (28, 38, 65), (tx, ty), (px + pw - 22, ty), 1)
-            ty += 14
-            eff_label = self.f_sm.render("CURRENT EFFECT", True, _C_GRAY2)
-            surf.blit(eff_label, (tx, ty)); ty += 18
+            pygame.draw.line(surf, (28, 38, 65), (tx, ty), (px + pw - S(22), ty), 1)
+            ty += S(14)
+            surf.blit(self.f_tiny.render("CURRENT EFFECT", True, _C_GRAY2), (tx, ty)); ty += S(18)
             bonus = skill_tree_bonus(self.selected, self.save_data)
             if self.selected in ("precision", "scavenger"):
                 effect_str = f"{int(bonus)} shots/kills to bonus"
             else:
                 effect_str = f"+{bonus * 100:.1f}%"
             es = self.f_sub.render(effect_str, True, accent)
-            surf.blit(es, (tx, ty)); ty += 28
+            surf.blit(es, (tx, ty)); ty += es.get_height() + S(10)
+            pygame.draw.line(surf, (28, 38, 65), (tx, ty), (px + pw - S(22), ty), 1)
+            ty += S(14)
 
-        pygame.draw.line(surf, (28, 38, 65), (tx, ty), (px + pw - 22, ty), 1)
-        ty += 14
-
-        # ── Next level cost ──
         if not maxed:
             next_cost = _level_cost(sk, lvl + 1)
             total_next = _total_cost(sk, lvl + 1)
             ok, reason = self._can_upgrade(sk)
-            cost_label = self.f_sm.render("UPGRADE COST", True, _C_GRAY2)
-            surf.blit(cost_label, (tx, ty)); ty += 18
+            surf.blit(self.f_tiny.render("UPGRADE COST", True, _C_GRAY2), (tx, ty)); ty += S(18)
             cost_col = _C_GREEN if ok else _C_RED
-            coin_s = self.f_sub.render(f"⬡ {next_cost}", True, cost_col)
-            surf.blit(coin_s, (tx, ty))
-            tot_s = self.f_sm.render(f"total: {total_next}", True, _C_GRAY2)
-            surf.blit(tot_s, (tx + coin_s.get_width() + 12, ty + 3))
-            ty += 28
-            if not ok and reason and not locked:
-                rs = self.f_sm.render(f"✖ {reason}", True, _C_RED)
-                surf.blit(rs, (tx, ty)); ty += 20
+            cost_txt = self.f_sub.render(str(next_cost), True, cost_col)
+            _coin(surf, tx + S(7), ty + cost_txt.get_height() // 2, S(7))
+            surf.blit(cost_txt, (tx + S(19), ty))
+            tot_s = self.f_sm.render(f"total {total_next}", True, _C_GRAY2)
+            surf.blit(tot_s, (tx + S(19) + cost_txt.get_width() + S(12), ty + S(3)))
+            ty += cost_txt.get_height() + S(12)
             if locked:
                 rid, rlvl = sk["requires"]
-                lock_s = self.f_sm.render(f"🔒 Requires {SKILL_BY_ID[rid]['name']} lv{rlvl}", True, _C_RED)
-                surf.blit(lock_s, (tx, ty)); ty += 20
+                lock_s = self.f_sm.render(f"Requires {SKILL_BY_ID[rid]['name']} lv{rlvl}",
+                                          True, _C_RED)
+                surf.blit(lock_s, (tx, ty)); ty += lock_s.get_height() + S(4)
+            elif not ok and reason:
+                rs = self.f_sm.render(reason, True, _C_RED)
+                surf.blit(rs, (tx, ty)); ty += rs.get_height() + S(4)
         else:
-            max_s = self.f_sub.render("✦ MAXED OUT ✦", True, _C_GOLD)
-            surf.blit(max_s, max_s.get_rect(centerx=px + pw // 2, top=ty)); ty += 30
+            max_s = self.f_sub.render("MAXED OUT", True, _C_GOLD)
+            surf.blit(max_s, max_s.get_rect(centerx=px + pw // 2, top=ty)); ty += max_s.get_height() + S(10)
 
-        # ── Coins balance ──
-        coin_bal = self.f_sm.render("YOUR COINS", True, _C_GRAY2)
-        surf.blit(coin_bal, (tx, ty)); ty += 18
-        bal_s = self.f_sub.render(f"⬡ {self._coins()}", True, _C_GOLD)
-        surf.blit(bal_s, (tx, ty)); ty += 30
+        pygame.draw.line(surf, (28, 38, 65), (tx, ty), (px + pw - S(22), ty), 1)
+        ty += S(14)
+        surf.blit(self.f_tiny.render("YOUR COINS", True, _C_GRAY2), (tx, ty)); ty += S(18)
+        bal = self.f_sub.render(str(self._coins()), True, _C_GOLD)
+        _coin(surf, tx + S(7), ty + bal.get_height() // 2, S(7))
+        surf.blit(bal, (tx + S(19), ty))
 
-        # ── Feedback message ──
         if self.msg and self.msg_t > 0:
             alpha = min(255, int(self.msg_t * 180))
             mc = _C_GREEN if self.msg_ok else _C_RED
             msg_s = self.f_body.render(self.msg, True, mc)
             msg_s.set_alpha(alpha)
-            surf.blit(msg_s, msg_s.get_rect(centerx=px + pw // 2, bottom=self.H - 105))
+            surf.blit(msg_s, msg_s.get_rect(centerx=px + pw // 2, bottom=self.H - S(100)))
 
-        # ── Upgrade button ──
         if not maxed:
             ok2, _ = self._can_upgrade(sk)
             br = self.btn_upg
-            br.x = px + 14; br.y = self.H - 82; br.w = pw - 28; br.h = 52
+            br.x = px + S(18); br.y = self.H - S(82); br.w = pw - S(36); br.h = S(54)
 
             if locked:
-                btn_bg  = (28, 32, 52)
-                btn_brd = (50, 58, 85)
-                btn_txt = "LOCKED"
-                txt_col = _C_LOCKED_TXT
+                btn_bg, btn_brd, btn_txt, txt_col = (26, 30, 48), (52, 60, 88), "LOCKED", _C_LOCKED_TXT
             elif ok2:
-                # Animated glow
-                pulse = abs(math.sin(self.t * 2.5)) * 0.3
-                btn_bg  = _lerp_color((20, 75, 35), _lerp_color(accent, (0,0,0), 0.3), 0.2)
+                pulse = abs(math.sin(self.t * 2.5)) * 0.35
+                btn_bg = _lerp_color((19, 62, 32), accent, 0.22)
                 btn_brd = _lerp_color(_C_GREEN, _C_WHITE, pulse)
-                btn_txt = f"UPGRADE  ⬡ {_level_cost(sk, lvl+1)}"
-                txt_col = _C_WHITE
-                # Extra glow border
-                glow_r = pygame.Rect(br.x - 2, br.y - 2, br.w + 4, br.h + 4)
-                _alpha_rect(surf, _C_GREEN, (glow_r.x, glow_r.y, glow_r.w, glow_r.h), int(pulse * 80), 14)
+                btn_txt, txt_col = "UPGRADE", _C_WHITE
+                _alpha_rect(surf, _C_GREEN, (br.x - S(3), br.y - S(3), br.w + S(6), br.h + S(6)),
+                            int(30 + pulse * 70), S(15))
             else:
-                btn_bg  = (50, 28, 28)
-                btn_brd = _C_RED
-                btn_txt = "CAN'T UPGRADE"
-                txt_col = (180, 80, 80)
+                btn_bg, btn_brd, btn_txt, txt_col = (48, 26, 26), _C_RED, "CAN'T UPGRADE", (185, 95, 95)
 
-            _alpha_rect(surf, btn_bg, (br.x, br.y, br.w, br.h), 240, 12)
-            pygame.draw.rect(surf, btn_brd, br, 2, border_radius=12)
+            _alpha_rect(surf, btn_bg, (br.x, br.y, br.w, br.h), 245, S(12))
+            pygame.draw.rect(surf, btn_brd, br, max(1, S(2)), border_radius=S(12))
             ls = self.f_sub.render(btn_txt, True, txt_col)
-            surf.blit(ls, ls.get_rect(center=br.center))
+            if ok2:
+                cost_s = self.f_sub.render(str(_level_cost(sk, lvl + 1)), True, _C_GOLD)
+                total_w = ls.get_width() + S(20) + cost_s.get_width()
+                sx = br.centerx - total_w // 2
+                surf.blit(ls, ls.get_rect(midleft=(sx, br.centery)))
+                _coin(surf, sx + ls.get_width() + S(16), br.centery, S(7))
+                surf.blit(cost_s, cost_s.get_rect(midleft=(sx + ls.get_width() + S(26), br.centery)))
+            else:
+                surf.blit(ls, ls.get_rect(center=br.center))
 
     def _draw_topbar(self, surf):
-        # Gradient top strip
-        _alpha_rect(surf, (10, 14, 28), (0, 0, self._px, 70), 230)
-        pygame.draw.line(surf, (30, 42, 72), (0, 70), (self._px, 70), 1)
+        S = self._sp
+        _alpha_rect(surf, (9, 13, 26), (0, 0, self._px, S(74)), 236)
+        pygame.draw.line(surf, (32, 45, 78), (0, S(74)), (self._px, S(74)), 1)
 
-        # Title
         ts = self.f_hdr.render("SKILL TREE", True, _C_WHITE)
-        surf.blit(ts, ts.get_rect(midleft=(180, 35)))
+        surf.blit(ts, (S(182), S(8)))
+        glow_ts = self.f_hdr.render("SKILL TREE", True, (90, 170, 255))
+        glow_ts.set_alpha(46)
+        surf.blit(glow_ts, (S(184), S(9)))
+        sub = self.f_sm.render("Climb the branches — each skill unlocks the next", True, _C_GRAY2)
+        surf.blit(sub, (S(184), S(8) + ts.get_height() + S(2)))
 
-        # Gold accent on title
-        glow_ts = self.f_hdr.render("SKILL TREE", True, _C_GOLD)
-        glow_ts.set_alpha(30)
-        surf.blit(glow_ts, glow_ts.get_rect(midleft=(182, 37)))
+        for col, name in ((0, "COMBAT"), (1, "ECONOMY")):
+            cx = self._col_x[col]
+            accent = SKILLS[col * 4]["color"]
+            y = self._row_y[3] - S(104)
+            lab = self.f_tiny.render(name, True, _lerp_color(_C_GRAY2, accent, 0.6))
+            surf.blit(lab, lab.get_rect(center=(cx, y)))
+            half = S(74)
+            pygame.draw.line(surf, _lerp_color((34, 44, 70), accent, 0.4),
+                             (cx - half, y + lab.get_height()), (cx + half, y + lab.get_height()), 1)
 
-        # Coin display
-        coin_bg = pygame.Rect(self.W - self._pw - 260, 16, 220, 38)
-        _alpha_rect(surf, (12, 17, 32), (coin_bg.x, coin_bg.y, coin_bg.w, coin_bg.h), 210, 8)
-        pygame.draw.rect(surf, (60, 80, 130), coin_bg, 1, border_radius=8)
-        coin_txt = self.f_sub.render(f"⬡  {self._coins()} coins", True, _C_GOLD)
-        surf.blit(coin_txt, coin_txt.get_rect(center=coin_bg.center))
+        pill = pygame.Rect(self._px - S(250), S(18), S(226), S(40))
+        _alpha_rect(surf, (13, 19, 34), pill, 225, S(10))
+        pygame.draw.rect(surf, (58, 78, 128), pill, 1, border_radius=S(10))
+        _coin(surf, pill.x + S(20), pill.centery, S(9))
+        coin_txt = self.f_title.render(f"{self._coins()}", True, _C_GOLD)
+        surf.blit(coin_txt, coin_txt.get_rect(midleft=(pill.x + S(36), pill.centery)))
+        lbl = self.f_sm.render("coins", True, _C_GRAY2)
+        surf.blit(lbl, lbl.get_rect(midleft=(pill.x + S(44) + coin_txt.get_width(),
+                                              pill.centery + S(1))))
 
-        # Column labels
-        col_labels = ["Combat", "Economy"]
-        for col in range(2):
-            cx, _ = _col_row_to_xy(col, 0)
-            ls = self.f_sm.render(col_labels[col].upper(), True, _C_GRAY2)
-            surf.blit(ls, ls.get_rect(center=(cx, 80)))
-            pygame.draw.line(surf, (30, 40, 68),
-                             (cx - _NODE_W // 2, 92), (cx + _NODE_W // 2, 92), 1)
-
-        # Back button
         b = self.btn_back
         hov = b.collidepoint(pygame.mouse.get_pos())
-        bg_c = (25, 35, 62) if hov else (15, 20, 38)
-        brd_c = (80, 120, 210) if hov else (45, 60, 100)
-        _alpha_rect(surf, bg_c, (b.x, b.y, b.w, b.h), 230, 8)
-        pygame.draw.rect(surf, brd_c, b, 1, border_radius=8)
-        bs = self.f_body.render("◀  Back", True, _C_WHITE if hov else _C_GRAY)
+        _alpha_rect(surf, (25, 35, 62) if hov else (15, 20, 38), (b.x, b.y, b.w, b.h), 235, S(9))
+        pygame.draw.rect(surf, (80, 130, 220) if hov else (46, 62, 102), b, 1, border_radius=S(9))
+        bs = self.f_body.render("<  BACK", True, _C_WHITE if hov else _C_GRAY)
         surf.blit(bs, bs.get_rect(center=b.center))
